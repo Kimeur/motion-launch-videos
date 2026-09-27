@@ -11,6 +11,6 @@
     "render": "node scripts/render.mjs"
   },
   "dependencies": {
-    "playwright-core": "^1.55.0"
+    "playwright-core": "1.63.0"
   }
 }

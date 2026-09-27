@@ -105,7 +105,7 @@ function findChrome(chromium) {
 }
 function installChromium() {                                // playwright-core's own CLI, wherever it was installed
   const p = resolvePlaywright();
-  return p ? `node "${path.join(path.dirname(p), 'cli.js')}" install chromium` : `npx playwright-core install chromium`;
+  return p ? `node "${path.join(path.dirname(p), 'cli.js')}" install chromium` : `npx playwright-core@1.63.0 install chromium`;
 }
 function which(bin) {
   for (const d of (process.env.PATH || '').split(path.delimiter)) {

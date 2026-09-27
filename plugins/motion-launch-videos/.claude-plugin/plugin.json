@@ -1,10 +1,22 @@
 {
   "name": "motion-launch-videos",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "Make a kinetic-typography launch bumper or identity sting from a short brief. Claude writes the film as one self-contained HTML canvas file driven by a pure seek(t), checks it with an automated critique, and renders it to MP4, GIF and poster with real subframe motion blur and a pixel-exact seamless loop.",
-  "author": { "name": "Marouane Gazouzi", "url": "https://github.com/Kimeur" },
+  "author": {
+    "name": "Marouane Gazouzi",
+    "url": "https://github.com/Kimeur"
+  },
   "homepage": "https://github.com/Kimeur/motion-launch-videos",
   "repository": "https://github.com/Kimeur/motion-launch-videos",
   "license": "MIT",
-  "keywords": ["motion-design", "kinetic-typography", "launch-video", "video", "canvas", "motion-blur", "ffmpeg", "playwright"]
+  "keywords": [
+    "motion-design",
+    "kinetic-typography",
+    "launch-video",
+    "video",
+    "canvas",
+    "motion-blur",
+    "ffmpeg",
+    "playwright"
+  ]
 }
