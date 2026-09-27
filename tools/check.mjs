@@ -1,7 +1,8 @@
 #!/usr/bin/env node
 // Repo checks for maintainers. The plugin does not ship this folder.
 //
-//   node tools/check.mjs            fast: shared files in sync, manifests, every SKILL.md, every template parses
+//   node tools/check.mjs            fast: shared files in sync, manifests, every SKILL.md, every template parses,
+//                                   and a warning for an example whose source carries an older core than shared/
 //   node tools/check.mjs --smoke    also build each skill's template demo in a scratch folder and run its
 //                                   stills critique and loopcheck (needs npm, network for the fonts, a Chromium)
 //
@@ -52,7 +53,20 @@ for (const dir of skills()) {
   ok(pkg.dependencies && pkg.dependencies['playwright-core'] === '1.63.0', `${name}: package.json`, `playwright-core ${pkg.dependencies && pkg.dependencies['playwright-core']}`);
 }
 
-// 4. optional smoke test: every template demo passes its own critique and loopcheck
+// 4. examples: a warning (not a failure) for one whose source holds an older core than shared/core.js; its
+//    renders were made on that core, so re-render it rather than editing its source
+const BEGIN = '/* ===== CORE BEGIN', END = '/* ===== CORE END ===== */';
+const core = fs.readFileSync(path.join(ROOT, 'shared', 'core.js'), 'utf8').trimEnd();
+for (const ex of fs.readdirSync(path.join(ROOT, 'examples')).sort()) {
+  const src = path.join(ROOT, 'examples', ex, 'src', 'film.html');
+  if (!fs.existsSync(src)) continue;
+  const html = fs.readFileSync(src, 'utf8'), a = html.indexOf(BEGIN), b = html.indexOf(END);
+  if (a < 0 || b < a) continue;                            // an engine of its own (the kinetic type)
+  const same = html.slice(html.indexOf('\n', a) + 1, b).trimEnd() === core;
+  console.log(same ? `PASS  examples/${ex}: on the current core` : `WARN  examples/${ex}: rendered on an older core; re-render it (README, For maintainers)`);
+}
+
+// 5. optional smoke test: every template demo passes its own critique and loopcheck
 if (smoke) {
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'mlv-smoke-'));
   try {

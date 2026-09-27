@@ -132,7 +132,9 @@ document.body.style.background = col('bg');
 
 // CPU raster everywhere: Chrome silently moves a canvas from GPU to CPU after repeated
 // getImageData reads, which changes antialiasing mid-render. Pin it from the start.
-const ctx = canvas.getContext('2d', { willReadFrequently: true, alpha: false });
+// An alpha channel, though every frame fills it opaque: on an opaque canvas Chromium draws text with
+// LCD subpixel antialiasing (red and blue fringes on every glyph), whatever the command line says.
+const ctx = canvas.getContext('2d', { willReadFrequently: true, alpha: true });
 const mkCanvas = () => { const c = document.createElement('canvas'); c.width = W; c.height = H; return c; };
 const mk2d = () => { const c = mkCanvas(); return [c, c.getContext('2d', { willReadFrequently: true })]; };
 const [offB, offBx] = mk2d();                // incoming scene, for the mask composite

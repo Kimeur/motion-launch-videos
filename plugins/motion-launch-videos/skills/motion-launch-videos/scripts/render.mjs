@@ -291,6 +291,10 @@ async function render({ page, meta }) {
   const gh = meta.gif || {};                                  // an engine's hints: pixel art scales by nearest neighbour, undithered
   const crf = opt('crf', '16'), gfps = opt('gif-fps', String(gh.fps || 20)), gw = opt('gif-width', String(gh.width || 480)), gcol = opt('gif-colors', String(gh.colors || 64));
   const gscale = gh.scale === 'neighbor' ? 'neighbor' : 'lanczos', gdither = gh.dither === 'none' ? 'dither=none' : 'dither=bayer:bayer_scale=4';
+  // palettegen keeps one entry for transparency (the GIF encoder marks unchanged pixels with it), so N colours need N + 1
+  const ncol = Math.round(Number(gcol));
+  if (!(ncol >= 3 && ncol <= 255)) throw new Error(`--gif-colors ${gcol}: 3 to 255`);
+  const gmax = ncol + 1;
   const x264 = ['-c:v', 'libx264', '-preset', 'slow', '-crf', crf, '-pix_fmt', 'yuv420p',
     '-color_primaries', 'bt709', '-color_trc', 'bt709', '-colorspace', 'bt709', '-color_range', 'tv',
     '-bsf:v', 'h264_metadata=colour_primaries=1:transfer_characteristics=1:matrix_coefficients=1:video_full_range_flag=0',
@@ -299,7 +303,7 @@ async function render({ page, meta }) {
   const toYuv = 'scale=out_color_matrix=bt709:out_range=tv,format=yuv420p';
   const args = full
     ? [...input, '-filter_complex',
-      `[0:v]split=2[m][g];[m]${toYuv}[v];[g]fps=${gfps},scale=${gw}:-2:flags=${gscale},split[g1][g2];[g1]palettegen=max_colors=${gcol}:stats_mode=full[p];[g2][p]paletteuse=${gdither}:diff_mode=rectangle[gif]`,
+      `[0:v]split=2[m][g];[m]${toYuv}[v];[g]fps=${gfps},scale=${gw}:-2:flags=${gscale},split[g1][g2];[g1]palettegen=max_colors=${gmax}:stats_mode=full[p];[g2][p]paletteuse=${gdither}:diff_mode=rectangle[gif]`,
       '-map', '[v]', ...x264, mp4, '-map', '[gif]', '-loop', '0', gif]
     : [...input, '-vf', toYuv, ...x264, mp4];
   const ff = spawn(ffmpeg, args, { stdio: ['pipe', 'inherit', 'inherit'] });

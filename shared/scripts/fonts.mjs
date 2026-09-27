@@ -52,15 +52,23 @@ fs.mkdirSync(outDir, { recursive: true });
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'mlv-fonts-'));
 const npm = process.platform === 'win32' ? 'npm.cmd' : 'npm';
 
+const packed = new Map();                                 // one tarball per package, however many faces
+function pack(pkg) {
+  if (packed.has(pkg)) return packed.get(pkg);
+  const dest = path.join(tmp, pkg);
+  fs.mkdirSync(dest);
+  const json = execFileSync(npm, ['pack', `@fontsource/${pkg}@5`, '--json', '--pack-destination', dest], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'inherit'] });
+  const info = JSON.parse(json)[0];
+  execFileSync('tar', ['-xzf', path.join(dest, info.filename), '-C', dest]);
+  packed.set(pkg, { dest, info });
+  return packed.get(pkg);
+}
+
 try {
   for (const spec of faces) {
     const [pkg, weight = '400', style = 'normal', sub = subset || 'latin'] = spec.split(':');
     if (!/^[a-z0-9-]+$/.test(pkg)) throw new Error(`bad package name "${pkg}"`);
-    const dest = path.join(tmp, pkg);
-    fs.mkdirSync(dest);
-    const json = execFileSync(npm, ['pack', `@fontsource/${pkg}@5`, '--json', '--pack-destination', dest], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'inherit'] });
-    const info = JSON.parse(json)[0];
-    execFileSync('tar', ['-xzf', path.join(dest, info.filename), '-C', dest]);
+    const { dest, info } = pack(pkg);
     const file = `${pkg}-${sub}-${weight}-${style}.woff2`;
     const src = path.join(dest, 'package', 'files', file);
     if (!fs.existsSync(src)) {

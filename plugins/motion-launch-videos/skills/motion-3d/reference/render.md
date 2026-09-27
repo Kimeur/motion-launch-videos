@@ -32,7 +32,7 @@ Every film mode rebuilds `<film>.html` first, so what you check is what you ship
 
 ## How pixels leave the browser
 
-- Chromium runs with `--force-color-profile=srgb --disable-lcd-text --font-render-hinting=none`, a viewport of exactly W x H at device scale 1, and the page at `?capture=1` (no preview loop).
+- Chromium runs with `--force-color-profile=srgb --disable-lcd-text --font-render-hinting=none`, a viewport of exactly W x H at device scale 1, and the page at `?capture=1` (no preview loop). The flag alone does not stop LCD text on an opaque canvas, so the film's canvas has an alpha channel (core.md).
 - Pixels come from `getImageData` on the film's own canvas, never from a screenshot: a screenshot goes through the compositor and colour management.
 - Stills are PNGs of the canvas. The render sends raw RGB to ffmpeg's stdin; no PNG encode per frame.
 
