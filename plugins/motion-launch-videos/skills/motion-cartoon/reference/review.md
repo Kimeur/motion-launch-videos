@@ -19,6 +19,7 @@ The planned frames: frame 0, every hop's anticipation, stretch and impact, each 
 | grid (warn) | a title's baseline is off the 8 px grid | move it |
 | drawings (warn) | the drawings a second do not divide the frame rate: holds of uneven length judder | 12, 15, 20 or 30 at 60 fps |
 | hop (warn) | a hop straddles the loop point, or lifts the head out of the frame | land it earlier; lower `h` |
+| walk (warn) | a walk straddles the loop point | finish it earlier |
 | eyes (warn) | the pupils nearly fill the eyes, so the look direction cannot read | smaller pupils or larger eyes |
 | loop face | the face at the end is not the face at the start | end with a `face` act back to `start` |
 | loop closes | a value (a pose, the camera) ends somewhere other than where it started | add the move back |

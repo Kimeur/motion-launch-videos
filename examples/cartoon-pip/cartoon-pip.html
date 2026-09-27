@@ -786,7 +786,7 @@ function halfWidthAt(Ch, hgt) {                     // the body's half width at 
 
 const MOUTHS = ['smile', 'grin', 'open', 'o', 'flat', 'frown'];
 function buildCharacter(spec, ci) {
-  const Ch = { spec, id: spec.id, ci, legLen: (spec.legs || {}).len || 40, props: {}, hops: [], faces: [], emotes: [], says: [], signs: [], impacts: [] };
+  const Ch = { spec, id: spec.id, ci, legLen: (spec.legs || {}).len || 40, props: {}, hops: [], walks: [], faces: [], emotes: [], says: [], signs: [], impacts: [] };
   const B = spec.body;
   for (const k of ['fill', 'shade', 'light']) if (B[k]) role(B[k]);
   role('ink'); role('white');
@@ -820,6 +820,20 @@ function buildCharacter(spec, ci) {
         if (a.dust !== false) EFFECTS.push({ kind: 'dust', t: land, ch: Ch, amp: Math.min(1.2, h / 180) });
         if (h >= 160 && a.shake !== false) SHAKES.push({ t: land, amp: 10 * Math.min(1, h / 220) * U });
         accentAt(land, `${Ch.id}-land`);
+        break;
+      }
+      case 'walk': {                                // steps on the grid: a surge forward, a dip and a squash on each contact
+        const n = a.steps || 4, every = noteSec(a.every || 8), dx = a.dx || 0, per = dx / n, sg = Math.sign(dx) || 1, bob = a.bob != null ? a.bob : 7;
+        for (let k = 0; k < n; k++) {
+          const ts = t + k * every;
+          if (per) { ev('x', ts, null, [1, 4.744 / (every * 0.9)], per); ev('xLag', ts, null, [0.32, 9], per); }
+          ev('dy', ts, bob, 'SNAP'); ev('dyLag', ts, bob, [0.32, 9]); ev('dy', ts + every / 2, -bob * 0.8, 'SNAP'); ev('dyLag', ts + every / 2, -bob * 0.8, [0.32, 9]);
+          ev('sq', ts, 0.94, 'SNAP'); ev('sq', ts + every / 2, 1.03, 'SNAP');
+        }
+        const end = t + n * every;
+        ev('dy', end, 0, 'SNAP'); ev('dyLag', end, 0, [0.32, 9]); ev('sq', end, 1, 'BOUNCY');
+        ev('lean', t, sg * (a.lean != null ? a.lean : 5), 'SWING'); ev('lean', end, 0, 'SWING');
+        Ch.walks.push({ t, end, every, n, sg: dx ? sg : 1 });
         break;
       }
       case 'blink': { const d = a.dur || 0.14; ev('eye', t, 0, 'SNAP'); ev('eye', t + d, 1, 'SNAP'); break; }
@@ -882,6 +896,14 @@ function faceAt(Ch, td) {
   for (const f of Ch.face) if (f.t <= td + 1e-9) { if (f.mouth) mouth = f.mouth; if (f.eyes) eyes = f.eyes; }
   return { mouth, eyes };
 }
+function stride(Ch, td) {                           // during a walk: which foot is stepping, how high, how far through its swing
+  for (const w of Ch.walks) {
+    if (td < w.t || td >= w.end) continue;
+    const u = (td - w.t) / w.every, k = Math.floor(u), f = u - k;
+    return { side: k % 2 ? -1 : 1, lift: Math.sin(Math.PI * f) * 20, swing: (f - 0.5) * 40 * w.sg };
+  }
+  return null;
+}
 function lift(Ch, td) {                             // height above the floor from every hop's ballistic arc
   let y = 0;
   for (const h of Ch.hops) { const s = (td - h.t) / h.air; if (s > 0 && s < 1) y += 4 * h.h * s * (1 - s); }
@@ -902,7 +924,7 @@ function rigAt(Ch, td) {
   for (const h of Ch.hops) { bend += 16 * ring(td, h.t, [0.3, 16]) - 22 * ring(td, h.land, [0.28, 18]); }
   if (idle.sway) bend += idle.sway[1] * Math.sin(cyc(td, idle.sway[0], 0.25));
   return { T, x, baseY, up, sx, sy, lean, bend: bend * DEG, lookX: P.lookX.at(td), lookY: P.lookY.at(td), eye: P.eye.at(td), brow: P.brow.at(td), open: P.open.at(td),
-    sign: P.sign.at(td), bub: P.bub.at(td), hL: [P.hLx.at(td), P.hLy.at(td)], hR: [P.hRx.at(td), P.hRy.at(td)], face: faceAt(Ch, td) };
+    sign: P.sign.at(td), bub: P.bub.at(td), hL: [P.hLx.at(td), P.hLy.at(td)], hR: [P.hRx.at(td), P.hRy.at(td)], face: faceAt(Ch, td), stride: stride(Ch, td) };
 }
 
 /* ---------------- drawing the character ---------------- */
@@ -919,6 +941,8 @@ function drawCharacter(c, Ch, td, dn) {
   const hand = (s) => {
     const own = s === 'L' ? R.hL : R.hR, sh = [s === 'L' ? -hw : hw, shoulderY];
     let p = [sh[0] + own[0], sh[1] + own[1]];
+    const st = R.stride;
+    if (st) { const opp = (s === 'L' ? -1 : 1) === st.side ? -1 : 1; p = [p[0] + opp * st.swing * 0.7, p[1] - Math.abs(st.swing) * 0.15]; }   // arms swing against the legs
     if (sg && sk > 0) { const corner = [(s === 'L' ? -1 : 1) * sg.w * 0.36 * Math.min(1, sk), -(sg.y - sg.h * 0.3)]; p = [lerp(p[0], corner[0], Math.min(1, sk)), lerp(p[1], corner[1], Math.min(1, sk))]; }
     return { sh, p };
   };
@@ -934,9 +958,10 @@ function drawCharacter(c, Ch, td, dn) {
     inked(c, smoothPath(hp, true), col(B.fill), LINE);
   };
   // legs and feet, behind the body
-  const lg = S0.legs || { len: 40, gap: 100, width: 18, foot: [48, 22] }, air = Math.min(1, R.up / 60);
+  const lg = S0.legs || { len: 40, gap: 100, width: 18, foot: [48, 22] }, air = Math.min(1, R.up / 60), st = R.stride;
   for (const s of [-1, 1]) {
-    const hip = T(s * lg.gap / 2 * 0.8, -Ch.legLen - 8), foot = T(s * (lg.gap / 2 + air * 10), -air * 14);
+    const step = st ? (s === st.side ? [st.swing, -st.lift] : [-st.swing * 0.6, 0]) : [0, 0];   // the stepping foot swings forward, the planted one slides back
+    const hip = T(s * lg.gap / 2 * 0.8, -Ch.legLen - 8), foot = T(s * (lg.gap / 2 + air * 10) + step[0], -air * 14 + step[1]);
     noodle(c, [hip, [(hip[0] + foot[0]) / 2, (hip[1] + foot[1]) / 2], foot], col('ink'), lg.width * U, dn, seed + (s < 0 ? 23 : 29));
     const f = boilPts(ellipsePts(foot[0] + s * 10 * U, foot[1] - 4 * U, lg.foot[0] / 2 * U, lg.foot[1] / 2 * U, 18), seed + (s < 0 ? 31 : 37), dn, BOIL * 0.4);
     inked(c, smoothPath(f, true), col('ink'), 0);
@@ -1159,6 +1184,7 @@ function checks(add) {
       const apex = lift(Ch, h.t + h.air / 2), box = charBox(Ch, h.t + h.air / 2);
       if (box[1] < 0) add(`hop: ${Ch.id} at ${h.t.toFixed(2)}`, 'WARN', `the head leaves the frame at the top of the hop (${apex.toFixed(0)} px up)`);
     }
+    for (const w of Ch.walks) if (w.t < 0 || w.end > DUR - 0.05) add(`walk: ${Ch.id} at ${w.t.toFixed(2)}`, 'WARN', 'a walk straddles the loop point; its stride is not carried over the seam');
     for (const s of Ch.says) { const words = s.text.split(/\s+/).filter(Boolean).length; add(`words: ${Ch.id} says`, words > 4 ? 'FAIL' : 'PASS', `${words} (${s.text})`); }
     if (Ch.spec.sign) { const words = Ch.spec.sign.text.split(/\s+/).filter(Boolean).length; add(`words: ${Ch.id} sign`, words > 4 ? 'FAIL' : 'PASS', `${words} (${Ch.spec.sign.text})`); }
     const E = Ch.spec.eyes;
@@ -1178,6 +1204,7 @@ function cycles() {
 function stills(push) {
   for (const Ch of CAST) {
     for (const h of Ch.hops) { push((h.t - 0.08) * FPS, `${Ch.id}-anticipation`, 'squash before the hop'); push((h.t + h.air * 0.25) * FPS, `${Ch.id}-stretch`, 'stretched on the way up'); push((h.land + 0.05) * FPS, `${Ch.id}-impact`, 'squash on landing'); }
+    for (const w of Ch.walks) push((w.t + w.every * 1.5) * FPS, `${Ch.id}-walk`, 'mid-stride');
     for (const s of Ch.says) push((s.t + 0.5) * FPS, `${Ch.id}-says`, `says ${s.text}`);
     for (const s of Ch.signs) push((s.t + 1.2) * FPS, `${Ch.id}-sign`, 'holding the sign');
     for (const e of Ch.emotes) push((e.t + 0.3) * FPS, `${Ch.id}-${e.kind}`, `emote ${e.kind}`);
