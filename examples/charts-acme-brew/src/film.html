@@ -1,0 +1,2272 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Acme Brew data loop</title>
+<style>
+@font-face{font-family:"Inter Tight";font-style:normal;font-weight:800;font-display:block;src:url(data:font/woff2;base64,__FONT:inter-tight-latin-800-normal.woff2__) format("woff2")}
+@font-face{font-family:"Inter";font-style:normal;font-weight:700;font-display:block;src:url(data:font/woff2;base64,__FONT:inter-latin-700-normal.woff2__) format("woff2")}
+@font-face{font-family:"IBM Plex Mono";font-style:normal;font-weight:500;font-display:block;src:url(data:font/woff2;base64,__FONT:ibm-plex-mono-latin-500-normal.woff2__) format("woff2")}
+*,*::before,*::after{transition:none!important;animation:none!important}
+html,body{margin:0;height:100%;background:#140F0C}
+body{display:grid;place-items:center;overflow:hidden}
+canvas{display:block;max-width:100vw;max-height:100vh;width:auto;height:auto}
+</style>
+</head>
+<body>
+<canvas id="c" width="1080" height="1080"></canvas>
+<script>
+(() => {
+'use strict';
+
+/* ==========================================================================
+ * FILM: the part you edit. Everything below CORE BEGIN stays as it is.
+ *
+ * Every number on screen comes from FILM.data. A dataset holds values (one,
+ * or one per category, or several series), a format, and the BRIEF.md Facts
+ * row it comes from (`source`); FILM.sources says what the on-screen source
+ * line reads for each row. Text shows a data value with {id.KEY}: {week.sum},
+ * {week.SAT}, {milk.OAT}. Charts and counters take `data` or `ref`.
+ *
+ * Times are seconds; beat(n) and bar(n) put them on the tempo grid.
+ * Positions are canvas pixels; a text layer's x is its anchor, y its
+ * baseline; a chart's box is its plot area [x0, y0, x1, y1].
+ * Two kinds of motion, never mixed:
+ *   enter / keys / exit  move the element (dx, dy, scale, op, rot, blur,
+ *                        trim, fill), on any spring
+ *   grow                 moves the data (bars grow, a line draws, a donut
+ *                        sweeps, a counter counts), on a critically damped
+ *                        spring only: an overshoot would show a false value
+ * A 'hold' loop ends on a still copy of frame 0: the last scene (wrap) is on
+ * screen at rest at t = 0, leaves at wrap.exit, and is rebuilt at the end.
+ * ========================================================================== */
+const BPM = 120;
+const beat = (n) => n * 60 / BPM;            // quarter notes
+const bar = (n) => beat(4 * n);              // 4/4 bars
+
+const FILM = {
+  title: 'Acme Brew data loop',
+  alt: '48,215 counts up on a crema frame: cups brewed in one week. Seven columns grow, Monday to Sunday; Saturday, the busiest day at 9,120 cups, lights up. A donut sweeps: oat milk leads with 46 percent, dairy 38, none 16. Acme Brew, example.com. Demo data, fictional product.',
+  W: 1080, H: 1080, FPS: 60, DUR: bar(6), BPM,
+  loop: 'hold',
+  palette: { bg: '#140F0C', ink: '#140F0C', well: '#2B221C', paper: '#F7F0E6', muted: '#A8998A', crema: '#FFA62B', foam: '#E6D5C3', roast: '#8A7462' },
+  fonts: {
+    display: { family: 'Inter Tight', weight: 800 },
+    label: { family: 'Inter', weight: 700 },
+    mono: { family: 'IBM Plex Mono', weight: 500 },
+  },
+  grid: { margin: 104, unit: 8 },
+  poster: beat(11),                            // the week chart at rest, lit and annotated
+  // What the on-screen source line says for each Facts row of BRIEF.md.
+  sources: { F2: 'DEMO DATA, FICTIONAL PRODUCT', F3: 'DEMO DATA, FICTIONAL PRODUCT' },
+  data: {
+    week: { label: 'Cups brewed per day, one week', unit: 'cups', source: 'F2',
+      categories: ['MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT', 'SUN'],
+      values: [5820, 6140, 6390, 6905, 7660, 9120, 6180] },
+    milk: { label: 'Milk in each cup, share of cups', unit: '%', source: 'F3', format: { suffix: '%' }, total: 100,
+      categories: ['OAT', 'DAIRY', 'NONE'], values: [46, 38, 16] },
+  },
+  scenes: [
+    // Lockup. At rest on frame 0, shrinks away at t 0 (wrap), rebuilt as the donut leaves, then holds.
+    {
+      id: 'lockup', t0: beat(19.25), t1: bar(6), in: 'none',
+      wrap: { exit: 0, to: { scale: 0 }, spring: 'EXIT', stagger: 32 },
+      layers: [
+        { id: 'BEAN', kind: 'mark', shape: 'ellipse', rx: 64, ry: 88, rot: 32, x: 540, y: 368, fill: 'crema',
+          enter: { at: beat(19.25), from: { scale: 0 }, spring: 'POP' } },
+        { id: 'CREASE', kind: 'mark', shape: 'path', d: 'M0 -70 C 30 -30, -30 30, 0 70', size: 140, rot: 32, x: 540, y: 368, stroke: 'ink', width: 15,
+          enter: { at: beat(19.75), from: { trim: [0, 0] }, spring: 'TRACE' }, accent: 'land' },
+        { id: 'ACME', kind: 'text', text: 'ACME BREW', font: 'display', cap: 96, track: 10, anchor: 'C', x: 540, y: 624, fill: 'paper',
+          enter: { at: beat(19.5), from: { dy: 64, op: 0, blur: 10 }, spring: 'LAND', stagger: 32 } },
+        { id: 'URL', kind: 'text', text: 'EXAMPLE.COM', font: 'mono', size: 44, track: 40, anchor: 'C', x: 540, y: 720, fill: 'crema',
+          enter: { at: beat(20.25), typed: true } },
+        { id: 'DEMO', kind: 'text', text: 'DEMO DATA, FICTIONAL PRODUCT', font: 'mono', size: 24, track: 20, anchor: 'L', x: 104, y: 968, fill: 'muted',
+          enter: { at: beat(20.75), typed: true } },
+      ],
+    },
+    // Hook. A crema circle opens from the bean; the week's total counts up.
+    {
+      id: 'hook', t0: 0, t1: beat(6), in: { kind: 'circle', x: 540, y: 368 }, bg: 'crema',
+      punch: { at: beat(4.5), z: 1.04 },
+      source: { fill: 'ink' },
+      layers: [
+        { id: 'TOTAL', kind: 'counter', ref: 'week.sum', font: 'display', fit: 872, anchor: 'C', x: 540, y: 520, fill: 'ink',
+          enter: { at: beat(0.25), from: { dy: 48, op: 0 }, spring: 'LAND' },
+          grow: { at: beat(0.25), spring: 'COUNT' }, accent: 'land' },
+        { id: 'BREWED', kind: 'text', text: 'CUPS BREWED.', font: 'display', cap: 72, track: 10, anchor: 'C', x: 540, y: 680, fill: 'ink',
+          enter: { at: beat(2), from: { dy: 48, op: 0, blur: 8 }, spring: 'LAND', stagger: 32 } },
+        { id: 'WEEKLY', kind: 'text', text: 'IN ONE WEEK', font: 'mono', size: 32, track: 40, anchor: 'C', x: 540, y: 768, fill: 'ink',
+          enter: { at: beat(3), typed: true } },
+      ],
+    },
+    // Breakdown. Dark bars sweep up over the crema; seven columns grow, Saturday lights up.
+    {
+      id: 'week', t0: beat(6), t1: beat(13), in: { kind: 'wipe', n: 7, dir: 'up', color: 'bg', stagger: 32 },
+      punch: { at: beat(11.5), z: 1.04 },
+      layers: [
+        { id: 'PERDAY', kind: 'text', text: 'CUPS PER DAY', font: 'display', cap: 56, track: 10, anchor: 'L', x: 104, y: 168, fill: 'paper',
+          enter: { at: beat(6), from: { dy: 48, op: 0, blur: 8 }, spring: 'LAND', stagger: 32 } },
+        { id: 'WEEK', kind: 'columns', data: 'week', box: [104, 344, 976, 800], width: 0.6, radius: 10, fill: 'roast',
+          values: { font: 'label', size: 30, fill: 'paper' }, cats: { font: 'mono', size: 26, fill: 'muted' },
+          grow: { at: beat(6.75), spring: 'GROW', stagger: 16 },
+          keys: [{ at: beat(9.5), highlight: 'SAT', fill: 'crema' }] },
+        { id: 'PEAK', kind: 'note', chart: 'WEEK', cat: 'SAT', text: 'BUSIEST DAY', font: 'mono', size: 26, track: 20, anchor: 'C', x: 796, y: 232, fill: 'paper', stroke: 'crema',
+          enter: { at: beat(10) } },
+      ],
+    },
+    // Composition. A cut on the downbeat onto the whole (the track); the parts sweep in and the leading share counts.
+    {
+      id: 'milk', t0: beat(13), t1: beat(19.5), in: 'cut',
+      punch: { at: beat(17), z: 1.04 },
+      layers: [
+        { id: 'LEADS', kind: 'text', text: 'OAT MILK LEADS.', font: 'display', cap: 56, track: 10, anchor: 'L', x: 104, y: 168, fill: 'paper',
+          enter: { at: beat(13), from: { dy: 48, op: 0, blur: 8 }, spring: 'LAND', stagger: 32 } },
+        { id: 'MILK', kind: 'donut', data: 'milk', x: 540, y: 584, r: 264, width: 80, gap: 8, track: 'well',
+          colors: { OAT: 'crema', DAIRY: 'foam', NONE: 'roast' },
+          centre: { cat: 'OAT', font: 'display', cap: 100, fill: 'paper', caption: 'OAT', captionFont: 'mono', captionSize: 28, captionFill: 'muted' },
+          labels: { font: 'label', size: 32, fill: 'paper', catFill: 'muted' },
+          grow: { at: beat(13.25), spring: 'SWEEP' }, accent: 'land',
+          exit: { at: beat(19), to: 'zero', spring: 'EXIT' } },
+      ],
+      exit: { at: beat(19), to: { dy: -48, op: 0 }, spring: 'EXIT' },
+    },
+  ],
+};
+
+/* ===== CORE BEGIN: shared/core.js, synced by tools/sync.mjs. Do not edit it here. ===== */
+/* ==========================================================================
+ * CORE: the deterministic runtime every motion-* engine shares.
+ * Source: shared/core.js in the motion-launch-videos repo, copied into each
+ * template by tools/sync.mjs. Do not edit it inside a film.
+ *
+ * seek(t) is a pure function of (t mod DUR): same t, same pixels, whatever was
+ * drawn before. No timers, no Date, no Math.random, no state between calls.
+ *   - Springs are closed-form step responses, one per target change, snapped
+ *     to exactly 1 once settled. A Prop is a base value plus its springs.
+ *     Springs still settling when the loop ends carry over the seam.
+ *   - Periodic motion runs a whole number of cycles per loop (cyc, wave,
+ *     loopNoise), so it is exact at the seam by construction.
+ *   - Randomness is seeded (mulberry32, hash).
+ *   - Continuous motion reads the exact t; discrete state (typing, drawings
+ *     held on twos, sprite frames, line boil) reads the quantised q, so every
+ *     subframe of one output frame agrees on it.
+ *   - Motion blur averages 1 to 64 subframes on a trailing 270-degree
+ *     shutter, one per 5 px of movement, never across a hard cut.
+ * The engine below describes its vertical through hooks (build, draw, disp,
+ * checks, stills, layout, visible, lastChange) and calls boot(ENGINE) last.
+ * The core keeps its internals to itself and exports the helpers listed at
+ * its end, so an engine can name its own functions freely.
+ * ========================================================================== */
+const CORE = (() => {
+const { W, H, FPS, DUR } = FILM;
+const NFR = Math.round(DUR * FPS);                 // output frames in the loop
+const CX = W / 2, CY = H / 2;
+const U = Math.min(W, H) / 1080;                   // scale for built-in pixel constants
+const PAL = FILM.palette;
+const USED = new Set();                            // palette roles the film draws with
+const col = (k) => PAL[k] || k;                    // look a role up (while drawing)
+const role = (k) => { USED.add(k); return PAL[k] || k; };   // resolve and register a role (at build time)
+const GRID = FILM.grid || {};
+const MARGIN = GRID.margin != null ? GRID.margin : Math.round(104 * U);
+const UNIT = GRID.unit || 8;
+const MEASURE = W - 2 * MARGIN;
+const LOOP = FILM.loop || 'hold';                  // 'hold': ends on a still copy of frame 0; 'cycle': periodic, continuous over the seam; 'none'
+const BLUR = FILM.blur !== false;                  // false: one sample per frame (cartoon, pixel art)
+const SHUTTER = 0.75;                              // 270 degrees, trailing
+const MIN_SAMPLES = 4, MAX_SAMPLES = 64, PX_PER_SAMPLE = 5;   // Uint16 sums hold up to 257 x 255
+const TAU = Math.PI * 2;
+
+const canvas = document.getElementById('c');
+canvas.width = W; canvas.height = H;
+canvas.setAttribute('role', 'img');
+canvas.setAttribute('aria-label', FILM.alt || FILM.title || '');
+if (FILM.title) document.title = FILM.title;
+document.documentElement.style.background = PAL.bg;
+document.body.style.background = PAL.bg;
+// CPU raster everywhere: Chrome moves a canvas from GPU to CPU after repeated getImageData
+// reads, which changes antialiasing mid-render. Pin every 2D context from its first call.
+// An alpha channel, though every frame fills it opaque: on an opaque canvas Chromium draws text with
+// LCD subpixel antialiasing (red and blue fringes on every glyph), whatever the command line says.
+const ctx = canvas.getContext('2d', { willReadFrequently: true, alpha: true });
+const mkCanvas = (w = W, h = H) => { const c = document.createElement('canvas'); c.width = w; c.height = h; return c; };
+const mk2d = (w, h) => { const c = mkCanvas(w, h); return [c, c.getContext('2d', { willReadFrequently: true })]; };
+const mctx = mkCanvas().getContext('2d', { willReadFrequently: true });   // measuring only
+
+/* ---------------- springs: closed-form step responses ---------------- */
+// [zeta, omega]. Underdamped (zeta < 1) overshoots and lands; zeta = 1 glides in without overshoot.
+// Engines add their own (boot merges ENGINE.springs, then FILM.springs).
+const SP = {
+  SLAM: [0.60, 30.0], LAND: [0.72, 28.0], PUNCH: [0.65, 31.0], FADE: [1, 32.4],
+  FOCUS: [1, 19.5], EXIT: [1, 32.4], PAN: [1, 32.4], DRAW: [1, 32.4],
+  LINE: [0.80, 15.6], MASK: [1, 19.5], TICK: [1, 32.4],
+};
+const spring = (sp) => { const s = typeof sp === 'string' ? SP[sp] : sp; if (!s) throw new Error(`unknown spring ${sp}`); return s; };
+const settle = (sp) => 16 / (sp[0] * sp[1]);       // after this the response snaps to exactly 1
+function S(tau, sp) {
+  const z = sp[0], w = sp[1];
+  if (tau <= 0) return 0;
+  if (tau >= settle(sp)) return 1;                 // residual < 2e-6 of the move: snap, so loops are bit-exact
+  if (z < 1) {
+    const wd = w * Math.sqrt(1 - z * z);
+    return 1 - Math.exp(-z * w * tau) * (Math.cos(wd * tau) + (z * w / wd) * Math.sin(wd * tau));
+  }
+  return 1 - (1 + w * tau) * Math.exp(-w * tau);
+}
+function dS(tau, sp) {                             // d S / d tau, per second
+  const z = sp[0], w = sp[1];
+  if (tau <= 0 || tau >= settle(sp)) return 0;
+  if (z < 1) { const wd = w * Math.sqrt(1 - z * z); return (w * w / wd) * Math.exp(-z * w * tau) * Math.sin(wd * tau); }
+  return w * w * tau * Math.exp(-w * tau);
+}
+// the visible landing: the first crossing of the target when underdamped, 95 % when critically damped
+function landT(sp) {
+  sp = spring(sp);
+  const z = sp[0], w = sp[1];
+  if (z < 1) { const wd = w * Math.sqrt(1 - z * z); return (Math.PI - Math.atan(wd / (z * w))) / wd; }
+  let a = 0, b = settle(sp);
+  for (let i = 0; i < 40; i++) { const m = (a + b) / 2; if (S(m, sp) < 0.95) a = m; else b = m; }
+  return b;
+}
+
+// A property = base value + one spring per target change (superposed). set() is an instant jump
+// that cancels earlier springs; use it only while the element is invisible, at a hard cut, or hidden
+// inside fast motion blur. Events are added in time order. In a looping film, springs still settling
+// at the end of the loop carry over the seam into its start (only while no set() has happened yet),
+// so the film is continuous there; the value a Prop ends on must equal the value it starts from.
+const PROPS = [];
+class Prop {
+  constructor(v0, name) { this.v0 = v0; this.last = v0; this.ev = []; this.tLast = -Infinity; this.name = name || '?'; this.tail = null; this.firstSet = Infinity; PROPS.push(this); }
+  order(t) { if (t < this.tLast - 1e-9) throw new Error(`${this.name}: event at ${t} added after one at ${this.tLast}`); this.tLast = t; this.tail = null; }
+  to(t, v, sp) { this.order(t); this.ev.push({ t, d: v - this.last, sp: spring(sp), set: false }); this.last = v; return this; }
+  set(t, v) { this.order(t); this.ev.push({ t, v, set: true }); this.last = v; return this; }
+  seam() {                                         // the springs that carry over the seam
+    if (this.tail) return this.tail;
+    let k = -1;
+    this.firstSet = Infinity;
+    for (let i = 0; i < this.ev.length; i++) if (this.ev[i].set) { k = i; if (this.firstSet === Infinity) this.firstSet = this.ev[i].t; }
+    this.tail = LOOP === 'none' ? [] : this.ev.slice(k + 1).filter((e) => e.d !== 0 && e.t + settle(e.sp) > DUR);
+    return this.tail;
+  }
+  at(t) {
+    let v = this.v0, i0 = 0;
+    const ev = this.ev;
+    for (let i = 0; i < ev.length; i++) if (ev[i].set && ev[i].t <= t) { v = ev[i].v; i0 = i + 1; }
+    for (let i = i0; i < ev.length; i++) { const e = ev[i]; if (!e.set) v += e.d * S(t - e.t, e.sp); }
+    const tail = this.seam();
+    if (tail.length && t < this.firstSet) for (const e of tail) v += e.d * (S(t + DUR - e.t, e.sp) - 1);
+    return v;
+  }
+  vel(t) {                                         // per second
+    let v = 0, i0 = 0;
+    const ev = this.ev;
+    for (let i = 0; i < ev.length; i++) if (ev[i].set && ev[i].t <= t) i0 = i + 1;
+    for (let i = i0; i < ev.length; i++) { const e = ev[i]; if (!e.set) v += e.d * dS(t - e.t, e.sp); }
+    const tail = this.seam();
+    if (tail.length && t < this.firstSet) for (const e of tail) v += e.d * dS(t + DUR - e.t, e.sp);
+    return v;
+  }
+  active(a, b) {                                   // does the value change anywhere in (a, b]?
+    for (const e of this.ev) {
+      if (e.set) { if (e.t > a && e.t <= b) return true; }
+      else if (e.d !== 0 && e.t < b && e.t + settle(e.sp) > a) return true;
+    }
+    if (a < this.firstSet) for (const e of this.seam()) if (e.t - DUR < b && e.t - DUR + settle(e.sp) > a) return true;
+    return false;
+  }
+  settleEnd() { let m = -Infinity; for (const e of this.ev) m = Math.max(m, e.set ? e.t : e.t + settle(e.sp)); return m; }
+  lastSet(a, b) { let m = -Infinity; for (const e of this.ev) if (e.set && e.t > a && e.t <= b && e.t > m) m = e.t; return m; }
+}
+
+/* ---------------- periodic motion and seeded randomness ---------------- */
+// n whole cycles per loop: exact at the seam by construction. Use these for anything that never stops
+// (an idle bob, a spin, a drifting field) and set ENGINE.always, or declare its windows with activeIn.
+const cyc = (t, n, phase = 0) => TAU * (n * t / DUR + phase);
+const wave = (t, n, phase = 0) => Math.sin(cyc(t, n, phase));
+function mulberry32(a) {
+  return function () {
+    a |= 0; a = (a + 0x6D2B79F5) | 0;
+    let t = Math.imul(a ^ (a >>> 15), 1 | a);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+// three integers to [0, 1), well mixed: a pure replacement for Math.random keyed by what it decides
+function hash(a, b = 0, c = 0) {
+  let h = Math.imul((a | 0) ^ 0x3C6EF372, 0x85EBCA6B);
+  h = Math.imul(h ^ (h >>> 13) ^ (b | 0), 0xC2B2AE35);
+  h = Math.imul(h ^ (h >>> 16) ^ (c | 0), 0x27D4EB2F);
+  h ^= h >>> 15; h = Math.imul(h, 0x85EBCA6B); h ^= h >>> 13; h = Math.imul(h, 0xC2B2AE35); h ^= h >>> 16;
+  return (h >>> 0) / 4294967296;
+}
+// smooth noise in [-1, 1] that loops exactly: three whole harmonics (n, 2n+1, 4n+3 cycles per loop) with seeded phases
+function loopNoise(t, n, seed) {
+  return (Math.sin(cyc(t, n, hash(seed, 1))) + 0.5 * Math.sin(cyc(t, 2 * n + 1, hash(seed, 2))) + 0.25 * Math.sin(cyc(t, 4 * n + 3, hash(seed, 3)))) / 1.75;
+}
+function shuffled(arr, seed) {                     // Fisher-Yates on a copy, seeded
+  const r = mulberry32(seed), a = arr.slice();
+  for (let i = a.length - 1; i > 0; i--) { const j = Math.floor(r() * (i + 1)); const x = a[i]; a[i] = a[j]; a[j] = x; }
+  return a;
+}
+
+/* ---------------- time ---------------- */
+const wrapT = (t) => ((t % DUR) + DUR) % DUR;
+const frameOf = (t) => Math.ceil(t * FPS - 1e-9);  // all subframes of output frame n map to n
+const typed = (q, ts, n) => Math.max(0, Math.min(n, Math.ceil((q - ts) * FPS - 1e-6)));   // one character per frame
+const noteSec = (v) => (typeof v === 'number' && v >= 1 ? 4 * 60 / FILM.BPM / v : v);     // 16 -> a 16th note
+const drawing = (q, fps) => Math.floor(q * fps + 1e-6);    // index of the held drawing (12 fps = on twos at 24, fives at 60)
+
+/* ---------------- colour ---------------- */
+function rgbOf(hex) { const h = String(hex).replace('#', ''); const n = parseInt(h.length === 3 ? h.replace(/./g, '$&$&') : h.slice(0, 6), 16); return [(n >> 16) & 255, (n >> 8) & 255, n & 255]; }
+const hexOf = (r, g, b) => '#' + [r, g, b].map((v) => Math.max(0, Math.min(255, Math.round(v))).toString(16).padStart(2, '0')).join('').toUpperCase();
+function mix(a, b, k) { const x = rgbOf(a), y = rgbOf(b); return hexOf(x[0] + (y[0] - x[0]) * k, x[1] + (y[1] - x[1]) * k, x[2] + (y[2] - x[2]) * k); }
+function hueChroma(r, g, b) {
+  const mx = Math.max(r, g, b), mn = Math.min(r, g, b), C = mx - mn;
+  if (C === 0) return [0, 0];
+  let h;
+  if (mx === r) h = 60 * (((g - b) / C) % 6); else if (mx === g) h = 60 * ((b - r) / C + 2); else h = 60 * ((r - g) / C + 4);
+  return [h < 0 ? h + 360 : h, C];
+}
+const hueDist = (a, b) => { const d = Math.abs(a - b) % 360; return d > 180 ? 360 - d : d; };
+function lum(hex) { const c = rgbOf(hex).map((v) => { v /= 255; return v <= 0.04045 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4); }); return 0.2126 * c[0] + 0.7152 * c[1] + 0.0722 * c[2]; }
+const contrast = (a, b) => { const x = lum(a), y = lum(b); return (Math.max(x, y) + 0.05) / (Math.min(x, y) + 0.05); };
+function inksClash(a, b) {                         // two inks may share a pixel only when that cannot make a new hue
+  const [ha, ca] = hueChroma(...rgbOf(a)), [hb, cb] = hueChroma(...rgbOf(b));
+  return ca >= 40 && cb >= 40 && hueDist(ha, hb) > 13;
+}
+
+/* ---------------- fonts and type ---------------- */
+const face = (r) => { const f = FILM.fonts && FILM.fonts[r]; if (!f) throw new Error(`no font role "${r}"`); return f; };
+const fontStr = (r, size) => { const f = face(r); return `${f.style === 'italic' ? 'italic ' : ''}${f.weight} ${size}px "${f.family}"`; };
+function setFont(c, f) { c.font = f; c.fontKerning = 'normal'; c.letterSpacing = '0px'; c.textBaseline = 'alphabetic'; c.textAlign = 'left'; }
+function capRatio(r) { setFont(mctx, fontStr(r, 1000)); return mctx.measureText('H').actualBoundingBoxAscent / 1000; }
+const TEXT = {};                                   // font role -> every character it draws (checked against the font's cmap)
+const useText = (r, s) => { face(r); TEXT[r] = (TEXT[r] || '') + s; return s; };
+function textByFace() {
+  const out = {};
+  for (const [r, s] of Object.entries(TEXT)) { const f = face(r), k = `${f.family}|${f.weight}`; out[k] = (out[k] || '') + s; }
+  return out;
+}
+
+// One line of type, one glyph at a time: the font's kerning recovered from pair widths, optical
+// pairs on top (1/1000 em), then a fixed tracking, a tracking solved to span `justify` px, or a
+// size solved (`fit`) so the ink spans the measure (or `fit: <px>`). `cap: <px>` sizes from a cap
+// height. x and anchor ('L', 'R', 'C') place the ink edge or centre. Measured once, after the fonts load.
+function measureRun(o, size) {
+  const font = fontStr(o.font || 'display', size);
+  setFont(mctx, font);
+  const ch = Array.from(o.text), n = ch.length;
+  const met = ch.map((c) => mctx.measureText(c));
+  const adv = met.map((m) => m.width);
+  const gap = [];
+  for (let i = 0; i < n - 1; i++) {
+    const kern = mctx.measureText(ch[i] + ch[i + 1]).width - adv[i] - adv[i + 1];
+    gap.push(adv[i] + kern + ((o.pairs || {})[ch[i] + ch[i + 1]] || 0) / 1000 * size);
+  }
+  const pens = (T) => { const x = [0]; for (let i = 0; i < n - 1; i++) x.push(x[i] + gap[i] + T); return x; };
+  const inkW = (x) => (x[n - 1] + met[n - 1].actualBoundingBoxRight) - (x[0] - met[0].actualBoundingBoxLeft);
+  return { font, ch, n, met, pens, inkW };
+}
+function layoutText(o) {
+  const r = o.font || 'display';
+  useText(r, o.text);
+  let size = o.size != null ? o.size : o.cap != null ? o.cap / capRatio(r) : 100;
+  const width = o.fit ? (o.fit === true ? MEASURE : o.fit) : null;
+  if (width) for (let k = 0; k < 3; k++) {         // ink width is linear in size; converge
+    const m = measureRun(o, size);
+    size *= width / m.inkW(m.pens((o.track || 0) / 1000 * size));
+  }
+  const m = measureRun(o, size), { ch, n, met } = m;
+  const T = o.justify != null && n > 1 ? (o.justify - m.inkW(m.pens(0))) / (n - 1) : (o.track || 0) / 1000 * size;
+  const x = m.pens(T);
+  const inkL0 = x[0] - met[0].actualBoundingBoxLeft, inkR0 = x[n - 1] + met[n - 1].actualBoundingBoxRight;
+  const anchor = o.anchor || 'L';
+  const ax = o.x != null ? o.x : anchor === 'R' ? W - MARGIN : anchor === 'C' ? CX : MARGIN;
+  const shift = anchor === 'R' ? ax - inkR0 : anchor === 'C' ? ax - (inkL0 + inkR0) / 2 : ax - inkL0;
+  let slot = 0;
+  const glyphs = ch.map((c, i) => {
+    const sp = /\s/.test(c);
+    const g = { ch: c, i, x: x[i] + shift, space: sp, slot: sp ? -1 : slot,
+      inkL: x[i] + shift - met[i].actualBoundingBoxLeft, inkR: x[i] + shift + met[i].actualBoundingBoxRight,
+      asc: met[i].actualBoundingBoxAscent, desc: met[i].actualBoundingBoxDescent };
+    if (!sp) slot++;
+    return g;
+  });
+  setFont(mctx, m.font);
+  const capH = mctx.measureText('H').actualBoundingBoxAscent;
+  const ink = glyphs.filter((g) => !g.space);
+  const base = o.baseline != null ? o.baseline : 0;
+  return { id: o.id, text: o.text, role: r, font: m.font, size, baseline: base, glyphs, slots: slot,
+    trackPx: T, trackEm: T / size * 1000, inkL: inkL0 + shift, inkR: inkR0 + shift, capH, capTop: base - capH,
+    top: base - Math.max(...ink.map((g) => g.asc)), bottom: base + Math.max(...ink.map((g) => g.desc)) };
+}
+
+// A canvas filter blurs a layer the size of the whole canvas (about 25 ms at 1080 px). Blurred
+// glyphs are instead drawn once into small sprites, blur quantised to steps nobody can see, in a
+// bounded cache. A sprite is a pure function of (font, glyph, colour, blur): a hit and a miss give
+// the same pixels, so seek() stays pure.
+const SPRITES = new Map();
+let spritePx = 0;
+const SPRITE_BUDGET = 24e6;
+const blurQ = (b) => (b < 4 ? Math.round(b * 4) / 4 : b < 10 ? Math.round(b * 2) / 2 : Math.round(b));
+function glyphSprite(font, ch, color, b) {
+  const key = font + '|' + ch + '|' + color + '|' + b;
+  let s = SPRITES.get(key);
+  if (s) { SPRITES.delete(key); SPRITES.set(key, s); return s; }
+  setFont(mctx, font);
+  const m = mctx.measureText(ch), pad = Math.ceil(3 * b) + 2;
+  const c = mkCanvas(Math.max(1, Math.ceil(m.actualBoundingBoxLeft + m.actualBoundingBoxRight) + 2 * pad), Math.max(1, Math.ceil(m.actualBoundingBoxAscent + m.actualBoundingBoxDescent) + 2 * pad));
+  const x = c.getContext('2d', { willReadFrequently: true });
+  setFont(x, font);
+  x.fillStyle = color; x.filter = `blur(${b}px)`;
+  const ox = pad + m.actualBoundingBoxLeft, oy = pad + m.actualBoundingBoxAscent;
+  x.fillText(ch, ox, oy);
+  s = { c, ox, oy, px: c.width * c.height };
+  SPRITES.set(key, s); spritePx += s.px;
+  for (const [k, v] of SPRITES) { if (spritePx <= SPRITE_BUDGET) break; SPRITES.delete(k); spritePx -= v.px; }
+  return s;
+}
+function fillGlyph(c, ch, x, y, color, a, blur) {
+  if (!(a > 0.002)) return;
+  c.globalAlpha = a > 1 ? 1 : a;
+  c.filter = 'none';
+  const bq = blur > 0.05 ? blurQ(blur) : 0;
+  if (bq > 0) { const s = glyphSprite(c.font, ch, color, bq); c.drawImage(s.c, x - s.ox, y - s.oy); return; }
+  c.fillStyle = color;
+  c.fillText(ch, x, y);
+}
+// Draw a laid-out line. fx(g) may return { dx, dy, op, blur, sx, sy, rot, color, ch, pivot } per glyph
+// ('base' scales and turns about the glyph's foot on the baseline, 'mid' about its centre), or null to hide it.
+function drawText(c, L, color, fx) {
+  setFont(c, L.font);
+  for (const g of L.glyphs) {
+    if (g.space) continue;
+    const e = fx ? fx(g) : {};
+    if (!e) continue;
+    const op = e.op != null ? e.op : 1;
+    if (!(op > 0.002)) continue;
+    const dx = e.dx || 0, dy = e.dy || 0, x = g.x + dx, y = L.baseline + dy;
+    const sx = e.sx != null ? e.sx : 1, sy = e.sy != null ? e.sy : 1, rot = e.rot || 0;
+    const cc = e.color || color, ch = e.ch || g.ch;
+    if (rot || sx !== 1 || sy !== 1) {
+      const px = (g.inkL + g.inkR) / 2 + dx, py = e.pivot === 'base' ? y : y - L.capH / 2;
+      c.save(); c.translate(px, py); c.rotate(rot); c.scale(sx, sy); c.translate(-px, -py);
+      fillGlyph(c, ch, x, y, cc, op, e.blur || 0);
+      c.restore();
+    } else fillGlyph(c, ch, x, y, cc, op, e.blur || 0);
+  }
+  c.globalAlpha = 1; c.filter = 'none';
+}
+
+/* ---------------- SVG paths ---------------- */
+// A path from SVG path data: Path2D to draw it, its length and points for trims and morphs.
+// Measured once through a hidden SVG element (the only DOM the core touches besides the canvas).
+let svgRoot = null;
+function svgPath(d) {
+  if (!svgRoot) {
+    svgRoot = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+    svgRoot.setAttribute('style', 'position:absolute;left:0;top:0;width:0;height:0;overflow:hidden');
+    document.body.appendChild(svgRoot);
+  }
+  const el = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+  el.setAttribute('d', d);
+  svgRoot.appendChild(el);
+  const len = el.getTotalLength(), bb = el.getBBox();
+  return { d, p2d: new Path2D(d), len, box: [bb.x, bb.y, bb.x + bb.width, bb.y + bb.height],
+    points: (n) => { const out = []; for (let i = 0; i < n; i++) { const p = el.getPointAtLength(len * i / n); out.push([p.x, p.y]); } return out; } };
+}
+
+/* ---------------- registries the engine fills while it builds ---------------- */
+const CUTS = [];                                   // hard cuts: motion blur never averages across them
+const ACTIVE = [];                                 // [a, b] windows where something moves outside the Props
+const ACCENTS = [];                                // { t, what }: accent frames (stills and the palette gate)
+const WARN = [];                                   // timeline warnings for the critique
+const CONTRAST = [];                               // { id, fg, bg, min }: text that must read
+let ENGINE = null;
+const cutAt = (t) => { if (t > 1e-9 && t < DUR && !CUTS.includes(t)) CUTS.push(t); };
+const activeIn = (a, b) => { ACTIVE.push([a, b]); };
+const accentAt = (t, what) => { ACCENTS.push({ t, what }); };
+const needContrast = (id, fg, bg, min) => { CONTRAST.push({ id, fg, bg: bg || 'bg', min }); };
+
+/* ---------------- frame ---------------- */
+function draw(c, tIn) {
+  const t = wrapT(tIn);
+  let nq = frameOf(t);
+  if (nq >= NFR) nq -= NFR;                        // the last subframes of the loop belong to frame 0
+  const q = nq / FPS;
+  c.setTransform(1, 0, 0, 1, 0, 0);
+  c.globalCompositeOperation = 'source-over'; c.globalAlpha = 1; c.filter = 'none';
+  c.fillStyle = PAL.bg; c.fillRect(0, 0, W, H);
+  ENGINE.draw(c, t, q, nq);
+  c.setTransform(1, 0, 0, 1, 0, 0);
+  c.globalCompositeOperation = 'source-over'; c.globalAlpha = 1; c.filter = 'none';
+}
+let isReady = false;
+function seek(t) { if (!isReady) return false; draw(ctx, Number(t)); return true; }
+
+/* ---------------- motion blur ---------------- */
+// Subframes on a trailing shutter, clamped to a hard cut so the first frame after it is not a
+// double exposure. How many: 1 when nothing changes (exact: the mean of identical samples is the
+// sample), else one per 5 px of the engine's measured displacement, 4 to 64.
+function shutterTimes(n, k) {
+  const tn = n / FPS, out = [];
+  for (let i = k - 1; i >= 0; i--) {
+    let t = k === 1 ? tn : tn - i * SHUTTER / (FPS * (k - 1));
+    for (const cut of CUTS) if (tn >= cut && t < cut) t = cut;
+    if (ENGINE.seamCut && tn === 0 && t < 0) t = 0;   // a cut at the loop point itself
+    out.push(t);
+  }
+  return out;
+}
+function motionAt(n) {
+  if (!BLUR) return { samples: 1, disp: 0 };
+  const ta = wrapT(shutterTimes(n, 2)[0]), tb = wrapT(n / FPS);
+  const spans = ta === tb ? [] : ta < tb ? [[ta, tb]] : [[ta, DUR], [0, tb]];   // a shutter clamped flat against a cut cannot move
+  let moving = false;
+  for (const [a, b] of spans) if (ENGINE.always || ACTIVE.some(([x, y]) => x < b && y > a) || PROPS.some((p) => p.active(a, b))) { moving = true; break; }
+  if (!moving) return { samples: 1, disp: 0 };
+  const minS = ENGINE.minSamples || MIN_SAMPLES;    // an engine whose every sample is costly (WebGL) may allow 2
+  const disp = ENGINE.disp ? ENGINE.disp(ta, tb) : PX_PER_SAMPLE * minS;
+  return { samples: Math.max(minS, Math.min(MAX_SAMPLES, Math.ceil(disp / PX_PER_SAMPLE))), disp };
+}
+let SUM = null;
+function renderFrame(n) {
+  if (!isReady) return 0;
+  const { samples } = motionAt(n);
+  const times = shutterTimes(n, samples);
+  if (samples === 1) { draw(ctx, times[0]); return 1; }
+  if (ENGINE.accumulate) { ENGINE.accumulate(ctx, times); return samples; }
+  if (!SUM) SUM = new Uint16Array(W * H * 4); else SUM.fill(0);
+  for (const t of times) {
+    draw(ctx, t);
+    const px = ctx.getImageData(0, 0, W, H).data;
+    for (let i = 0; i < px.length; i++) SUM[i] += px[i];
+  }
+  const out = ctx.createImageData(W, H), o = out.data, half = samples >> 1;
+  for (let i = 0; i < o.length; i++) o[i] = ((SUM[i] + half) / samples) | 0;
+  ctx.putImageData(out, 0, 0);
+  return samples;
+}
+
+/* ---------------- analysis (never called by seek) ---------------- */
+function accentFrames() { return ACCENTS.map((m) => ({ what: m.what, t: Math.round(m.t * 1000) / 1000, frame: Math.round(m.t * FPS) % NFR })); }
+
+// Off-palette scan. Default: pixels with chroma >= 40 whose hue is more than 13 degrees from every
+// chromatic palette colour (two inks mixed into a new one), counted as `area` only where the 4
+// neighbours are off too (patches 3+ px across, not the 1-px antialiasing fringe). strict: any pixel
+// that is not exactly a palette colour (pixel art).
+function offPalette(frames, mode, strict) {
+  const cols = Object.values(PAL).map(rgbOf);
+  const hues = cols.map((c) => hueChroma(...c)).filter(([, c]) => c >= 40).map(([h]) => h);
+  const exact = new Set(cols.map(([r, g, b]) => (r << 16) | (g << 8) | b));
+  const out = [];
+  for (const n of frames) {
+    if (mode === 'seek') seek(n / FPS); else renderFrame(n);
+    const px = ctx.getImageData(0, 0, W, H).data, off = new Uint8Array(W * H);
+    let count = 0; const seen = {};
+    for (let p = 0, i = 0; p < W * H; p++, i += 4) {
+      let bad;
+      if (strict) bad = !exact.has((px[i] << 16) | (px[i + 1] << 8) | px[i + 2]);
+      else { const [h, C] = hueChroma(px[i], px[i + 1], px[i + 2]); bad = C >= 40 && !hues.some((hp) => hueDist(h, hp) <= 13); }
+      if (bad) { off[p] = 1; count++; const k = `${px[i]},${px[i + 1]},${px[i + 2]}`; seen[k] = (seen[k] || 0) + 1; }
+    }
+    let area = strict ? count : 0;
+    if (!strict) for (let y = 1; y < H - 1; y++) for (let x = 1; x < W - 1; x++) { const p = y * W + x; if (off[p] && off[p - 1] && off[p + 1] && off[p - W] && off[p + W]) area++; }
+    const top = Object.entries(seen).sort((a, b) => b[1] - a[1]).slice(0, 3).map(([k, v]) => `(${k})x${v}`).join(' ');
+    out.push({ frame: n, count, area, top });
+  }
+  return out;
+}
+
+// the last moment anything on screen can change: spring settles, active windows, accents, and the
+// engine's own discrete state (typing, blinking, snaps)
+function lastChange() {
+  let t = -Infinity, what = 'nothing moves';
+  const see = (v, w) => { if (v > t) { t = v; what = w; } };
+  for (const p of PROPS) see(p.settleEnd(), `${p.name} settles`);
+  for (const w of ACTIVE) see(w[1], 'an active window ends');
+  for (const m of ACCENTS) see(m.t + 3 / FPS, `the accent on ${m.what} ends`);
+  if (ENGINE.lastChange) ENGINE.lastChange(see);
+  return { t, what };
+}
+function loopChecks(add) {
+  for (const p of PROPS) for (const e of p.ev) if (e.t >= DUR - 1e-9 || e.t < 0) { add('timeline', 'WARN', `${p.name}: an event at ${e.t.toFixed(3)} s is outside the loop (0 to ${DUR})`); break; }
+  if (LOOP === 'hold') {
+    const last = lastChange(), need = DUR - (1 + SHUTTER) / FPS, hold = Math.floor((DUR - last.t) * FPS + 1e-6);
+    add('loop tail', last.t <= need ? 'PASS' : 'FAIL', `last change at ${last.t.toFixed(3)} s (${last.what}); still hold at least ${hold} frames (needs >= 2; loopcheck counts identical pixels)`);
+  } else if (LOOP === 'cycle') {
+    const open = PROPS.filter((p) => Math.abs(p.last - p.v0) > 1e-6);
+    add('loop closes', open.length ? 'FAIL' : 'PASS', open.length
+      ? `${open.slice(0, 6).map((p) => `${p.name} ends at ${+p.last.toFixed(3)} but starts at ${+p.v0.toFixed(3)}`).join('; ')}${open.length > 6 ? ` and ${open.length - 6} more` : ''}: the loop jumps`
+      : `${PROPS.length} props return to where they start; springs still settling at the end carry over the seam`);
+    if (ENGINE.cycles) for (const c of ENGINE.cycles()) {
+      const k = DUR / c.period;
+      add(`cycle: ${c.what}`, Math.abs(k - Math.round(k)) < 1e-6 ? 'PASS' : 'FAIL', `${+k.toFixed(4)} cycles per loop (period ${+c.period.toFixed(4)} s); must be whole`);
+    }
+  }
+}
+// frames where nothing is on screen (a blank flash between scenes), from the engine's visible(t)
+function emptyRuns() {
+  const runs = [];
+  let start = -1;
+  for (let n = 0; n <= NFR; n++) {
+    const empty = n < NFR && !ENGINE.visible(n / FPS);
+    if (empty && start < 0) start = n;
+    if (!empty && start >= 0) { runs.push([start, n - 1]); start = -1; }
+  }
+  return runs;
+}
+// Collision and live-area helpers for engines' checks. Boxes are [x0, y0, x1, y1] in canvas px.
+function checkLiveArea(add, id, b, bleed) {
+  if (bleed) return;
+  const out = [];
+  if (b[0] < MARGIN - 1) out.push(`left ${b[0].toFixed(1)} < ${MARGIN}`);
+  if (b[2] > W - MARGIN + 1) out.push(`right ${b[2].toFixed(1)} > ${W - MARGIN}`);
+  if (b[1] < MARGIN - 1) out.push(`top ${b[1].toFixed(1)} < ${MARGIN}`);
+  if (b[3] > H - MARGIN + 1) out.push(`bottom ${b[3].toFixed(1)} > ${H - MARGIN}`);
+  add(`live area: ${id}`, out.length ? 'FAIL' : 'PASS', out.join(', ') || `${b.map((v) => v.toFixed(0)).join(', ')}`);
+}
+function checkSpacing(add, items, tight = 16 * U) {  // items: [{ id, b }] on screen together at rest
+  for (let i = 0; i < items.length; i++) for (let j = i + 1; j < items.length; j++) {
+    const a = items[i].b, b = items[j].b;
+    const dx = Math.max(0, a[0] - b[2], b[0] - a[2]), dy = Math.max(0, a[1] - b[3], b[1] - a[3]);
+    const gap = dx === 0 && dy === 0 ? -1 : Math.hypot(dx, dy);
+    if (gap < 0) add(`collision: ${items[i].id} / ${items[j].id}`, 'FAIL', 'boxes overlap at rest');
+    else if (gap < tight) add(`cramped: ${items[i].id} / ${items[j].id}`, 'WARN', `${gap.toFixed(1)} px apart (< ${tight.toFixed(0)} px)`);
+  }
+}
+function critique() {
+  const checks = [];
+  const add = (name, status, detail) => checks.push({ name, status, detail });
+  if (ENGINE.checks) ENGINE.checks(add);
+  for (const c of CONTRAST) {
+    const r = contrast(col(c.fg), col(c.bg));
+    add(`contrast: ${c.id}`, r < c.min ? 'FAIL' : 'PASS', `${r.toFixed(2)}:1 on ${c.bg} (needs ${c.min}:1)`);
+  }
+  const stray = [...USED].filter((k) => !(k in PAL));
+  add('palette roles', stray.length ? 'FAIL' : 'PASS', stray.length ? `not in the palette: ${stray.join(', ')}` : `${USED.size} roles used, all in the palette`);
+  loopChecks(add);
+  if (ENGINE.visible) {
+    const minRun = Math.max(2, Math.round(FPS / 15));
+    for (const [a, b] of emptyRuns()) if (b - a + 1 >= minRun)
+      add('blank frames', 'WARN', `frames ${a}-${b} (t ${(a / FPS).toFixed(3)}-${(b / FPS).toFixed(3)}) show nothing: start the next entrance sooner, or pop it in at the cut`);
+  }
+  for (const w of WARN) add('timeline', 'WARN', w);
+  return checks;
+}
+// review stills: the engine's plan (each scene in and at rest, each transition) plus every accent frame
+function stillsPlan() {
+  const plan = [], seen = new Set();
+  const push = (frame, name, what) => { frame = Math.max(0, Math.min(NFR - 1, Math.round(frame))); if (seen.has(frame)) return; seen.add(frame); plan.push({ frame, name, what }); };
+  if (ENGINE.stills) ENGINE.stills(push);
+  for (const m of accentFrames()) push(m.frame, `accent-${m.what}`, `accent on ${m.what}`);
+  return plan.sort((a, b) => a.frame - b.frame);
+}
+function layoutTable() {
+  return { film: { W, H, FPS, DUR, frames: NFR, bpm: FILM.BPM, loop: LOOP, blur: BLUR, margin: MARGIN, measure: MEASURE, engine: ENGINE.name },
+    ...(ENGINE.layout ? ENGINE.layout() : {}), cuts: CUTS, accents: accentFrames(), warnings: WARN };
+}
+
+/* ---------------- boot ---------------- */
+function filmChars() {                              // every character any string in FILM holds, to load the fonts with
+  const s = new Set('H0');
+  const walk = (v, d) => { if (typeof v === 'string') { for (const c of v) s.add(c); } else if (v && typeof v === 'object' && d < 12) for (const k in v) walk(v[k], d + 1); };
+  walk(FILM, 0);
+  return [...s].join('');
+}
+function boot(E) {
+  ENGINE = E;
+  Object.assign(SP, E.springs || {}, FILM.springs || {});
+  for (const [k, v] of Object.entries(SP)) if (!(v[0] > 0 && v[0] <= 1 && v[1] > 0)) throw new Error(`spring ${k}: zeta must be in (0, 1] and omega > 0`);
+  window.DURATION = DUR; window.FPS = FPS; window.WIDTH = W; window.HEIGHT = H;
+  window.FILM_META = { title: FILM.title, poster: FILM.poster || 0, bg: PAL.bg, palette: PAL, loop: LOOP, blur: BLUR,
+    engine: E.name, strictPalette: !!E.strictPalette, seamCut: !!E.seamCut, gif: E.gif || null };
+  Object.assign(window, { seek, renderFrame, motionAt, layoutTable, critique, stillsPlan, textByFace, accentFrames, misFrames: accentFrames, offPalette });
+  const roles = Object.keys(FILM.fonts || {}), sample = filmChars();
+  window.ready = Promise.all(roles.map((r) => document.fonts.load(fontStr(r, 100), sample)))
+    .then((sets) => { if (sets.some((s) => !s.length)) throw new Error('a font face failed to load'); return E.build(); })
+    .then(() => {
+      for (const p of PROPS) p.seam();
+      CUTS.sort((a, b) => a - b);
+      isReady = true;
+      seek(0);
+      return true;
+    });
+  // Preview: requestAnimationFrame is the only time source and it only calls seek().
+  // Space pauses, the arrow keys step one frame, ?t=3.5 opens paused at a time.
+  if (!/[?&]capture\b/.test(location.search)) {
+    window.ready.then(() => {
+      const m = /[?&]t=([\d.]+)/.exec(location.search);
+      let paused = !!m, pos = m ? Number(m[1]) : 0, last = null;
+      const tick = (ts) => {
+        if (!paused && last !== null) pos = wrapT(pos + (ts - last) / 1000);
+        last = ts; seek(pos); requestAnimationFrame(tick);
+      };
+      addEventListener('keydown', (e) => {
+        if (e.key === ' ') { paused = !paused; e.preventDefault(); }
+        if (e.key === 'ArrowRight') { paused = true; pos = wrapT(Math.round(pos * FPS + 1) / FPS); }
+        if (e.key === 'ArrowLeft') { paused = true; pos = wrapT(Math.round(pos * FPS - 1) / FPS); }
+      });
+      requestAnimationFrame(tick);
+    });
+  }
+}
+
+  return { W, H, FPS, DUR, NFR, CX, CY, U, PAL, col, role, GRID, MARGIN, UNIT, MEASURE, LOOP, BLUR, SHUTTER, TAU,
+    canvas, ctx, mkCanvas, mk2d, mctx,
+    SP, spring, settle, S, dS, landT, Prop, PROPS,
+    cyc, wave, mulberry32, hash, loopNoise, shuffled,
+    wrapT, frameOf, typed, noteSec, drawing,
+    rgbOf, hexOf, mix, hueChroma, hueDist, lum, contrast, inksClash,
+    face, fontStr, setFont, capRatio, useText, measureRun, layoutText, blurQ, glyphSprite, fillGlyph, drawText,
+    svgPath, CUTS, ACTIVE, ACCENTS, WARN, CONTRAST, cutAt, activeIn, accentAt, needContrast,
+    checkLiveArea, checkSpacing, seek, boot };
+})();
+const { W, H, FPS, DUR, NFR, CX, CY, U, PAL, col, role, GRID, MARGIN, UNIT, MEASURE, LOOP, BLUR, SHUTTER, TAU,
+  canvas, ctx, mkCanvas, mk2d, mctx,
+  SP, spring, settle, S, dS, landT, Prop, PROPS,
+  cyc, wave, mulberry32, hash, loopNoise, shuffled,
+  wrapT, frameOf, typed, noteSec, drawing,
+  rgbOf, hexOf, mix, hueChroma, hueDist, lum, contrast, inksClash,
+  face, fontStr, setFont, capRatio, useText, measureRun, layoutText, blurQ, glyphSprite, fillGlyph, drawText,
+  svgPath, CUTS, ACTIVE, ACCENTS, WARN, CONTRAST, cutAt, activeIn, accentAt, needContrast,
+  checkLiveArea, checkSpacing, seek, boot } = CORE;
+/* ===== CORE END ===== */
+
+/* ==========================================================================
+ * ENGINE: motion-charts. Animated data charts bound to FILM.data: counters,
+ * columns, bars, lines and donuts whose values move on critically damped
+ * springs while their labels count on the same springs, annotations, type,
+ * simple marks, wipes and a camera punch. Every number on screen is
+ * formatted from the data, and the critique checks that it is honest.
+ * ========================================================================== */
+const DEG = Math.PI / 180;
+const clamp01 = (v) => (v < 0 ? 0 : v > 1 ? 1 : v);
+const SCENES = [], LAYERS = {}, DATA = {};
+const DPROPS = [];                                 // every Prop that means a number: { P, L, what, tol }
+const ISSUES = [];                                 // critique rows found while building
+const issue = (name, status, detail) => ISSUES.push([name, status, detail]);
+const DATA_KINDS = ['counter', 'columns', 'bars', 'line', 'donut'];
+let camZ = null;
+
+/* ---------------- data: every number on screen comes from here ---------------- */
+const DFMT = { decimals: 0, group: ',', point: '.', prefix: '', suffix: '', sign: false, scale: 1 };
+const AGGS = ['sum', 'max', 'min', 'mean', 'first', 'last', 'total', 'change', 'diff'];
+const DATA_FIELDS = ['label', 'unit', 'source', 'format', 'value', 'categories', 'values', 'series', 'total', 'name', 'changeFormat'];
+function buildData() {
+  const srcs = FILM.sources || {};
+  for (const [id, d] of Object.entries(FILM.data || {})) {
+    const D = { id, spec: d, fmt: { ...DFMT, ...(d.format || {}) }, source: d.source, err: [] };
+    for (const k of Object.keys(d)) if (!DATA_FIELDS.includes(k)) D.err.push(`unknown field "${k}"`);
+    for (const k of Object.keys(d.format || {})) if (!(k in DFMT)) D.err.push(`unknown format field "${k}" (${Object.keys(DFMT).join(', ')})`);
+    if (d.value != null) { D.scalar = true; D.cats = null; D.series = [{ name: id, values: [d.value] }]; }
+    else if (d.series) { D.cats = d.categories || null; D.series = Object.entries(d.series).map(([name, values]) => ({ name, values })); }
+    else { D.cats = d.categories || null; D.series = [{ name: d.name || id, values: d.values }]; }
+    for (const s of D.series) {
+      if (!Array.isArray(s.values) || !s.values.length) { D.err.push(`series ${s.name} has no values`); s.values = [0]; continue; }
+      if (s.values.some((v) => typeof v !== 'number' || !isFinite(v))) D.err.push(`series ${s.name}: every value must be a finite number`);
+      if (D.cats && s.values.length !== D.cats.length) D.err.push(`series ${s.name} has ${s.values.length} values for ${D.cats.length} categories`);
+    }
+    if (!D.scalar && !D.cats) D.err.push('a series needs categories');
+    if (D.cats && new Set(D.cats).size !== D.cats.length) D.err.push('categories must be unique');
+    D.total = d.total != null ? d.total : null;
+    if (!d.source) D.err.push('no source: name the BRIEF.md Facts row the numbers come from (source: \'F2\')');
+    else if (!srcs[d.source]) D.err.push(`source "${d.source}" has no entry in FILM.sources (what the on-screen source line says for that row)`);
+    DATA[id] = D;
+  }
+}
+function aggregate(D, s, k) {
+  const v = s.values, n = v.length, sum = v.reduce((a, b) => a + b, 0);
+  switch (k) {
+    case 'sum': return sum;
+    case 'max': return Math.max(...v);
+    case 'min': return Math.min(...v);
+    case 'mean': return sum / n;
+    case 'first': return v[0];
+    case 'last': return v[n - 1];
+    case 'total': return D.total;
+    case 'change': return v[0] ? (v[n - 1] - v[0]) / Math.abs(v[0]) * 100 : NaN;
+    case 'diff': return v[n - 1] - v[0];
+    default: return NaN;
+  }
+}
+const changeFmt = (D) => ({ ...DFMT, suffix: '%', sign: true, ...(D.spec.changeFormat || {}) });
+// 'kpi' (a dataset with one value), 'week.SAT' (a category), 'week.3' (an index), 'week.sum' (sum, max, min,
+// mean, first, last, total, change, diff), 'visits.WEB.SAT' (one series of several)
+function resolveRef(r) {
+  const key = String(r).trim(), parts = key.split('.'), D = DATA[parts[0]];
+  if (!D) return { err: `no dataset "${parts[0]}" in FILM.data` };
+  let s = D.series[0], rest = parts.slice(1);
+  if (rest.length > 1) { s = D.series.find((x) => x.name === rest[0]); if (!s) return { err: `${key}: no series "${rest[0]}"` }; rest = rest.slice(1); }
+  if (rest.length > 1) return { err: `${key}: too many parts` };
+  const out = (v, f) => ({ v, D, fmt: f, text: fmtNum(v, f), ref: key });
+  if (!rest.length) return D.scalar ? out(s.values[0], D.fmt) : { err: `${key} is a series: add .CATEGORY, .index or .sum, .max, ...` };
+  const k = rest[0];
+  if (AGGS.includes(k)) {
+    const v = aggregate(D, s, k);
+    if (v == null || !isFinite(v)) return { err: `${key}: ${k} is not defined for this dataset` };
+    return out(v, k === 'change' ? changeFmt(D) : k === 'diff' ? { ...D.fmt, sign: true } : D.fmt);
+  }
+  let i = D.cats ? D.cats.indexOf(k) : -1;
+  if (i < 0 && /^\d+$/.test(k)) i = Number(k);
+  if (i < 0 || i >= s.values.length) return { err: `${key}: no category or index "${k}"` };
+  return out(s.values[i], D.fmt);
+}
+function needData(L, id) {
+  const D = DATA[id];
+  if (!D) { issue(`numbers: ${L.id}`, 'FAIL', `no dataset "${id}" in FILM.data`); L.dead = true; return null; }
+  if (!L.dsets.includes(D)) L.dsets.push(D);
+  return D;
+}
+
+/* ---------------- number formatting ---------------- */
+function fmtParts(v, f) {                          // -> { pre (sign, prefix), body (digits, separators), suf }
+  const d = f.decimals || 0, k = Math.pow(10, d);
+  const x = Math.round(Math.abs(v) / (f.scale || 1) * k) / k;
+  let [ip, fp] = x.toFixed(d).split('.');
+  if (f.group) ip = ip.replace(/\B(?=(\d{3})+(?!\d))/g, f.group);
+  const sign = v < 0 && x > 0 ? '−' : f.sign && x > 0 ? '+' : '';
+  return { pre: sign + (f.prefix || ''), body: ip + (fp != null ? (f.point || '.') + fp : ''), suf: f.suffix || '' };
+}
+const fmtNum = (v, f) => { const p = fmtParts(v, f); return p.pre + p.body + p.suf; };
+const halfUnit = (f) => 0.5 * Math.pow(10, -(f.decimals || 0)) * (f.scale || 1);   // data units a label cannot show
+function tickFmt(vals, f) {                       // as few decimals as the tick values need
+  for (let d = 0; d <= (f.decimals || 0); d++) {
+    const k = Math.pow(10, d), sc = f.scale || 1;
+    if (vals.every((v) => Math.abs(Math.round(v / sc * k) / k * sc - v) <= 1e-9 * Math.max(1, Math.abs(v)))) return { ...f, decimals: d };
+  }
+  return f;
+}
+function fillRefs(L, text) {                       // {week.sum} -> 48,215, formatted by the dataset
+  return String(text).replace(/\{([^{}]+)\}/g, (m, r) => {
+    const R = resolveRef(r);
+    if (R.err) { issue(`numbers: ${L.id}`, 'FAIL', R.err); return m; }
+    L.refs.push(R);
+    return R.text;
+  });
+}
+let KNOWN = null;                                  // every number FILM.data can print, as printed
+function knownNumbers() {
+  if (KNOWN) return KNOWN;
+  KNOWN = new Set();
+  const add = (v, f) => { KNOWN.add(fmtParts(v, f).body); KNOWN.add(fmtParts(v, { ...f, group: '' }).body); };
+  for (const D of Object.values(DATA)) {
+    for (const s of D.series) {
+      for (const v of s.values) add(v, D.fmt);
+      for (const k of AGGS) { const v = aggregate(D, s, k); if (v != null && isFinite(v)) add(v, k === 'change' ? changeFmt(D) : D.fmt); }
+    }
+    for (const c of D.cats || []) for (const m of String(c).match(/\d+(?:[.,]\d+)*/g) || []) KNOWN.add(m);
+  }
+  return KNOWN;
+}
+function freeNumbers(L, raw) {                     // numbers typed into text by hand, not through a {ref}
+  const allow = new Set([].concat(L.spec.literal || []).map(String));
+  for (const m of String(raw).replace(/\{[^{}]+\}/g, ' ').match(/\d+(?:[., ]\d+)*/g) || []) {
+    if (allow.has(m)) issue(`free numbers: ${L.id}`, 'PASS', `"${m}" is declared literal: not a data claim`);
+    else if (knownNumbers().has(m)) issue(`free numbers: ${L.id}`, 'WARN', `"${m}" is typed by hand; it matches FILM.data, but write it as a {ref} so it cannot drift from the data`);
+    else issue(`free numbers: ${L.id}`, 'FAIL', `"${m}" is not a value in FILM.data: a number on screen the data does not back. Write it as a {ref}, fix the data, or declare a non-data number (a year, a version) in literal: ['${m}']`);
+  }
+}
+
+/* ---------------- numbers in fixed slots ---------------- */
+// Every digit gets the widest digit's advance and each separator its own slot, so a count never shifts a
+// digit sideways. The slots come from the widest value the label will show; the value is right-aligned
+// into them, a sign or prefix rides just left of its first digit, a suffix sits after the last slot.
+const GM = new Map();                              // font|char -> metrics, all measured at build
+function gm(font, ch) {
+  const key = font + '|' + ch;
+  let m = GM.get(key);
+  if (!m) {
+    setFont(mctx, font);
+    const x = mctx.measureText(ch);
+    m = { adv: x.width, l: x.actualBoundingBoxLeft, r: x.actualBoundingBoxRight, a: x.actualBoundingBoxAscent, d: x.actualBoundingBoxDescent };
+    GM.set(key, m);
+  }
+  return m;
+}
+function numLayout(fr, size, track, f, values, final) {
+  const font = fontStr(fr, size), T = (track || 0) / 1000 * size;
+  const chars = [...new Set('0123456789+−' + (f.group || '') + (f.point || '.') + (f.prefix || '') + (f.suffix || ''))];
+  useText(fr, chars.join(''));
+  const M = {};
+  for (const ch of chars) M[ch] = gm(font, ch);
+  const dw = Math.max(...[...'0123456789'].map((c) => M[c].adv));
+  const longest = values.map((v) => fmtParts(v, f).body).reduce((a, b) => (b.length > a.length ? b : a), '');
+  const sw = [...longest].map((c) => (/\d/.test(c) ? dw : M[c].adv)), sx = [];
+  let x = 0;
+  for (const w of sw) { sx.push(x); x += w + T; }
+  const N = { font, fr, size, T, f, M, dw, sw, sx, bodyW: x - T, capH: gm(font, 'H').a };
+  N.ink = numInk(N, final);
+  return N;
+}
+function numGlyphs(N, v) {                         // [{ ch, x }], x from the body's left edge
+  const p = fmtParts(v, N.f), b = [...p.body], out = [], k0 = N.sw.length - b.length;
+  const slotX = (k) => (k >= 0 ? N.sx[k] : k * (N.dw + N.T)), slotW = (k) => (k >= 0 ? N.sw[k] : N.dw);
+  for (let i = 0; i < b.length; i++) { const k = k0 + i, m = N.M[b[i]] || gm(N.font, b[i]); out.push({ ch: b[i], x: slotX(k) + (slotW(k) - m.adv) / 2 }); }
+  let x = slotX(k0) - N.T;
+  const pre = [...p.pre];
+  for (let i = pre.length - 1; i >= 0; i--) { x -= N.M[pre[i]].adv; out.unshift({ ch: pre[i], x }); x -= N.T; }
+  let xs = N.bodyW + N.T;
+  for (const ch of p.suf) { out.push({ ch, x: xs }); xs += N.M[ch].adv + N.T; }
+  return out;
+}
+function numInk(N, v) {                            // [left, top, right, bottom] around (body left, baseline)
+  let l = Infinity, r = -Infinity, a = 0, d = 0;
+  for (const g of numGlyphs(N, v)) { const m = N.M[g.ch]; if (!m || /\s/.test(g.ch)) continue; l = Math.min(l, g.x - m.l); r = Math.max(r, g.x + m.r); a = Math.max(a, m.a); d = Math.max(d, m.d); }
+  return l === Infinity ? [0, 0, 0, 0] : [l, -a, r, d];
+}
+function drawNum(c, N, v, x0, y, color, op) {
+  if (!(op > 0.002)) return;
+  setFont(c, N.font);
+  for (const g of numGlyphs(N, v)) if (!/\s/.test(g.ch)) fillGlyph(c, g.ch, x0 + g.x, y, color, op, 0);
+  c.globalAlpha = 1;
+}
+
+/* ---------------- colour: distinguishable marks (OKLab, Machado 2009 CVD at severity 1) ---------------- */
+const lin1 = (v) => { v /= 255; return v <= 0.04045 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4); };
+const CVD = {
+  protan: [[0.152286, 1.052583, -0.204868], [0.114503, 0.786281, 0.099216], [-0.003882, -0.048116, 1.051998]],
+  deutan: [[0.367322, 0.860646, -0.227968], [0.280085, 0.672501, 0.047413], [-0.011820, 0.042940, 0.968881]],
+};
+function oklab([r, g, b]) {
+  const l = Math.cbrt(0.4122214708 * r + 0.5363325363 * g + 0.0514459929 * b);
+  const m = Math.cbrt(0.2119034982 * r + 0.6806995451 * g + 0.1073969566 * b);
+  const s = Math.cbrt(0.0883024619 * r + 0.2817188376 * g + 0.6299787005 * b);
+  return [0.2104542553 * l + 0.7936177850 * m - 0.0040720468 * s, 1.9779984951 * l - 2.4285922050 * m + 0.4505937099 * s, 0.0259040371 * l + 0.7827717662 * m - 0.8086757660 * s];
+}
+function deltaE(a, b, kind) {                      // Euclidean OKLab distance x 100, optionally under simulated CVD
+  const sim = (hex) => { const c = rgbOf(hex).map(lin1); if (!kind) return c; const M = CVD[kind]; return M.map((row) => clamp01(row[0] * c[0] + row[1] * c[1] + row[2] * c[2])); };
+  const x = oklab(sim(a)), y = oklab(sim(b));
+  return 100 * Math.hypot(x[0] - y[0], x[1] - y[1], x[2] - y[2]);
+}
+
+/* ---------------- geometry for marks: every shape is SVG path data centred on its own 0,0 ---------------- */
+function geomSpec(s) {
+  const f = (v) => +(+v).toFixed(3);
+  switch (s.shape) {
+    case 'circle': { const r = s.r; return { d: `M0 ${f(-r)}A${f(r)} ${f(r)} 0 1 1 0 ${f(r)}A${f(r)} ${f(r)} 0 1 1 0 ${f(-r)}Z`, closed: true }; }
+    case 'ellipse': { const a = s.rx, b = s.ry; return { d: `M0 ${f(-b)}A${f(a)} ${f(b)} 0 1 1 0 ${f(b)}A${f(a)} ${f(b)} 0 1 1 0 ${f(-b)}Z`, closed: true }; }
+    case 'rect': {
+      const w = s.w / 2, h = s.h / 2, r = Math.min(s.radius || 0, w, h);
+      return { d: `M0 ${f(-h)}H${f(w - r)}A${f(r)} ${f(r)} 0 0 1 ${f(w)} ${f(-h + r)}V${f(h - r)}A${f(r)} ${f(r)} 0 0 1 ${f(w - r)} ${f(h)}H${f(-w + r)}A${f(r)} ${f(r)} 0 0 1 ${f(-w)} ${f(h - r)}V${f(-h + r)}A${f(r)} ${f(r)} 0 0 1 ${f(-w + r)} ${f(-h)}Z`, closed: true };
+    }
+    case 'poly': case 'star': {
+      const n = s.shape === 'star' ? (s.points || 5) * 2 : (s.sides || 3), pts = [];
+      for (let k = 0; k < n; k++) { const a = -Math.PI / 2 + TAU * k / n, r = s.shape === 'star' && k % 2 ? s.r * (s.inner || 0.45) : s.r; pts.push([r * Math.cos(a), r * Math.sin(a)]); }
+      return { d: 'M' + pts.map((p) => `${f(p[0])} ${f(p[1])}`).join('L') + 'Z', closed: true };
+    }
+    case 'arc': {
+      const r = s.r, a0 = (s.from || 0) * DEG - Math.PI / 2, a1 = (s.to != null ? s.to : 360) * DEG - Math.PI / 2, mid = (a0 + a1) / 2;
+      if (a1 - a0 >= TAU - 1e-6) return geomSpec({ shape: 'circle', r });
+      const p = (a) => `${f(r * Math.cos(a))} ${f(r * Math.sin(a))}`;
+      return { d: `M${p(a0)}A${f(r)} ${f(r)} 0 0 1 ${p(mid)}A${f(r)} ${f(r)} 0 0 1 ${p(a1)}`, closed: false };
+    }
+    case 'line': { const pts = s.points || [[s.x1, s.y1], [s.x2, s.y2]]; return { d: 'M' + pts.map((p) => `${f(p[0])} ${f(p[1])}`).join('L') + (s.closed ? 'Z' : ''), closed: !!s.closed }; }
+    case 'path': return { d: s.d, closed: /z\s*$/i.test(String(s.d).trim()), raw: true };
+    default: throw new Error(`unknown mark shape "${s.shape}"`);
+  }
+}
+function buildGeom(s) {
+  const spec = geomSpec(s), P = svgPath(spec.d);
+  let m = null;
+  if (spec.raw) {                                  // an SVG path in its own units: centre it, and scale it to `size` px
+    const [x0, y0, x1, y1] = P.box, k = s.size ? s.size / Math.max(x1 - x0, y1 - y0) : 1;
+    m = new DOMMatrix([k, 0, 0, k, -(x0 + x1) / 2 * k, -(y0 + y1) / 2 * k]);
+  }
+  let p2d = P.p2d;
+  if (m) { p2d = new Path2D(); p2d.addPath(P.p2d, m); }
+  const k = m ? m.a : 1, pts = P.points(96).map(([x, y]) => (m ? [x * m.a + m.e, y * m.d + m.f] : [x, y]));
+  let R = 0, x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+  for (const [x, y] of pts) { R = Math.max(R, Math.hypot(x, y)); x0 = Math.min(x0, x); y0 = Math.min(y0, y); x1 = Math.max(x1, x); y1 = Math.max(y1, y); }
+  return { p2d, len: P.len * k, closed: spec.closed, R, box: [x0, y0, x1, y1] };
+}
+
+/* ---------------- copies, states and staggers ---------------- */
+// A layer is drawn as copies, each with its own springs: one per glyph of a text layer, one container for
+// everything else (the chart, the counter, the note, the mark moves as one). State keys: dx dy rot scale op
+// blur trim fill. The data inside a chart has its own Props (below), on critically damped springs.
+const KEYS = { dx: 0, dy: 0, rot: 0, sc: 1, op: 1, bl: 0, ta: 0, tb: 1, fo: 1 };
+function stateVals(s) {
+  const o = {};
+  if (!s || typeof s !== 'object') return o;
+  for (const k of ['dx', 'dy', 'rot', 'op', 'blur', 'fill']) if (s[k] != null) o[{ blur: 'bl', fill: 'fo' }[k] || k] = s[k];
+  if (s.scale != null) o.sc = s.scale;
+  if (s.trim != null) { const tr = Array.isArray(s.trim) ? s.trim : [0, s.trim]; o.ta = tr[0]; o.tb = tr[1]; }
+  return o;
+}
+const springFor = (k, sp) => (k === 'op' || k === 'fo' ? 'FADE' : k === 'bl' ? 'FOCUS' : sp || 'LAND');
+function orderOf(items, how, seed) {               // stagger rank of each item; items have ox, oy and maybe val
+  const n = items.length;
+  if (how === 'reverse') return items.map((_, k) => n - 1 - k);
+  if (how === 'random') { const p = shuffled(items.map((_, k) => k), seed); return items.map((_, k) => p.indexOf(k)); }
+  if (how === 'center') {
+    const cx = items.reduce((s, c) => s + c.ox, 0) / n, cy = items.reduce((s, c) => s + c.oy, 0) / n;
+    const ds = items.map((c) => Math.hypot(c.ox - cx, c.oy - cy)), step = Math.min(...ds.filter((d) => d > 1e-6), Infinity);
+    return ds.map((d) => (step === Infinity ? 0 : Math.round(d / step * 1000) / 1000));
+  }
+  if (how === 'value' || how === 'rank') {         // smallest first / largest first
+    const s = items.map((c, k) => [c.val, k]).sort((a, b) => (how === 'value' ? a[0] - b[0] : b[0] - a[0]) || a[1] - b[1]);
+    return items.map((_, k) => s.findIndex((e) => e[1] === k));
+  }
+  return items.map((_, k) => k);
+}
+const container = (L) => ({ ox: 0, oy: 0, g: null });
+const stagOf = (spec, ranks, k) => (spec && spec.stagger ? noteSec(spec.stagger) * ranks[k] : 0);
+
+/* ---------------- layers ---------------- */
+const FIELDS = {
+  common: ['id', 'kind', 'x', 'y', 'rot', 'scale', 'op', 'enter', 'keys', 'exit', 'accent', 'bleed', 'on'],
+  text: ['text', 'font', 'size', 'cap', 'fit', 'track', 'pairs', 'anchor', 'fill', 'clip', 'literal'],
+  counter: ['ref', 'font', 'size', 'cap', 'fit', 'track', 'anchor', 'fill', 'format', 'grow'],
+  columns: ['data', 'box', 'width', 'radius', 'fill', 'colors', 'highlight', 'track', 'axis', 'grid', 'values', 'cats', 'baseline', 'sort', 'grow'],
+  bars: ['data', 'box', 'width', 'radius', 'fill', 'colors', 'highlight', 'track', 'axis', 'grid', 'values', 'cats', 'baseline', 'sort', 'rank', 'grow'],
+  line: ['data', 'series', 'box', 'axis', 'grid', 'stroke', 'colors', 'width', 'points', 'curve', 'area', 'labels', 'names', 'cats', 'baseline', 'grow'],
+  donut: ['data', 'r', 'width', 'gap', 'start', 'colors', 'remainder', 'track', 'centre', 'labels', 'grow'],
+  note: ['chart', 'cat', 'series', 'point', 'text', 'font', 'size', 'track', 'anchor', 'fill', 'stroke', 'width', 'dot', 'gap', 'literal'],
+  mark: ['shape', 'r', 'rx', 'ry', 'w', 'h', 'radius', 'sides', 'points', 'inner', 'from', 'to', 'closed', 'd', 'size', 'x1', 'y1', 'x2', 'y2', 'fill', 'stroke', 'width', 'cap', 'join', 'trim', 'dash'],
+};
+const BANNED = {
+  axis2: 'no dual axes: one value axis per chart; two measures of different scale are two charts',
+  y2: 'no dual axes: one value axis per chart; two measures of different scale are two charts',
+  secondary: 'no dual axes: one value axis per chart; two measures of different scale are two charts',
+  legend: 'no legends: label every series, slice and bar directly',
+  depth: 'no 3D: extrusion and perspective distort every length and angle',
+  perspective: 'no 3D: extrusion and perspective distort every length and angle',
+  tilt: 'no 3D: extrusion and perspective distort every length and angle',
+  explode: 'no exploded slices: a slice pulled out reads larger than its share',
+  break: 'no broken axes: every bar starts at zero and runs its full length',
+  log: 'no log scales in a launch video: a general audience reads lengths as linear',
+};
+function checkFields(L) {
+  const ls = L.spec, ok = new Set([...FIELDS.common, ...(FIELDS[ls.kind] || [])]);
+  for (const k of Object.keys(ls)) {
+    if (BANNED[k] || k === '3d') issue(`honest chart: ${L.id}`, 'FAIL', `${k}: ${BANNED[k] || BANNED.depth}`);
+    else if (!ok.has(k)) issue(`fields: ${L.id}`, 'FAIL', `unknown field "${k}" on a ${ls.kind} layer`);
+  }
+  if (ls.axis && typeof ls.axis === 'object') for (const k of Object.keys(ls.axis)) {
+    if (BANNED[k]) issue(`honest chart: ${L.id}`, 'FAIL', `axis.${k}: ${BANNED[k]}`);
+    else if (!['min', 'max'].includes(k)) issue(`fields: ${L.id}`, 'FAIL', `unknown axis field "${k}" (min, max)`);
+  }
+  for (const k of ls.keys || []) for (const f of Object.keys(k)) if (!['at', 'to', 'spring', 'stagger', 'order', 'data', 'ref', 'highlight', 'fill'].includes(f)) issue(`fields: ${L.id}`, 'FAIL', `unknown key field "${f}"`);
+  if (ls.grow && !DATA_KINDS.includes(ls.kind)) issue(`fields: ${L.id}`, 'FAIL', 'grow moves data: only counters and charts grow');
+}
+function buildLayer(Sc, ls, li) {
+  if (!ls.id) throw new Error(`a layer in scene ${Sc.id} has no id`);
+  if (LAYERS[ls.id]) throw new Error(`duplicate layer id ${ls.id}`);
+  if (!FIELDS[ls.kind]) throw new Error(`${ls.id}: unknown kind "${ls.kind}" (text, counter, columns, bars, line, donut, note, mark)`);
+  const L = { spec: ls, id: ls.id, scene: Sc, kind: ls.kind, li, refs: [], dsets: [], texts: [], words: 0, copies: [] };
+  LAYERS[L.id] = L;
+  Sc.layers.push(L);
+  if (!ls.auto) checkFields(L);
+  ({ text: buildText, counter: buildCounter, columns: buildBarChart, bars: buildBarChart, line: buildLine, donut: buildDonut, note: buildNote, mark: buildMark })[ls.kind](Sc, L);
+  if (L.dead) { L.copies = []; L.box = [0, 0, 0, 0]; }
+  return L;
+}
+function place(ls, anchor) { return ls.x != null ? ls.x : anchor === 'R' ? W - MARGIN : anchor === 'C' ? CX : MARGIN; }
+
+function buildText(Sc, L) {
+  const ls = L.spec, fr = ls.font || 'display';
+  L.typed = !!(ls.enter && ls.enter.typed);
+  L.text = fillRefs(L, ls.text);
+  if (!ls.auto) freeNumbers(L, ls.text);
+  L.line = layoutText({ id: ls.id, text: L.text, font: fr, size: ls.size, cap: ls.cap, fit: ls.fit, track: ls.track, pairs: ls.pairs, anchor: ls.anchor || 'L', x: ls.x, baseline: ls.y });
+  L.px = (L.line.inkL + L.line.inkR) / 2; L.py = L.line.baseline - L.line.capH / 2;
+  L.box = [L.line.inkL, L.line.top, L.line.inkR, L.line.bottom];
+  L.R = L.line.capH;
+  L.texts = [{ id: L.id, b: L.box, mono: fr === 'mono', size: L.line.size, y: ls.y }];
+  L.words = fr === 'mono' || L.typed ? 0 : L.text.split(/\s+/).filter((w) => /[A-Za-z0-9€$£%]/.test(w)).length;
+  L.fill = role(ls.fill || 'paper');
+  needContrast(ls.id, ls.fill || 'paper', ls.on || Sc.bgRole, L.typed || fr === 'mono' || L.line.size < 40 * U ? 4.5 : 3);
+  L.copies = L.typed ? [] : L.line.glyphs.filter((g) => !g.space).map((g) => ({ g, ox: (g.inkL + g.inkR) / 2 - L.px, oy: 0 }));
+}
+
+function buildCounter(Sc, L) {
+  const ls = L.spec, R = resolveRef(ls.ref);
+  if (R.err) { issue(`numbers: ${L.id}`, 'FAIL', R.err); L.dead = true; return; }
+  L.refs.push(R); L.dsets.push(R.D);
+  const f = { ...R.fmt, ...(ls.format || {}) }, g = ls.grow || null, fr = ls.font || 'display';
+  L.keyVals = [];
+  for (const k of ls.keys || []) if (k.ref) { const K = resolveRef(k.ref); if (K.err) issue(`numbers: ${L.id}`, 'FAIL', K.err); else { L.refs.push(K); if (!L.dsets.includes(K.D)) L.dsets.push(K.D); L.keyVals.push({ k, v: K.v }); } }
+  L.from = g && g.from != null ? g.from : 0;
+  L.final = R.v; L.fmt = f;
+  const vals = [R.v, L.from, ...L.keyVals.map((k) => k.v)];
+  let size = ls.size != null ? ls.size : ls.cap != null ? ls.cap / capRatio(fr) : 200 * U;
+  if (ls.fit) { const w = ls.fit === true ? MEASURE : ls.fit, N0 = numLayout(fr, 100, ls.track, f, vals, R.v); size = 100 * w / (N0.ink[2] - N0.ink[0]); }
+  const N = numLayout(fr, size, ls.track, f, vals, R.v), anchor = ls.anchor || 'L', x = place(ls, anchor);
+  N.x0 = anchor === 'C' ? x - (N.ink[0] + N.ink[2]) / 2 : anchor === 'R' ? x - N.ink[2] : x - N.ink[0];
+  N.y = ls.y;
+  L.N = N;
+  L.box = [N.x0 + N.ink[0], N.y + N.ink[1], N.x0 + N.ink[2], N.y + N.ink[3]];
+  L.px = (L.box[0] + L.box[2]) / 2; L.py = N.y - N.capH / 2;
+  L.R = Math.hypot(L.box[2] - L.box[0], L.box[3] - L.box[1]) / 2;
+  L.texts = [{ id: L.id, b: L.box, size, y: ls.y }];
+  L.words = 1;
+  L.fill = role(ls.fill || 'paper');
+  L.marks = [ls.fill || 'paper'];
+  needContrast(L.id, ls.fill || 'paper', ls.on || Sc.bgRole, 3);
+  L.copies = [container(L)];
+}
+
+// columns (vertical) and bars (horizontal): one series, a zero baseline, a value label riding each bar end
+function buildBarChart(Sc, L) {
+  const ls = L.spec, horiz = ls.kind === 'bars', D = needData(L, ls.data);
+  if (!D) return;
+  if (!D.cats) { issue(`numbers: ${L.id}`, 'FAIL', `${ls.data} has no categories to draw as bars`); L.dead = true; return; }
+  if (!ls.box) throw new Error(`${L.id}: a ${ls.kind} chart needs box: [x0, y0, x1, y1], its plot area`);
+  const s = D.series[0], order = D.cats.map((_, i) => i);
+  if (ls.sort === 'desc') order.sort((a, b) => s.values[b] - s.values[a] || a - b);
+  else if (ls.sort === 'asc') order.sort((a, b) => s.values[a] - s.values[b] || a - b);
+  const cats = order.map((i) => D.cats[i]), n = cats.length;
+  const sets = [order.map((i) => s.values[i])];
+  L.retargets = [];
+  for (const k of ls.keys || []) if (k.data != null) {
+    const D2 = needData(L, k.data);
+    if (!D2) continue;
+    if (!D2.cats || D2.cats.length !== n) { issue(`retarget: ${L.id}`, 'FAIL', `keys at ${(+k.at).toFixed(3)} s: "${k.data}" has ${D2.cats ? D2.cats.length : 0} categories and this chart ${n}; bars retarget only between datasets with the same categories (otherwise cut or wipe to a new chart)`); continue; }
+    const v2 = cats.map((c, j) => { const i = D2.cats.indexOf(c); return D2.series[0].values[i >= 0 ? i : order[j]]; });
+    if (D2.cats.some((c, j) => c !== cats[j] && !cats.includes(c))) issue(`retarget: ${L.id}`, 'WARN', `"${k.data}" names its categories differently; values are matched by position and the labels change at ${(+k.at).toFixed(3)} s`);
+    sets.push(v2); L.retargets.push({ k, D: D2, vals: v2, cats: D2.cats.map((c, j) => (cats.includes(c) ? c : D2.cats[order[j]] || c)) });
+  }
+  const all = sets.flat(), ax = ls.axis || {};
+  const mn = ax.min != null ? ax.min : Math.min(0, ...all);
+  let mx = ax.max === 'total' ? D.total : ax.max != null ? ax.max : Math.max(0, ...all);
+  if (mx == null || !isFinite(mx) || mx <= mn) mx = mn + 1;
+  const [x0, y0, x1, y1] = ls.box;
+  const G = { horiz, n, cats, mn, mx, x0, y0, x1, y1, vals: sets[0], all, sets };
+  if (horiz) { G.k = (x1 - x0) / (mx - mn); G.zero = x0 + (0 - mn) * G.k; G.band = (y1 - y0) / n; }
+  else { G.k = (y1 - y0) / (mx - mn); G.zero = y1 - (0 - mn) * G.k; G.band = (x1 - x0) / n; }
+  const wd = ls.width != null ? ls.width : 0.6;
+  G.bw = wd <= 1 ? G.band * wd : wd;
+  G.rad = Math.min(ls.radius != null ? ls.radius : 8 * U, G.bw / 2);
+  G.mid = (i) => (horiz ? y0 : x0) + G.band * (i + 0.5);
+  G.fillRole = cats.map((c) => (ls.colors || {})[c] || ls.fill || 'paper');
+  G.fill = G.fillRole.map((r) => role(r));
+  G.track = ls.track ? role(ls.track) : null;
+  // highlight: categories lit from the start ({ cat, fill }) or later by keys { at, highlight, fill }
+  const hs = ls.highlight ? (typeof ls.highlight === 'object' && !Array.isArray(ls.highlight) ? ls.highlight : { cat: ls.highlight }) : null;
+  const hkeys = (ls.keys || []).filter((k) => k.highlight !== undefined);
+  G.hlRole = (hs && hs.fill) || (hkeys.find((k) => k.fill) || {}).fill || null;
+  G.hl = G.hlRole ? role(G.hlRole) : null;
+  if ((hs || hkeys.length) && !G.hl) issue(`fields: ${L.id}`, 'FAIL', 'a highlight needs a fill role: highlight: { cat, fill } or keys: [{ at, highlight, fill }]');
+  const set = (v) => new Set([].concat(v == null ? [] : v).map(String));
+  L.hl0 = set(hs && hs.cat); L.hlKeys = hkeys.map((k) => ({ at: k.at, on: set(k.highlight) }));
+  for (const h of [L.hl0, ...L.hlKeys.map((k) => k.on)]) for (const c of h) if (!cats.includes(c)) issue(`fields: ${L.id}`, 'FAIL', `highlight "${c}" is not a category of ${ls.data}`);
+  // labels
+  const vo = ls.values === false ? null : { font: 'label', size: 30 * U, fill: 'paper', gap: 12 * U, track: 0, ...(ls.values || {}) };
+  const co = ls.cats === false ? null : { font: 'mono', size: 24 * U, fill: 'muted', gap: 16 * U, track: 20, pos: horiz ? 'left' : 'below', every: 1, ...(ls.cats || {}) };
+  G.vo = vo; G.co = co;
+  const noBase = ls.baseline === false || (ls.baseline == null && (ls.track || (horiz && co && co.pos === 'above')));   // a track or labels over the bars already show the zero line
+  G.base = noBase ? null : { stroke: 'muted', width: 2 * U, ...(ls.baseline || {}) };
+  if (G.base) G.baseCol = role(G.base.stroke);
+  L.marks = [...new Set(G.fillRole.concat(G.hlRole ? [G.hlRole] : []))];
+  G.valN = []; G.valFill = vo ? role(vo.fill) : null;
+  if (vo) {
+    needContrast(`${L.id} values`, vo.fill, ls.on || Sc.bgRole, 4.5);
+    for (let i = 0; i < n; i++) G.valN.push(numLayout(vo.font, vo.size, vo.track, D.fmt, [0, ...sets.map((v) => v[i])], sets[0][i]));
+  }
+  G.catLines = []; G.catFill = co ? role(co.fill) : null;
+  if (co) {
+    needContrast(`${L.id} categories`, co.fill, ls.on || Sc.bgRole, 4.5);
+    if (G.hl) needContrast(`${L.id} highlighted category`, vo ? vo.fill : 'paper', ls.on || Sc.bgRole, 4.5);
+    G.catHl = role(vo ? vo.fill : 'paper');
+    const capH = capRatio(co.font) * co.size;
+    const names = [cats, ...L.retargets.map((r) => r.cats)];
+    for (let i = 0; i < n; i++) {
+      if (i % (co.every || 1)) { G.catLines.push(null); continue; }
+      const mk = (text) => {
+        const t = (ls.rank ? `${i + 1}. ` : '') + text;
+        if (horiz && co.pos === 'left') return layoutText({ id: `${L.id}:${text}`, text: t, font: co.font, size: co.size, track: co.track, anchor: 'R', x: G.zero - co.gap, baseline: G.mid(i) + capH / 2 });
+        if (horiz) return layoutText({ id: `${L.id}:${text}`, text: t, font: co.font, size: co.size, track: co.track, anchor: 'L', x: G.zero, baseline: G.mid(i) - G.bw / 2 - co.gap });
+        const base = co.y != null ? co.y : Math.ceil((Math.max(y1, G.zero) + co.gap + capH) / UNIT) * UNIT;
+        return layoutText({ id: `${L.id}:${text}`, text: t, font: co.font, size: co.size, track: co.track, anchor: 'C', x: G.mid(i), baseline: base });
+      };
+      G.catLines.push(names.map((nm) => mk(nm[i])));
+    }
+  }
+  // grid: hairlines at chosen values, their tick labels in small print
+  G.grid = [];
+  if (ls.grid) {
+    const go = Array.isArray(ls.grid) ? { at: ls.grid } : ls.grid;
+    const gs = { stroke: 'muted', width: 2 * U, font: 'mono', size: 22 * U, fill: 'muted', ...go };
+    G.gridCol = role(gs.stroke); G.gridW = gs.width;
+    needContrast(`${L.id} ticks`, gs.fill, ls.on || Sc.bgRole, 4.5);
+    const tf = tickFmt(gs.at || [], D.fmt);
+    for (const v of gs.at || []) {
+      const p = horiz ? G.zero + v * G.k : G.zero - v * G.k, txt = fmtNum(v, tf);
+      const ln = horiz ? layoutText({ id: `${L.id}:tick`, text: txt, font: gs.font, size: gs.size, anchor: 'C', x: p, baseline: Math.max(y1, G.zero) + 12 * U + capRatio(gs.font) * gs.size })
+        : layoutText({ id: `${L.id}:tick`, text: txt, font: gs.font, size: gs.size, anchor: 'L', x: x0, baseline: p - 10 * U });
+      G.grid.push({ v, p, ln, fill: role(gs.fill) });
+    }
+  }
+  L.G = G;
+  L.box = [x0, y0, x1, y1];
+  L.px = (x0 + x1) / 2; L.py = (y0 + y1) / 2; L.R = Math.hypot(x1 - x0, y1 - y0) / 2;
+  L.copies = [container(L)];
+  // text boxes at rest (the final values), for the live area and collisions
+  for (let i = 0; i < n; i++) {
+    if (vo) { const p = valuePos(G, i, sets[0][i], sets[0][i]), N = G.valN[i]; L.texts.push({ id: `${L.id} ${cats[i]} value`, b: [p[0] + N.ink[0], p[1] + N.ink[1], p[0] + N.ink[2], p[1] + N.ink[3]], chart: true }); }
+    if (co && G.catLines[i]) { const ln = G.catLines[i][0]; L.texts.push({ id: `${L.id} ${cats[i]}`, b: [ln.inkL, ln.top, ln.inkR, ln.bottom], chart: true }); }
+  }
+  for (const gl of G.grid) L.texts.push({ id: `${L.id} tick ${gl.v}`, b: [gl.ln.inkL, gl.ln.top, gl.ln.inkR, gl.ln.bottom], chart: true });
+  L.markBox = (() => {                             // the bars at rest
+    let b = [Infinity, Infinity, -Infinity, -Infinity];
+    for (let i = 0; i < n; i++) for (const v of [0, ...sets.map((x) => x[i])]) {
+      const e = barEnd(G, v), m = G.mid(i);
+      const r = horiz ? [Math.min(G.zero, e), m - G.bw / 2, Math.max(G.zero, e), m + G.bw / 2] : [m - G.bw / 2, Math.min(G.zero, e), m + G.bw / 2, Math.max(G.zero, e)];
+      b = [Math.min(b[0], r[0]), Math.min(b[1], r[1]), Math.max(b[2], r[2]), Math.max(b[3], r[3])];
+    }
+    return b;
+  })();
+}
+const barEnd = (G, v) => (G.horiz ? G.zero + v * G.k : G.zero - v * G.k);
+function valuePos(G, i, vt, vq) {                  // where the value label sits: [x of the body's left edge, baseline]
+  const N = G.valN[i], e = barEnd(G, vt), gap = G.vo.gap;
+  if (G.horiz) {
+    const ink = numInk(N, vq), y = G.mid(i) + N.capH / 2;
+    return vt >= 0 ? [e + gap - ink[0], y] : [e - gap - ink[2], y];
+  }
+  const x = G.mid(i) - (N.ink[0] + N.ink[2]) / 2;
+  return vt >= 0 ? [x, e - gap] : [x, e + gap + N.capH];
+}
+
+// line: one or more series over the categories, drawn on from the left; points pop as the line reaches them
+function buildLine(Sc, L) {
+  const ls = L.spec, D = needData(L, ls.data);
+  if (!D) return;
+  if (!D.cats || D.cats.length < 2) { issue(`numbers: ${L.id}`, 'FAIL', `${ls.data} needs at least two categories for a line`); L.dead = true; return; }
+  if (!ls.box) throw new Error(`${L.id}: a line chart needs box: [x0, y0, x1, y1], its plot area`);
+  const names = ls.series ? [].concat(ls.series) : D.series.map((s) => s.name), n = D.cats.length;
+  const series = [];
+  for (const nm of names) { const s = D.series.find((x) => x.name === nm); if (!s) issue(`numbers: ${L.id}`, 'FAIL', `${ls.data} has no series "${nm}"`); else series.push({ name: nm, values: s.values.slice(), sets: [s.values.slice()] }); }
+  if (!series.length) { L.dead = true; return; }
+  L.retargets = [];
+  for (const k of ls.keys || []) if (k.data != null) {
+    const D2 = needData(L, k.data);
+    if (!D2) continue;
+    if (!D2.cats || D2.cats.length !== n) { issue(`retarget: ${L.id}`, 'FAIL', `keys at ${(+k.at).toFixed(3)} s: "${k.data}" has ${D2.cats ? D2.cats.length : 0} categories and this line ${n}`); continue; }
+    for (const s of series) { const s2 = D2.series.find((x) => x.name === s.name) || D2.series[0]; s.sets.push(s2.values.slice()); }
+    L.retargets.push({ k, D: D2 });
+  }
+  const all = series.flatMap((s) => s.sets.flat()), ax = ls.axis || {};
+  const mn = ax.min != null ? ax.min : Math.min(0, ...all), mx0 = ax.max != null ? ax.max : Math.max(0, ...all), mx = mx0 > mn ? mx0 : mn + 1;
+  const [x0, y0, x1, y1] = ls.box;
+  const G = { n, mn, mx, x0, y0, x1, y1, series, all, cats: D.cats };
+  G.k = (y1 - y0) / (mx - mn); G.zero = y1 - (0 - mn) * G.k;
+  G.xs = D.cats.map((_, i) => x0 + (x1 - x0) * i / (n - 1));
+  G.y = (v) => G.zero - v * G.k;
+  G.lw = ls.width != null ? ls.width : 6 * U;
+  G.pr = ls.points != null ? ls.points : 9 * U;
+  G.curve = ls.curve === 'monotone' ? 'monotone' : 'linear';
+  G.strokeRole = series.map((s) => (ls.colors || {})[s.name] || ls.stroke || 'paper');
+  G.stroke = G.strokeRole.map((r) => role(r));
+  G.area = ls.area ? role(ls.area) : null;
+  if (ls.area && series.length > 1) issue(`honest chart: ${L.id}`, 'FAIL', 'an area under one of several lines stacks nothing and hides the others: use area on a single series');
+  G.surface = role(ls.on || Sc.bgRole);
+  L.marks = [...new Set(G.strokeRole)];
+  const lo = { font: 'label', size: 30 * U, fill: 'paper', gap: 14 * U, pos: 'above', ...(typeof ls.labels === 'object' && !Array.isArray(ls.labels) ? ls.labels : {}) };
+  const which = typeof ls.labels === 'string' || Array.isArray(ls.labels) ? ls.labels : lo.show || 'end';
+  const pick = (s, i) => which === 'all' || (which === 'end' && i === n - 1) || (which === 'max' && s.values[i] === Math.max(...s.values)) || (which === 'min' && s.values[i] === Math.min(...s.values)) || (Array.isArray(which) && (which.includes(D.cats[i]) || which.includes(i)));
+  G.lo = lo; G.labFill = role(lo.fill);
+  if (which !== 'none') needContrast(`${L.id} values`, lo.fill, ls.on || Sc.bgRole, 4.5);
+  for (const s of series) s.labels = s.values.map((v, i) => (which !== 'none' && pick(s, i) ? numLayout(lo.font, lo.size, lo.track || 0, D.fmt, s.sets.map((x) => x[i]), v) : null));
+  // direct labels naming each series at its end (on by default when there are several)
+  G.names = (ls.names != null ? ls.names : series.length > 1) ? { font: lo.font, size: lo.size, fill: 'muted', gap: 18 * U, ...(typeof ls.names === 'object' ? ls.names : {}) } : null;
+  if (G.names) {                                   // "WEB 26.4K" just right of the line's end: the name, then its last value
+    needContrast(`${L.id} names`, G.names.fill, ls.on || Sc.bgRole, 4.5);
+    G.nameFill = role(G.names.fill);
+    for (const s of series) {
+      const v = s.values[n - 1], capH = capRatio(G.names.font) * G.names.size;
+      s.nameLine = layoutText({ id: `${L.id}:${s.name}`, text: s.name, font: G.names.font, size: G.names.size, anchor: 'L', x: G.xs[n - 1] + G.pr + G.names.gap, baseline: Math.round(G.y(v) + capH / 2) });
+      const N = s.labels[n - 1];
+      if (N) s.endAt = [s.nameLine.inkR + gm(fontStr(G.names.font, G.names.size), ' ').adv - N.ink[0], s.nameLine.baseline];
+    }
+  }
+  if (series.length > 1 && !G.names) issue(`labels: ${L.id}`, 'FAIL', 'several series and no names: label each line directly (names: true); there are no legends');
+  const co = ls.cats === false ? null : { font: 'mono', size: 24 * U, fill: 'muted', gap: 16 * U, track: 20, every: 1, ...(ls.cats || {}) };
+  G.co = co; G.catLines = [];
+  if (co) {
+    needContrast(`${L.id} categories`, co.fill, ls.on || Sc.bgRole, 4.5);
+    G.catFill = role(co.fill);
+    const base = co.y != null ? co.y : Math.ceil((Math.max(y1, G.zero) + co.gap + capRatio(co.font) * co.size) / UNIT) * UNIT;
+    D.cats.forEach((c, i) => G.catLines.push(i % (co.every || 1) && i !== n - 1 ? null : layoutText({ id: `${L.id}:${c}`, text: String(c), font: co.font, size: co.size, track: co.track, anchor: 'C', x: G.xs[i], baseline: base })));
+  }
+  G.base = ls.baseline === false ? null : { stroke: 'muted', width: 2 * U, ...(ls.baseline || {}) };
+  if (G.base) G.baseCol = role(G.base.stroke);
+  G.grid = [];
+  if (ls.grid) {
+    const go = Array.isArray(ls.grid) ? { at: ls.grid } : ls.grid, gs = { stroke: 'muted', width: 2 * U, font: 'mono', size: 22 * U, fill: 'muted', ...go };
+    G.gridCol = role(gs.stroke); G.gridW = gs.width;
+    needContrast(`${L.id} ticks`, gs.fill, ls.on || Sc.bgRole, 4.5);
+    const tf = tickFmt(gs.at || [], D.fmt);
+    for (const v of gs.at || []) G.grid.push({ v, p: G.y(v), fill: role(gs.fill), ln: layoutText({ id: `${L.id}:tick`, text: fmtNum(v, tf), font: gs.font, size: gs.size, anchor: 'L', x: x0, baseline: G.y(v) - 10 * U }) });
+  }
+  G.fmt = D.fmt;
+  L.G = G;
+  L.box = [x0, y0, x1, y1]; L.markBox = [x0 - G.pr, Math.min(...all.map(G.y)) - G.pr, x1 + G.pr, Math.max(...all.map(G.y), G.zero) + G.pr];
+  L.px = (x0 + x1) / 2; L.py = (y0 + y1) / 2; L.R = Math.hypot(x1 - x0, y1 - y0) / 2;
+  L.copies = [container(L)];
+  for (const s of series) {
+    s.labels.forEach((N, i) => { if (!N) return; const p = pointLabelPos(G, s, i, s.values[i]); L.texts.push({ id: `${L.id} ${s.name} ${D.cats[i]}`, b: [p[0] + N.ink[0], p[1] + N.ink[1], p[0] + N.ink[2], p[1] + N.ink[3]], chart: true }); });
+    if (s.nameLine) L.texts.push({ id: `${L.id} ${s.name}`, b: [s.nameLine.inkL, s.nameLine.top, s.nameLine.inkR, s.nameLine.bottom], chart: true });
+  }
+  for (const ln of G.catLines) if (ln) L.texts.push({ id: `${L.id} ${ln.text}`, b: [ln.inkL, ln.top, ln.inkR, ln.bottom], chart: true });
+  for (const gl of G.grid) L.texts.push({ id: `${L.id} tick ${gl.v}`, b: [gl.ln.inkL, gl.ln.top, gl.ln.inkR, gl.ln.bottom], chart: true });
+}
+function pointLabelPos(G, s, i, v) {                // [x of the body's left edge, baseline] of a point's value label
+  const N = s.labels[i], y = G.y(v);
+  if (i === G.n - 1 && s.endAt) return [s.endAt[0], s.endAt[1] + y - G.y(s.values[i])];
+  const x = G.xs[i] - (N.ink[0] + N.ink[2]) / 2;
+  return G.lo.pos === 'below' ? [x, y + G.pr + G.lo.gap + N.capH] : [x, y - G.pr - G.lo.gap];
+}
+function monoTangents(ys) {                        // Fritsch-Carlson: a curve that never overshoots its points
+  const n = ys.length, d = [], m = new Array(n).fill(0);
+  for (let i = 0; i < n - 1; i++) d.push(ys[i + 1] - ys[i]);
+  m[0] = d[0]; m[n - 1] = d[n - 2];
+  for (let i = 1; i < n - 1; i++) m[i] = d[i - 1] * d[i] <= 0 ? 0 : (d[i - 1] + d[i]) / 2;
+  for (let i = 0; i < n - 1; i++) {
+    if (d[i] === 0) { m[i] = 0; m[i + 1] = 0; continue; }
+    const a = m[i] / d[i], b = m[i + 1] / d[i], s = a * a + b * b;
+    if (s > 9) { const k = 3 / Math.sqrt(s); m[i] = k * a * d[i]; m[i + 1] = k * b * d[i]; }
+  }
+  return m;
+}
+function linePts(G, ys, tip) {                     // the drawn part of a series: up to the tip (a point index, fractional)
+  const out = [[G.xs[0], ys[0]]], last = Math.min(G.n - 1, tip);
+  const m = G.curve === 'monotone' ? monoTangents(ys) : null, dx = G.xs[1] - G.xs[0];
+  for (let i = 0; i < G.n - 1 && i < last; i++) {
+    const end = Math.min(1, last - i), steps = m ? 12 : 1;
+    for (let j = 1; j <= steps; j++) {
+      const u = end * j / steps;
+      if (!m) { out.push([G.xs[i] + dx * u, ys[i] + (ys[i + 1] - ys[i]) * u]); continue; }
+      const u2 = u * u, u3 = u2 * u;
+      out.push([G.xs[i] + dx * u, (2 * u3 - 3 * u2 + 1) * ys[i] + (u3 - 2 * u2 + u) * m[i] + (-2 * u3 + 3 * u2) * ys[i + 1] + (u3 - u2) * m[i + 1]]);
+    }
+  }
+  return out;
+}
+
+// donut: parts of a whole, at most 5, swept round from 12 o'clock; labels count with the sweep
+function buildDonut(Sc, L) {
+  const ls = L.spec, D = needData(L, ls.data);
+  if (!D) return;
+  if (!D.cats) { issue(`numbers: ${L.id}`, 'FAIL', `${ls.data} has no categories to draw as slices`); L.dead = true; return; }
+  const s = D.series[0], cats = D.cats.slice(), vals = s.values.slice();
+  const sum = vals.reduce((a, b) => a + b, 0), tol = halfUnit(D.fmt) * vals.length;
+  L.whole = { sum, total: D.total, tol, remainder: null };
+  if (D.total != null && ls.remainder && D.total - sum > tol) { cats.push(ls.remainder); vals.push(D.total - sum); L.whole.remainder = ls.remainder; }
+  const total = D.total != null ? D.total : sum;
+  const G = { n: cats.length, cats, vals, total, cx: place(ls, 'C'), cy: ls.y != null ? ls.y : CY, R: ls.r || 240 * U };
+  G.r = G.R - (ls.width || 72 * U); G.gap = ls.gap != null ? ls.gap : 6 * U; G.a0 = -Math.PI / 2 + (ls.start || 0) * DEG;
+  G.cum = [0]; for (const v of vals) G.cum.push(G.cum[G.cum.length - 1] + v);
+  G.fillRole = cats.map((c) => (ls.colors || {})[c]);
+  G.fillRole.forEach((r, k) => { if (!r) issue(`fields: ${L.id}`, 'FAIL', `slice "${cats[k]}" has no colour: colors: { ${cats[k]}: '<role>' }`); });
+  G.fill = G.fillRole.map((r) => role(r || 'paper'));
+  G.surface = role(ls.on || Sc.bgRole);
+  G.track = ls.track ? role(ls.track) : null;      // the whole, drawn under the parts
+  L.marks = G.fillRole.filter(Boolean);
+  G.ang = (v) => G.a0 + v / G.total * TAU;
+  // the centre: one slice's share, big, counting as its slice sweeps; a caption under it
+  const ce = ls.centre ? { font: 'display', fill: 'paper', captionFont: 'mono', captionSize: 26 * U, captionFill: 'muted', gap: 20 * U, ...ls.centre } : null;
+  G.ck = ce ? cats.indexOf(ce.cat) : -1;
+  if (ce && G.ck < 0) issue(`fields: ${L.id}`, 'FAIL', `centre.cat "${ce.cat}" is not a slice`);
+  if (ce && G.ck >= 0) {
+    const size = ce.size != null ? ce.size : (ce.cap || 88 * U) / capRatio(ce.font);
+    const N = numLayout(ce.font, size, ce.track || 0, D.fmt, [0, vals[G.ck]], vals[G.ck]);
+    const capC = ce.caption ? capRatio(ce.captionFont) * ce.captionSize : 0, stack = N.capH + (ce.caption ? ce.gap + capC : 0);
+    N.x0 = G.cx - (N.ink[0] + N.ink[2]) / 2; N.y = Math.round(G.cy - stack / 2 + N.capH);
+    G.centre = { N, fill: role(ce.fill) };
+    needContrast(`${L.id} centre`, ce.fill, ls.on || Sc.bgRole, 3);
+    L.words += 1;
+    if (ce.caption) {
+      G.caption = layoutText({ id: `${L.id}:caption`, text: String(ce.caption), font: ce.captionFont, size: ce.captionSize, track: ce.captionTrack != null ? ce.captionTrack : 40, anchor: 'C', x: G.cx, baseline: N.y + ce.gap + capC });
+      G.capFill = role(ce.captionFill);
+      needContrast(`${L.id} caption`, ce.captionFill, ls.on || Sc.bgRole, 4.5);
+      if (!/\d/.test(ce.caption) && ce.caption.toUpperCase() !== String(ce.cat).toUpperCase()) issue(`labels: ${L.id}`, 'WARN', `the centre caption "${ce.caption}" does not name the slice it shows (${ce.cat})`);
+    }
+    L.texts.push({ id: `${L.id} centre`, b: [N.x0 + N.ink[0], N.y + N.ink[1], N.x0 + N.ink[2], N.y + N.ink[3]], chart: true });
+    if (G.caption) L.texts.push({ id: `${L.id} caption`, b: [G.caption.inkL, G.caption.top, G.caption.inkR, G.caption.bottom], chart: true });
+  }
+  // a direct label outside each other slice: its name, then its share
+  const lo = ls.labels === false ? null : { font: 'label', size: 30 * U, fill: 'paper', catFill: 'muted', gap: 28 * U, ...(ls.labels || {}) };
+  G.labels = [];
+  if (lo) {
+    needContrast(`${L.id} values`, lo.fill, ls.on || Sc.bgRole, 4.5);
+    needContrast(`${L.id} slice names`, lo.catFill, ls.on || Sc.bgRole, 4.5);
+    G.labFill = role(lo.fill); G.labCat = role(lo.catFill);
+    const capH = capRatio(lo.font) * lo.size;
+    for (let k = 0; k < G.n; k++) {
+      if (k === G.ck) { G.labels.push(null); continue; }
+      const th = (G.cum[k] + vals[k] / 2) / G.total * TAU + (ls.start || 0) * DEG, sx = Math.sin(th), sy = -Math.cos(th);
+      const px = G.cx + (G.R + lo.gap) * sx, py = G.cy + (G.R + lo.gap) * sy;
+      const N = numLayout(lo.font, lo.size, 0, D.fmt, [0, vals[k]], vals[k]);
+      const probe = layoutText({ id: `${L.id}:${cats[k]}`, text: cats[k], font: lo.font, size: lo.size, anchor: 'L', x: 0, baseline: 0 });
+      const space = gm(fontStr(lo.font, lo.size), ' ').adv, wCat = probe.inkR - probe.inkL, wNum = N.ink[2] - N.ink[0], w = wCat + space + wNum;
+      const left = sx > 0.3 ? px : sx < -0.3 ? px - w : px - w / 2;
+      const base = Math.abs(sx) > 0.3 ? py + capH / 2 : sy < 0 ? py : py + capH;
+      const line = layoutText({ id: `${L.id}:${cats[k]}`, text: cats[k], font: lo.font, size: lo.size, anchor: 'L', x: left, baseline: base });
+      N.x0 = line.inkR + space - N.ink[0]; N.y = base;
+      G.labels.push({ line, N, th });
+      L.texts.push({ id: `${L.id} ${cats[k]}`, b: [line.inkL, Math.min(line.top, base + N.ink[1]), N.x0 + N.ink[2], Math.max(line.bottom, base + N.ink[3])], chart: true });
+    }
+  }
+  if (!lo && G.n > 1) issue(`labels: ${L.id}`, 'FAIL', 'slices without labels: name each slice directly (there are no legends)');
+  G.fmt = D.fmt;
+  L.G = G;
+  L.box = [G.cx - G.R, G.cy - G.R, G.cx + G.R, G.cy + G.R]; L.markBox = L.box;
+  L.px = G.cx; L.py = G.cy; L.R = G.R;
+  L.copies = [container(L)];
+}
+
+// note: an annotation. A dot on a data point, a leader line drawing out to a label, the label typed.
+function buildNote(Sc, L) {
+  const ls = L.spec, fr = ls.font || 'mono';
+  L.text = fillRefs(L, ls.text);
+  freeNumbers(L, ls.text);
+  L.line = layoutText({ id: ls.id, text: L.text, font: fr, size: ls.size || 26 * U, track: ls.track != null ? ls.track : 20, anchor: ls.anchor || 'C', x: ls.x, baseline: ls.y });
+  L.box = [L.line.inkL, L.line.top, L.line.inkR, L.line.bottom];
+  L.px = (L.box[0] + L.box[2]) / 2; L.py = (L.box[1] + L.box[3]) / 2; L.R = Math.hypot(L.box[2] - L.box[0], L.box[3] - L.box[1]) / 2;
+  L.texts = [{ id: L.id, b: L.box, mono: fr === 'mono', size: L.line.size, y: ls.y }];
+  L.fill = role(ls.fill || 'paper'); L.stroke = role(ls.stroke || ls.fill || 'paper');
+  L.lw = ls.width != null ? ls.width : 3 * U; L.dotR = ls.dot != null ? ls.dot : 7 * U; L.gap = ls.gap != null ? ls.gap : 12 * U;
+  L.typed = true;
+  needContrast(ls.id, ls.fill || 'paper', ls.on || Sc.bgRole, fr === 'mono' || L.line.size < 40 * U ? 4.5 : 3);
+  L.copies = [container(L)];
+}
+
+function buildMark(Sc, L) {
+  const ls = L.spec;
+  L.geom = buildGeom(ls);
+  L.fill = ls.fill ? role(ls.fill) : null; L.stroke = ls.stroke ? role(ls.stroke) : null;
+  L.width = ls.width != null ? ls.width : 8 * U;
+  L.px = ls.x != null ? ls.x : CX; L.py = ls.y != null ? ls.y : CY;
+  const g = L.geom, sw = L.stroke ? L.width / 2 : 0, sc = ls.scale != null ? ls.scale : 1, a = (ls.rot || 0) * DEG, c = Math.cos(a), s = Math.sin(a);
+  const cs = [[g.box[0], g.box[1]], [g.box[2], g.box[1]], [g.box[2], g.box[3]], [g.box[0], g.box[3]]].map(([x, y]) => [L.px + sc * (x * c - y * s), L.py + sc * (x * s + y * c)]);
+  L.box = [Math.min(...cs.map((p) => p[0])) - sw, Math.min(...cs.map((p) => p[1])) - sw, Math.max(...cs.map((p) => p[0])) + sw, Math.max(...cs.map((p) => p[1])) + sw];
+  L.R = g.R + sw;
+  L.copies = [container(L)];
+}
+
+// a scene that shows numbers from FILM.data gets a source line: "SOURCE: " and what FILM.sources says for
+// each Facts row its numbers come from, typed in small print at the foot of the live area
+function addSource(Sc) {
+  const dataLayers = Sc.layers.filter((L) => !L.dead && (DATA_KINDS.includes(L.kind) || L.refs.length));
+  const so = Sc.spec.source;
+  if (!dataLayers.length) return;
+  if (so === false) { issue(`source: ${Sc.id}`, 'FAIL', 'this scene shows numbers from FILM.data but has source: false'); return; }
+  const rows = [...new Set(dataLayers.flatMap((L) => L.dsets.map((D) => D.source).concat(L.refs.map((R) => R.D.source))).filter(Boolean))];
+  const texts = [...new Set(rows.map((r) => (FILM.sources || {})[r]).filter(Boolean))];
+  const o = { font: 'mono', size: 24 * U, track: 20, anchor: 'L', fill: 'muted', ...(so || {}) };
+  const text = (FILM.sourcePrefix != null ? FILM.sourcePrefix : 'SOURCE: ') + texts.join('; ');
+  let y = o.y;
+  if (y == null) { const probe = layoutText({ id: 'probe', text, font: o.font, size: o.size, anchor: 'L', x: 0, baseline: 0 }); y = Math.floor((H - MARGIN - probe.bottom) / UNIT) * UNIT; }
+  const first = (L) => {                           // when a layer's numbers (or the chart around them) first show
+    const ls = L.spec, ts = [];
+    if (ls.enter && ls.enter.at != null) ts.push(ls.enter.at);
+    if (ls.grow && ls.grow.at != null) ts.push(ls.grow.at - (L.kind === 'counter' ? 0 : noteSec(16)));   // a chart's axis leads its data by a 16th
+    return ts.length ? Math.min(...ts) : Sc.t0;
+  };
+  let at = o.at != null ? o.at : Math.max(Sc.t0, Math.min(...dataLayers.map(first)));
+  if (o.at == null && at < 1 / FPS && LOOP === 'hold' && !Sc.wrap) at = 1 / FPS;   // frame 0 belongs to the lockup, cursor and all
+  const L = buildLayer(Sc, { id: `SOURCE-${Sc.id}`, kind: 'text', auto: true, text, font: o.font, size: o.size, track: o.track, anchor: o.anchor, x: o.x, y, fill: o.fill, on: o.on, enter: { at, typed: true } }, Sc.layers.length);
+  L.isSource = true; L.rows = rows;
+  Sc.source = L;
+}
+
+/* ---------------- motion ---------------- */
+// A Prop that means a number: at rest it holds `rest`; grow brings it from `from` at tIn; keys retarget it;
+// an exit to zero takes it back. In the hold loop's lockup it is at rest at t 0 and resets (hidden) once the
+// wrap exit has finished.
+function valueProp(L, name, o, isData) {
+  const Sc = L.scene, wrapped = !!Sc.wrap;
+  const P = new Prop(wrapped || o.tIn == null ? o.rest : o.from, `${L.id}.${name}`);
+  const ev = [];
+  if (o.tIn != null) { if (wrapped) ev.push([Math.min(Sc.wrapEnd, o.tIn), o.from, null, true]); ev.push([o.tIn, o.rest, o.sp]); }
+  for (const k of o.keys || []) ev.push(k);
+  if (o.out) ev.push(o.out);
+  ev.sort((a, b) => a[0] - b[0] || (b[3] ? 1 : 0) - (a[3] ? 1 : 0));
+  for (const [t, v, sp, isSet] of ev) { if (isSet) P.set(t, v); else P.to(t, v, sp); }
+  if (isData) DPROPS.push({ P, L, what: name, tol: o.tol });
+  return P;
+}
+// the container (or per-glyph) springs: the wrap exit, the entrance, keys, the exit
+function copyTimeline(Sc, L) {
+  const ls = L.spec, en = ls.enter && !ls.enter.typed && (L.kind !== 'note' || ls.enter.from) ? ls.enter : null;
+  const trim = ls.trim != null ? (Array.isArray(ls.trim) ? ls.trim : [0, ls.trim]) : [0, 1];
+  const rest = { ...KEYS, op: ls.op != null ? ls.op : 1, ta: trim[0], tb: trim[1] };
+  const from = { ...rest, ...stateVals(en && en.from) };
+  const pick = (a, b) => { const o = {}; for (const k of Object.keys(b)) if (b[k] !== a[k]) o[k] = a[k]; return o; };
+  const nC = L.copies.length, rank = (spec, seed) => (spec && spec.stagger ? orderOf(L.copies, spec.order, seed + L.li) : null);
+  const enR = rank(en, 0x51A6), keyR = (ls.keys || []).map((k) => rank(k, 0x7E57));
+  const ex = ls.exit && typeof ls.exit.to === 'object' ? ls.exit : ls.exit ? null : Sc.spec.exit;
+  const exR = ls.exit ? rank(ex, 0xE417) : null;
+  L.copies.forEach((cp, k) => {
+    cp.P = {};
+    for (const key of Object.keys(KEYS)) cp.P[key] = new Prop((Sc.wrap ? rest : from)[key], `${L.id}${nC > 1 ? '#' + k : ''}.${key}`);
+    const ev = [];
+    if (Sc.wrap) {
+      const w = Sc.wrap;
+      ev.push([w.exit + (w.stagger ? noteSec(w.stagger) * L.li : 0), stateVals(w.to || { scale: 0 }), w.spring || 'EXIT']);
+      const back = en ? en.at + stagOf(en, enR, k) : Sc.t0;
+      if (Sc.wrapEnd < back) ev.push([Sc.wrapEnd, { op: 0 }, null, true]);
+    }
+    if (en) {
+      const ts = en.at + stagOf(en, enR, k);
+      ev.push([ts, from, null, true]);
+      ev.push([ts, pick(rest, from), en.spring]);
+      cp.land = ts + landT(en.spring || 'LAND');
+    } else if (Sc.wrap) ev.push([Sc.t0, rest, null, true]);
+    (ls.keys || []).forEach((key, j) => { if (key.to) ev.push([key.at + stagOf(key, keyR[j], k), stateVals(key.to), key.spring]); });
+    if (ex) ev.push([ex.at + (ls.exit ? stagOf(ex, exR, k) : (ex.stagger ? noteSec(ex.stagger) * L.li : 0)), stateVals(ex.to), ex.spring || 'EXIT']);
+    ev.sort((a, b) => a[0] - b[0] || (b[3] ? 1 : 0) - (a[3] ? 1 : 0));
+    for (const [t, vals, sp, isSet] of ev) for (const [key, v] of Object.entries(vals)) { if (isSet) cp.P[key].set(t, v); else cp.P[key].to(t, v, springFor(key, sp)); }
+  });
+}
+// the data inside a layer: counters count, bars grow, lines draw, donuts sweep, notes point
+function dataTimeline(Sc, L) {
+  const ls = L.spec, g = ls.grow || null, ex = ls.exit && ls.exit.to === 'zero' ? ls.exit : null;
+  let chromeAt = ls.enter && ls.enter.at != null ? ls.enter.at : g ? Math.max(Sc.t0, g.at - noteSec(16)) : null;
+  if (chromeAt != null && ['cut', 'wipe'].includes(Sc.in) && chromeAt <= Sc.t0 + 1e-6) chromeAt = null;   // on screen the frame the cut lands
+  if (L.kind === 'counter') {
+    const keys = L.keyVals.map(({ k, v }) => [k.at, v, k.spring || 'COUNT']);
+    L.val = valueProp(L, 'value', { rest: L.final, from: L.from, tIn: g ? g.at : null, sp: (g && g.spring) || 'COUNT', keys, out: ex ? [ex.at, 0, ex.spring || 'EXIT'] : null, tol: halfUnit(L.fmt) }, true);
+    L.outAt = ex ? ex.at : Infinity; L.pre = ex ? targetAt(L.val, ex.at - 1e-6) : null;
+    L.growMid = g ? g.at + 0.35 : null;
+  } else if (L.kind === 'columns' || L.kind === 'bars') {
+    const G = L.G, items = G.cats.map((_, i) => ({ ox: G.horiz ? 0 : G.mid(i), oy: G.horiz ? G.mid(i) : 0, val: G.vals[i] }));
+    const gr = g && g.stagger ? orderOf(items, g.order, 0x6A0 + L.li) : null, xr = ex && ex.stagger ? orderOf(items, ex.order, 0xE7 + L.li) : null;
+    const tol = Math.min(G.vo ? halfUnit(L.dsets[0].fmt) : Infinity, 0.5 / G.k);
+    L.vals = G.cats.map((c, i) => valueProp(L, c, {
+      rest: G.vals[i], from: 0, tIn: g ? g.at + stagOf(g, gr, i) : null, sp: (g && g.spring) || 'GROW', tol,
+      keys: L.retargets.map((r) => [r.k.at + stagOf(r.k, r.k.stagger ? orderOf(items, r.k.order, 0x7A + L.li) : null, i), r.vals[i], r.k.spring || 'GROW']),
+      out: ex ? [ex.at + stagOf(ex, xr, i), 0, ex.spring || 'EXIT'] : null,
+    }, true));
+    // leaving (an exit to zero is not a data change): each label keeps its landed value and fades as its bar drops
+    L.outAt = G.cats.map((_, i) => (ex ? ex.at + stagOf(ex, xr, i) : Infinity));
+    L.pre = L.vals.map((P, i) => targetAt(P, L.outAt[i] - 1e-6));
+    // highlight: 0 plain, 1 lit, cross-faded on FADE at each key
+    const lit = (set, i) => (set.has(G.cats[i]) ? 1 : 0);
+    L.hl = G.hl ? G.cats.map((c, i) => {
+      const init = lit(L.hl0, i), ch = L.hlKeys.map((k) => [k.at, lit(k.on, i)]), fin = ch.length ? ch[ch.length - 1][1] : init;
+      const P = new Prop(Sc.wrap ? fin : init, `${L.id}.${c}.highlight`);
+      if (Sc.wrap && ch.length) P.set(Sc.wrapEnd, init);
+      for (const [t, v] of ch) P.to(t, v, 'FADE');
+      return P;
+    }) : null;
+    for (const k of L.hlKeys) accentAt(k.at + landT('FADE'), `${L.id} highlight`);
+    chromeTimeline(Sc, L, chromeAt, gr, g, ex, xr);
+    L.growMid = g ? g.at + (gr ? noteSec(g.stagger) * Math.max(...gr) / 2 : 0) + 0.2 : null;
+    L.labelSwap = L.retargets.map((r) => r.k.at);
+  } else if (L.kind === 'line') {
+    const G = L.G, sp = (g && g.spring) || 'TRACE', st = g && g.stagger ? noteSec(g.stagger) : 0;
+    G.series.forEach((s, si) => {
+      const t0 = g ? g.at + si * st : null;
+      s.draw = valueProp(L, `${s.name}.draw`, { rest: 1, from: 0, tIn: t0, sp, out: ex ? [ex.at + si * st, 0, ex.spring || 'EXIT'] : null, tol: 0.5 / Math.max(1, G.x1 - G.x0) }, true);
+      s.pv = s.values.map((v, i) => valueProp(L, `${s.name}.${G.cats[i]}`, { rest: v, keys: L.retargets.map((r, j) => [r.k.at, s.sets[j + 1][i], r.k.spring || 'GROW']), tol: Math.min(halfUnit(G.fmt), 0.5 / G.k) }, true));
+      // each point pops when the drawing line reaches it
+      s.pp = s.values.map((_, i) => {
+        let tp = null;
+        if (t0 != null) { const spr = spring(sp), f = i / (G.n - 1); let a = 0, b = settle(spr); if (f <= 0) b = 0; else for (let it = 0; it < 40; it++) { const m = (a + b) / 2; if (S(m, spr) < f - 1e-9) a = m; else b = m; } tp = t0 + b; }
+        return valueProp(L, `${s.name}.${G.cats[i]}.pop`, { rest: 1, from: 0, tIn: tp, sp: 'POP' }, false);
+      });
+    });
+    chromeTimeline(Sc, L, chromeAt, null, g, ex, null);
+    L.growMid = g ? g.at + (G.series.length - 1) * st / 2 + 0.4 : null;
+    L.outAt = ex ? ex.at + (G.series.length - 1) * st : Infinity;
+  } else if (L.kind === 'donut') {
+    const G = L.G;
+    L.sweep = valueProp(L, 'sweep', { rest: G.total, from: 0, tIn: g ? g.at : null, sp: (g && g.spring) || 'SWEEP', out: ex ? [ex.at, 0, ex.spring || 'EXIT'] : null, tol: Math.min(halfUnit(G.fmt), 0.5 / (TAU * G.R / G.total)) }, true);
+    L.bt = valueProp(L, 'track', { rest: 1, from: 0, tIn: chromeAt, sp: 'FADE', out: ex ? [ex.at + noteSec(16), 0, 'FADE'] : null }, false);
+    L.outAt = ex ? ex.at : Infinity;
+    L.growMid = g ? g.at + 0.35 : null;
+  } else if (L.kind === 'note') {
+    const at = ls.enter && ls.enter.at != null ? ls.enter.at : Sc.t0;
+    L.dot = valueProp(L, 'dot', { rest: 1, from: 0, tIn: at, sp: 'POP' }, false);
+    L.lead = valueProp(L, 'lead', { rest: 1, from: 0, tIn: at + noteSec(32), sp: 'DRAW' }, false);
+    L.typeAt = ls.enter && ls.enter.label != null ? ls.enter.label : at + noteSec(16);
+  }
+}
+// axes, baselines and category labels: they arrive a 16th before the data and leave after it
+function chromeTimeline(Sc, L, at, gr, g, ex, xr) {
+  const G = L.G, n = G.n, lead = at != null ? at : null;
+  const exEnd = ex ? ex.at + (xr ? noteSec(ex.stagger) * Math.max(...xr) : 0) + noteSec(16) : null;
+  L.bt = valueProp(L, 'axis', { rest: 1, from: 0, tIn: lead, sp: 'DRAW', out: ex ? [exEnd, 0, 'EXIT'] : null }, false);
+  L.cop = []; L.cdy = [];
+  for (let i = 0; i < n; i++) {
+    const ts = lead != null ? lead + (g && g.stagger && gr ? noteSec(g.stagger) * gr[i] : 0) : null;
+    L.cop.push(valueProp(L, `${i}.cat-op`, { rest: 1, from: 0, tIn: ts, sp: 'FADE', out: ex ? [exEnd, 0, 'FADE'] : null }, false));
+    L.cdy.push(valueProp(L, `${i}.cat-dy`, { rest: 0, from: 24 * U, tIn: ts, sp: 'LAND' }, false));
+  }
+}
+
+/* ---------------- scenes, transitions and the camera ---------------- */
+function buildScenes() {
+  for (const spec of FILM.scenes) {
+    const tr = typeof spec.in === 'string' ? { kind: spec.in } : (spec.in || { kind: 'none' });
+    if (!['none', 'cut', 'circle', 'wipe'].includes(tr.kind)) throw new Error(`${spec.id}: unknown transition "${tr.kind}" (none, cut, circle, wipe)`);
+    const Sc = { spec, id: spec.id, t0: spec.t0, t1: spec.t1, in: tr.kind, tr, wrap: spec.wrap || null, punch: spec.punch || null, layers: [], wrapEnd: 0, bgRole: spec.bg || 'bg' };
+    if (spec.bg) role(spec.bg);
+    SCENES.push(Sc);
+    (spec.layers || []).forEach((ls, li) => buildLayer(Sc, ls, li));
+    addSource(Sc);
+  }
+  SCENES.sort((a, b) => a.t0 - b.t0);
+  for (const Sc of SCENES) if (Sc.wrap) {          // when the last piece of the lockup has left
+    const w = Sc.wrap;
+    Sc.wrapEnd = Math.max(...Sc.layers.map((L) => w.exit + (w.stagger ? noteSec(w.stagger) * L.li : 0))) + settle(spring(w.spring || 'EXIT'));
+  }
+  for (const Sc of SCENES) for (const L of Sc.layers) if (!L.dead) { copyTimeline(Sc, L); dataTimeline(Sc, L); }
+  for (const Sc of SCENES) for (const L of Sc.layers) if (L.kind === 'note' && !L.dead) linkNote(Sc, L);
+  for (const Sc of SCENES) { Sc.win = [[Sc.t0, Sc.t1]]; if (Sc.wrap) Sc.win.push([0, Sc.wrapEnd]); }
+  // transitions: extend the outgoing scene until the incoming one covers it
+  for (const Sc of SCENES) {
+    const tr = Sc.tr, prev = SCENES.filter((p) => p !== Sc && p.win.some(([a, b]) => a < Sc.t0 && b >= Sc.t0 - 1e-9));
+    if (tr.kind === 'cut') cutAt(Sc.t0);
+    if (tr.kind === 'circle') {
+      const x = tr.x != null ? tr.x : CX, y = tr.y != null ? tr.y : CY;
+      const far = Math.max(Math.hypot(x, y), Math.hypot(W - x, y), Math.hypot(x, H - y), Math.hypot(W - x, H - y));
+      const sp = spring(tr.spring || 'MASK'), rMax = far * 1.25;
+      let a = 0, b = settle(sp);
+      for (let i = 0; i < 40; i++) { const m = (a + b) / 2; if (rMax * S(m, sp) < far) a = m; else b = m; }
+      Object.assign(tr, { x, y, far, rMax, sp, dur: b, t0: Sc.t0, tEnd: Sc.t0 + b });
+      for (const p of prev) for (const w of p.win) if (w[0] < Sc.t0 && w[1] >= Sc.t0 - 1e-9) w[1] = Math.max(w[1], tr.tEnd);
+      activeIn(Sc.t0, tr.tEnd);
+    }
+    if (tr.kind === 'wipe') {                      // bars cover the frame by t0 (the scenes swap under them), then clear it
+      const n = tr.n || 5, sp = spring(tr.spring || 'EXIT'), st = noteSec(tr.stagger || 32);
+      let a = 0, b = settle(sp);
+      for (let i = 0; i < 40; i++) { const m = (a + b) / 2; if (1.08 * S(m, sp) < 1) a = m; else b = m; }
+      const lead = (n - 1) * st + b;
+      Object.assign(tr, { n, sp, st, cover: b, color: role(tr.color || 'paper'), dir: tr.dir || 'up', tStart: Sc.t0 - lead, t0: Sc.t0, tEnd: Sc.t0 + (n - 1) * st + settle(sp) });
+      for (const p of prev) for (const w of p.win) if (w[0] < Sc.t0 && w[1] > Sc.t0) w[1] = Sc.t0;
+      cutAt(Sc.t0);
+      activeIn(tr.tStart, tr.tEnd);
+    }
+  }
+  // the camera punches in late in a scene and is reset at the next scene's start
+  const ev = [];
+  let dirty = false;
+  for (const Sc of SCENES) {
+    if (dirty) { ev.push({ t: Sc.t0, k: ['cut', 'wipe'].includes(Sc.in) ? 'set' : 'ease' }); dirty = false; }
+    if (Sc.punch) { ev.push({ t: Sc.punch.at, k: 'punch', v: Sc.punch.z }); dirty = true; }
+  }
+  if (dirty) WARN.push('the last punch-in is never reset: the loop will jump in scale');
+  ev.sort((a, b) => a.t - b.t);
+  camZ = new Prop(1, 'camera.z');
+  for (const e of ev) { if (e.k === 'punch') camZ.to(e.t, e.v, 'PUNCH'); else if (e.k === 'ease') camZ.to(e.t, 1, 'EXIT'); else camZ.set(e.t, 1); }
+}
+const inWin = (Sc, t) => Sc.win.some(([a, b]) => t >= a && t < b);
+function sourceExit(Sc) {
+  const L = Sc.source, data = Sc.layers.filter((x) => x !== L && !x.dead && (DATA_KINDS.includes(x.kind) || x.refs.length));
+  const exits = data.map((x) => (x.spec.exit ? x.spec.exit.at : Sc.spec.exit ? Sc.spec.exit.at : Infinity)).filter((t) => t < Sc.t1);
+  if (!exits.length) return;
+  const n0 = Math.ceil(Math.min(...exits) * FPS), n1 = Math.floor(Sc.t1 * FPS);
+  for (let n = n0; n <= n1; n++) {
+    const t = n / FPS;
+    if (data.some((x) => dataShown(x, t))) continue;
+    const to = Sc.spec.exit && typeof Sc.spec.exit.to === 'object' ? Sc.spec.exit.to : { op: 0 };
+    for (const [k, v] of Object.entries(stateVals(to))) L.tc.P[k].to(t, v, springFor(k, 'EXIT'));
+    L.sourceOut = t;
+    return;
+  }
+}
+function linkNote(Sc, L) {                         // find the data point a note points at; fix the leader's far end
+  const ls = L.spec;
+  if (ls.chart) {
+    const C = LAYERS[ls.chart];
+    if (!C || C.scene !== Sc || !['columns', 'bars', 'line', 'donut'].includes(C.kind) || C.dead) { issue(`fields: ${L.id}`, 'FAIL', `chart "${ls.chart}" is not a chart in scene ${Sc.id}`); L.dead = true; return; }
+    const cats = C.G.cats, i = typeof ls.cat === 'number' ? ls.cat : cats.indexOf(String(ls.cat));
+    if (i < 0 || i >= cats.length) { issue(`fields: ${L.id}`, 'FAIL', `cat "${ls.cat}" is not a category of ${ls.chart}`); L.dead = true; return; }
+    L.C = C; L.ci = i; L.si = C.kind === 'line' ? Math.max(0, C.G.series.findIndex((s) => s.name === ls.series)) : 0;
+  } else if (!ls.point) { issue(`fields: ${L.id}`, 'FAIL', 'a note points at chart + cat, or at point: [x, y]'); L.dead = true; return; }
+  const A = noteAnchor(L, null), b = L.box, gp = L.gap;
+  L.end = [Math.max(b[0] - gp, Math.min(b[2] + gp, A.x)), Math.max(b[1] - gp, Math.min(b[3] + gp, A.y))];
+  const A2 = noteAnchor(L, null);
+  L.lenMax = Math.hypot(L.end[0] - A2.x, L.end[1] - A2.y);
+  if (ls.dot == null && L.C && L.C.kind === 'line') L.dotR = 0;   // the data point is the dot
+}
+function noteAnchor(L, t) {                        // the point on the data (at time t; null = at rest) a note starts from
+  const ls = L.spec, gp = L.gap;
+  const v = (P, rest) => (t == null ? rest : P.at(t));  // t null: the chart at rest
+  if (!L.C) return { x: ls.point[0], y: ls.point[1] };
+  const C = L.C, G = C.G, i = L.ci;
+  if (C.kind === 'columns' || C.kind === 'bars') {
+    const val = v(C.vals[i], G.vals[i]), e = barEnd(G, val);
+    if (G.horiz) { const N = G.valN[i], w = N ? N.ink[2] - N.ink[0] + G.vo.gap : 0; return { x: e + Math.sign(val || 1) * (w + gp), y: G.mid(i) }; }
+    const h = G.valN[i] ? G.vo.gap + G.valN[i].capH : 0;
+    return { x: G.mid(i), y: e - Math.sign(val || 1) * (h + gp) };
+  }
+  if (C.kind === 'line') {                         // the point itself; the leader starts at its edge, towards the label
+    const s = G.series[L.si], P = { x: G.xs[i], y: G.y(v(s.pv[i], s.values[i])) };
+    if (!L.end) return P;
+    const dx = L.end[0] - P.x, dy = L.end[1] - P.y, d = Math.hypot(dx, dy) || 1, r = G.pr + 3 * U + gp;
+    return { x: P.x + dx / d * r, y: P.y + dy / d * r };
+  }
+  const th = (G.cum[i] + G.vals[i] / 2) / G.total * TAU + (C.spec.start || 0) * DEG;
+  return { x: G.cx + (G.R + gp) * Math.sin(th), y: G.cy - (G.R + gp) * Math.cos(th) };
+}
+function targetAt(P, t) {                          // where a Prop is heading at time t (every spring started by t, landed)
+  let v = P.v0;
+  for (const e of P.ev) { if (e.t > t + 1e-9) break; v = e.set ? e.v : v + e.d; }
+  return v;
+}
+
+/* ---------------- drawing ---------------- */
+function copyState(L, cp, t) {
+  const P = cp.P, ls = L.spec;
+  return { x: L.px + cp.ox + P.dx.at(t), y: L.py + cp.oy + P.dy.at(t), rot: ((ls.rot || 0) + P.rot.at(t)) * DEG,
+    sc: (ls.scale != null ? ls.scale : 1) * P.sc.at(t), op: P.op.at(t), bl: P.bl.at(t), ta: P.ta.at(t), tb: P.tb.at(t), fo: P.fo.at(t) };
+}
+function inCopy(c, L, st, fn) {                    // draw in the layer's rest coordinates, moved as one
+  c.save(); c.translate(st.x, st.y); c.rotate(st.rot); c.scale(st.sc, st.sc); c.translate(-L.px, -L.py);
+  fn(); c.restore(); c.globalAlpha = 1;
+}
+const shown = (st) => st.op > 0.002 && Math.abs(st.sc) > 1e-4;
+function drawTextLayer(c, L, t, q) {
+  const ls = L.spec;
+  if (ls.clip) { c.save(); c.beginPath(); c.rect(ls.clip[0], ls.clip[1], ls.clip[2] - ls.clip[0], ls.clip[3] - ls.clip[1]); c.clip(); }
+  if (L.typed) drawTyped(c, L, t, q);
+  else {
+    const ln = L.line;
+    setFont(c, ln.font);
+    for (const cp of L.copies) {
+      const st = copyState(L, cp, t);
+      if (!shown(st)) continue;
+      c.save(); c.translate(st.x, st.y); c.rotate(st.rot); c.scale(st.sc, st.sc); c.translate(-(L.px + cp.ox), -L.py);
+      fillGlyph(c, cp.g.ch, cp.g.x, ln.baseline, L.fill, st.op, st.bl);
+      c.restore();
+    }
+  }
+  c.globalAlpha = 1;
+  if (ls.clip) c.restore();
+}
+function typedCount(L, q) {
+  const at = L.kind === 'note' ? L.typeAt : L.spec.enter.at;
+  return q < at - 1e-9 ? 0 : typed(q, at, L.line.glyphs.length);
+}
+function drawTyped(c, L, t, q) {                   // one character per frame, a block cursor while typing
+  const ln = L.line, at = L.kind === 'note' ? L.typeAt : L.spec.enter.at, wrapped = !!L.scene.wrap && t < L.scene.wrapEnd;
+  const cp = L.kind === 'note' ? L.copies[0] : L.tc, st = copyState(L, cp, t);
+  if (!shown(st)) return;
+  const n = wrapped ? ln.glyphs.length : typedCount(L, q);
+  c.save(); c.translate(st.x, st.y); c.rotate(st.rot); c.scale(st.sc, st.sc); c.translate(-L.px, -L.py);
+  setFont(c, ln.font);
+  for (let i = 0; i < n; i++) { const g = ln.glyphs[i]; if (!g.space) fillGlyph(c, g.ch, g.x, ln.baseline, L.fill, st.op, 0); }
+  const fc = Math.ceil((q - at) * FPS - 1e-6);
+  if (!wrapped && q >= at - 1e-9 && fc <= ln.glyphs.length + 2) {
+    const g = ln.glyphs[Math.min(n, ln.glyphs.length - 1)], x = n < ln.glyphs.length ? g.x : ln.inkR + ln.trackPx + 2 * U;
+    const cw = 0.5625 * ln.size, ch = 0.8125 * ln.size;
+    c.globalAlpha = st.op; c.fillStyle = L.fill; c.fillRect(x, ln.baseline + 0.156 * ln.size - ch, cw, ch);
+  }
+  c.restore(); c.globalAlpha = 1;
+}
+function drawCounter(c, L, t, q) {
+  const st = copyState(L, L.copies[0], t);
+  if (!shown(st)) return;
+  const out = t >= L.outAt, v = out ? L.pre : L.val.at(q), o = out ? st.op * clamp01(2 * L.val.at(t) / (L.pre || 1) - 1) : st.op;
+  inCopy(c, L, st, () => drawNum(c, L.N, v, L.N.x0, L.N.y, L.fill, o));
+}
+function barPath(c, G, i, e) {                     // a bar from the zero line to e: rounded at its data end, square at the base
+  const m = G.mid(i), h = G.bw / 2, len = Math.abs(e - G.zero), r = Math.min(G.rad, len), s = Math.sign(e - G.zero);
+  c.beginPath();
+  if (G.horiz) {
+    const a = G.zero, y0 = m - h, y1 = m + h;
+    c.moveTo(a, y0); c.lineTo(e - s * r, y0); c.arcTo(e, y0, e, y0 + r, r); c.lineTo(e, y1 - r); c.arcTo(e, y1, e - s * r, y1, r); c.lineTo(a, y1);
+  } else {
+    const a = G.zero, x0 = m - h, x1 = m + h;
+    c.moveTo(x0, a); c.lineTo(x0, e - s * r); c.arcTo(x0, e, x0 + r, e, r); c.lineTo(x1 - r, e); c.arcTo(x1, e, x1, e - s * r, r); c.lineTo(x1, a);
+  }
+  c.closePath();
+}
+function drawGrid(c, G, a, gt) {
+  for (const gl of G.grid) {
+    c.globalAlpha = a; c.fillStyle = G.gridCol;
+    if (G.horiz) c.fillRect(gl.p - G.gridW / 2, G.y0, G.gridW, (G.y1 - G.y0) * gt);
+    else c.fillRect(G.x0, gl.p - G.gridW / 2, (G.x1 - G.x0) * gt, G.gridW);
+    drawText(c, gl.ln, gl.fill, () => ({ op: a * gt }));
+  }
+}
+function drawBarChart(c, L, t, q) {
+  const st = copyState(L, L.copies[0], t);
+  if (!shown(st)) return;
+  const G = L.G, a = st.op;
+  inCopy(c, L, st, () => {
+    const bt = L.bt.at(t);
+    if (bt > 0.002) drawGrid(c, G, a, bt);
+    for (let i = 0; i < G.n; i++) {
+      if (G.track && bt > 0.002) { c.globalAlpha = a * bt; c.fillStyle = G.track; const s = { ...G, zero: barEnd(G, G.mn) }; barPath(c, s, i, barEnd(G, G.mx)); c.fill(); }
+      const e = barEnd(G, L.vals[i].at(t));
+      if (Math.abs(e - G.zero) < 0.25) continue;
+      const h = L.hl ? clamp01(L.hl[i].at(t)) : 0;
+      c.globalAlpha = a; c.fillStyle = h > 0.001 ? mix(G.fill[i], G.hl, h) : G.fill[i];
+      barPath(c, G, i, e); c.fill();
+    }
+    if (G.base && bt > 0.002) {
+      c.globalAlpha = a; c.fillStyle = G.baseCol; const w = G.base.width;
+      if (G.horiz) c.fillRect(G.zero - w / 2, G.y0, w, (G.y1 - G.y0) * bt); else c.fillRect(G.x0, G.zero - w / 2, (G.x1 - G.x0) * bt, w);
+    }
+    for (let i = 0; i < G.n; i++) {
+      const lines = G.catLines[i];
+      if (!lines) continue;
+      const o = a * L.cop[i].at(t);
+      if (o < 0.002) continue;
+      let li = 0;
+      for (const s of L.labelSwap || []) if (q >= s - 1e-9) li++;
+      const h = L.hl ? clamp01(L.hl[i].at(t)) : 0, dy = L.cdy[i].at(t);
+      drawText(c, lines[Math.min(li, lines.length - 1)], h > 0.001 ? mix(G.catFill, G.catHl, h) : G.catFill, () => ({ op: o, dy: G.horiz ? 0 : dy, dx: G.horiz ? -dy : 0 }));
+    }
+    if (G.vo) for (let i = 0; i < G.n; i++) {
+      const out = t >= L.outAt[i], vt = L.vals[i].at(t), vq = out ? L.pre[i] : L.vals[i].at(q);
+      const o = a * clamp01(Math.abs(vt * G.k) / (0.6 * G.valN[i].capH)) * (out ? clamp01(2 * vt / (L.pre[i] || 1) - 1) : 1);
+      if (o < 0.002) continue;
+      const [x, y] = valuePos(G, i, vt, vq);
+      drawNum(c, G.valN[i], vq, x, y, G.valFill, o);
+    }
+  });
+}
+function drawLineChart(c, L, t, q) {
+  const st = copyState(L, L.copies[0], t);
+  if (!shown(st)) return;
+  const G = L.G, a = st.op;
+  inCopy(c, L, st, () => {
+    const bt = L.bt.at(t);
+    if (bt > 0.002) drawGrid(c, G, a, bt);
+    if (G.base && bt > 0.002) { c.globalAlpha = a; c.fillStyle = G.baseCol; c.fillRect(G.x0, G.zero - G.base.width / 2, (G.x1 - G.x0) * bt, G.base.width); }
+    G.series.forEach((s, si) => {
+      const tip = s.draw.at(t) * (G.n - 1);
+      if (tip <= 1e-4) return;
+      const ys = s.pv.map((P) => G.y(P.at(t))), pts = linePts(G, ys, tip);
+      if (G.area) {
+        c.globalAlpha = a; c.fillStyle = G.area; c.beginPath(); c.moveTo(pts[0][0], G.zero);
+        for (const p of pts) c.lineTo(p[0], p[1]);
+        c.lineTo(pts[pts.length - 1][0], G.zero); c.closePath(); c.fill();
+      }
+      c.globalAlpha = a; c.strokeStyle = G.stroke[si]; c.lineWidth = G.lw; c.lineCap = 'round'; c.lineJoin = 'round';
+      c.beginPath(); c.moveTo(pts[0][0], pts[0][1]); for (const p of pts) c.lineTo(p[0], p[1]); c.stroke();
+    });
+    G.series.forEach((s, si) => {                  // points and their labels over every line, with a surface ring
+      const tip = s.draw.at(t) * (G.n - 1);
+      for (let i = 0; i < G.n; i++) {
+        if (i > tip + 1e-6) break;
+        const k = s.pp[i].at(t), y = G.y(s.pv[i].at(t));
+        if (G.pr > 0 && k > 0.002) {
+          c.globalAlpha = a; c.fillStyle = G.surface; c.beginPath(); c.arc(G.xs[i], y, (G.pr + 3 * U) * k, 0, TAU); c.fill();
+          c.fillStyle = G.stroke[si]; c.beginPath(); c.arc(G.xs[i], y, G.pr * k, 0, TAU); c.fill();
+        }
+        const N = s.labels[i];
+        if (N) { const vq = s.pv[i].at(q), p = pointLabelPos(G, s, i, s.pv[i].at(t)); drawNum(c, N, vq, p[0], p[1], G.labFill, a * clamp01(k)); }
+      }
+      if (s.nameLine) { const k = s.pp[G.n - 1].at(t); if (tip >= G.n - 1 - 1e-6 && k > 0.002) drawText(c, s.nameLine, G.nameFill, () => ({ op: a * clamp01(k), dy: G.y(s.pv[G.n - 1].at(t)) - G.y(s.values[G.n - 1]) })); }
+    });
+    if (G.co) G.catLines.forEach((ln, i) => { if (!ln) return; const o = a * (L.cop[i] ? L.cop[i].at(t) : 1); if (o > 0.002) drawText(c, ln, G.catFill, () => ({ op: o, dy: L.cdy[i].at(t) })); });
+  });
+}
+function drawDonut(c, L, t, q) {
+  const st = copyState(L, L.copies[0], t);
+  if (!shown(st)) return;
+  const G = L.G, a = st.op, sw = L.sweep.at(t), swq = L.sweep.at(q);
+  inCopy(c, L, st, () => {
+    const bt = L.bt.at(t);
+    if (G.track && bt > 0.002) { c.globalAlpha = a * bt; c.fillStyle = G.track; c.beginPath(); c.arc(G.cx, G.cy, G.R, 0, TAU); c.arc(G.cx, G.cy, G.r, TAU, 0, true); c.closePath(); c.fill(); }
+    for (let k = 0; k < G.n; k++) {
+      const s0 = G.cum[k], s1 = Math.min(G.cum[k + 1], sw);
+      if (s1 - s0 <= G.total * 1e-6) continue;
+      c.globalAlpha = a; c.fillStyle = G.fill[k];
+      c.beginPath(); c.arc(G.cx, G.cy, G.R, G.ang(s0), G.ang(s1)); c.arc(G.cx, G.cy, G.r, G.ang(s1), G.ang(s0), true); c.closePath(); c.fill();
+    }
+    if (G.gap > 0) {                               // a surface gap between neighbouring slices
+      c.globalAlpha = a; c.strokeStyle = G.surface; c.lineWidth = G.gap; c.lineCap = 'butt';
+      for (let k = 0; k < G.n; k++) {
+        const v = G.cum[k];
+        if (k === 0 ? sw <= 0 : v >= sw) continue;
+        const th = G.ang(v), cs = Math.cos(th), sn = Math.sin(th);
+        c.beginPath(); c.moveTo(G.cx + (G.r - 2) * cs, G.cy + (G.r - 2) * sn); c.lineTo(G.cx + (G.R + 2) * cs, G.cy + (G.R + 2) * sn); c.stroke();
+      }
+    }
+    const out = t >= L.outAt, part = (k, s) => (out ? G.vals[k] : Math.max(0, Math.min(G.vals[k], s - G.cum[k])));
+    const seen = (k) => clamp01(Math.max(0, Math.min(G.vals[k], sw - G.cum[k])) / Math.max(1e-9, 0.15 * G.vals[k]));
+    if (G.centre && G.ck >= 0) {
+      const o = a * seen(G.ck);
+      drawNum(c, G.centre.N, part(G.ck, swq), G.centre.N.x0, G.centre.N.y, G.centre.fill, o);
+      if (G.caption) drawText(c, G.caption, G.capFill, () => ({ op: o }));
+    }
+    G.labels.forEach((lb, k) => {
+      if (!lb) return;
+      const o = a * seen(k);
+      if (o < 0.002) return;
+      drawText(c, lb.line, G.labCat, () => ({ op: o }));
+      drawNum(c, lb.N, part(k, swq), lb.N.x0, lb.N.y, G.labFill, o);
+    });
+  });
+}
+function drawNote(c, L, t, q) {
+  const st = copyState(L, L.copies[0], t);
+  if (!shown(st)) return;
+  inCopy(c, L, st, () => {
+    const A = noteAnchor(L, t), k = L.lead.at(t), d = L.dot.at(t);
+    if (k > 0.002) {
+      c.globalAlpha = st.op; c.strokeStyle = L.stroke; c.lineWidth = L.lw; c.lineCap = 'round';
+      c.beginPath(); c.moveTo(A.x, A.y); c.lineTo(A.x + (L.end[0] - A.x) * k, A.y + (L.end[1] - A.y) * k); c.stroke();
+    }
+    if (d > 0.002 && L.dotR > 0) { c.globalAlpha = st.op; c.fillStyle = L.stroke; c.beginPath(); c.arc(A.x, A.y, L.dotR * d, 0, TAU); c.fill(); }
+  });
+  drawTyped(c, L, t, q);
+}
+function drawMark(c, L, t) {
+  const st = copyState(L, L.copies[0], t);
+  if (!shown(st)) return;
+  const g = L.geom, ls = L.spec;
+  c.save(); c.translate(st.x, st.y); c.rotate(st.rot); c.scale(st.sc, st.sc);
+  if (L.fill && st.fo > 0.002) { c.globalAlpha = Math.min(1, st.op * st.fo); c.fillStyle = L.fill; c.fill(g.p2d); }
+  if (L.stroke) {
+    const a = clamp01(st.ta), b = clamp01(st.tb), seg = (b - a) * g.len;
+    if (seg >= 0.25) {
+      c.globalAlpha = Math.min(1, st.op); c.strokeStyle = L.stroke; c.lineWidth = L.width; c.lineCap = ls.cap || 'round'; c.lineJoin = ls.join || 'round';
+      if (b - a < 0.9999) {
+        if (g.closed) { c.setLineDash([seg, Math.max(1e-3, g.len - seg)]); c.lineDashOffset = -a * g.len; }
+        else { c.setLineDash([seg, g.len + 1]); c.lineDashOffset = -a * g.len; }
+      } else if (ls.dash) c.setLineDash(ls.dash);
+      c.stroke(g.p2d);
+      c.setLineDash([]); c.lineDashOffset = 0;
+    }
+  }
+  c.restore(); c.globalAlpha = 1;
+}
+const DRAW = { text: drawTextLayer, counter: drawCounter, columns: drawBarChart, bars: drawBarChart, line: drawLineChart, donut: drawDonut, note: drawNote, mark: drawMark };
+function drawScene(c, Sc, t, q, z) {
+  c.save(); c.setTransform(z, 0, 0, z, CX - z * CX, CY - z * CY);
+  if (Sc.spec.bg) { c.globalAlpha = 1; c.fillStyle = col(Sc.spec.bg); c.fillRect(-W, -H, 3 * W, 3 * H); }
+  for (const L of Sc.layers) if (!L.dead) DRAW[L.kind](c, L, t, q);
+  c.restore();
+}
+function drawWipe(c, tr, t) {                      // bars cover by t0, then clear
+  const vert = tr.dir === 'up' || tr.dir === 'down', span = vert ? H : W, n = tr.n, thick = (vert ? W : H) / n;
+  c.save(); c.setTransform(1, 0, 0, 1, 0, 0); c.globalAlpha = 1; c.fillStyle = tr.color;
+  for (let k = 0; k < n; k++) {
+    const ts = tr.tStart + k * tr.st, tc = tr.t0 + k * tr.st;
+    const cov = Math.min(1, 1.08 * S(t - ts, tr.sp)), clr = Math.min(1, 1.08 * S(t - tc, tr.sp));
+    const lo = span * clr, hi = span * cov;
+    if (hi - lo < 0.01) continue;
+    const x0 = (k * thick) | 0, x1 = Math.ceil((k + 1) * thick);
+    if (tr.dir === 'up') c.fillRect(x0, H - hi, x1 - x0, hi - lo);
+    else if (tr.dir === 'down') c.fillRect(x0, lo, x1 - x0, hi - lo);
+    else if (tr.dir === 'left') c.fillRect(W - hi, x0, hi - lo, x1 - x0);
+    else c.fillRect(lo, x0, hi - lo, x1 - x0);
+  }
+  c.restore();
+}
+function drawFrame(c, t, q) {
+  const z = camZ.at(t);
+  for (const Sc of SCENES) {
+    if (!inWin(Sc, t)) continue;
+    const tr = Sc.tr;
+    if (tr.kind === 'circle' && t >= tr.t0 && t < tr.tEnd) {   // the incoming scene inside a growing circle
+      const r = tr.rMax * S(t - tr.t0, tr.sp);
+      if (r < 0.5) continue;
+      c.save(); c.beginPath(); c.arc(tr.x, tr.y, r, 0, TAU); c.clip();
+      c.fillStyle = col(Sc.bgRole); c.fillRect(0, 0, W, H);
+      drawScene(c, Sc, t, q, z);
+      c.restore();
+    } else drawScene(c, Sc, t, q, z);
+  }
+  for (const Sc of SCENES) if (Sc.tr.kind === 'wipe' && t >= Sc.tr.tStart && t < Sc.tr.tEnd) drawWipe(c, Sc.tr, t);
+}
+
+/* ---------------- motion: how far anything moves across a shutter ---------------- */
+function copyMove(L, cp, ta, tb, R) {
+  const a = copyState(L, cp, ta), b = copyState(L, cp, tb);
+  if (a.op < 0.002 && b.op < 0.002) return 0;
+  const s = Math.max(Math.abs(a.sc), Math.abs(b.sc));
+  return Math.hypot(b.x - a.x, b.y - a.y) + Math.abs(b.rot - a.rot) * R * s + Math.abs(b.sc - a.sc) * R + Math.abs(b.bl - a.bl) * 2;
+}
+const dv = (P, ta, tb) => Math.abs(P.at(tb) - P.at(ta));
+function layerMove(L, ta, tb) {
+  if (L.dead) return 0;
+  if (L.kind === 'text') return L.typed ? copyMove(L, L.tc, ta, tb, L.R) : Math.max(0, ...L.copies.map((cp) => copyMove(L, cp, ta, tb, L.R)));
+  const cp = L.copies[0], s = Math.max(Math.abs(copyState(L, cp, ta).sc), Math.abs(copyState(L, cp, tb).sc));
+  if (copyState(L, cp, ta).op < 0.002 && copyState(L, cp, tb).op < 0.002) return 0;
+  let d = copyMove(L, cp, ta, tb, L.R), m = 0;
+  if (L.kind === 'columns' || L.kind === 'bars') {
+    const G = L.G;
+    for (let i = 0; i < G.n; i++) m = Math.max(m, dv(L.vals[i], ta, tb) * G.k, dv(L.cdy[i], ta, tb));
+    m = Math.max(m, dv(L.bt, ta, tb) * (G.horiz ? G.y1 - G.y0 : G.x1 - G.x0));
+  } else if (L.kind === 'line') {
+    const G = L.G, seg = Math.hypot(G.xs[1] - G.xs[0], (G.y1 - G.y0) / 2);
+    for (const s0 of G.series) {
+      m = Math.max(m, dv(s0.draw, ta, tb) * (G.n - 1) * seg);
+      for (let i = 0; i < G.n; i++) m = Math.max(m, dv(s0.pv[i], ta, tb) * G.k, dv(s0.pp[i], ta, tb) * (G.pr + 3 * U));
+    }
+    m = Math.max(m, dv(L.bt, ta, tb) * (G.x1 - G.x0));
+    for (const P of L.cdy) m = Math.max(m, dv(P, ta, tb));
+  } else if (L.kind === 'donut') m = dv(L.sweep, ta, tb) / L.G.total * TAU * L.G.R;
+  else if (L.kind === 'note') m = Math.max(dv(L.lead, ta, tb) * L.lenMax, dv(L.dot, ta, tb) * L.dotR);
+  else if (L.kind === 'mark') { const a = copyState(L, cp, ta), b = copyState(L, cp, tb); m = (Math.abs(b.ta - a.ta) + Math.abs(b.tb - a.tb)) * L.geom.len; }
+  return d + m * s;
+}
+function disp(ta, tb) {
+  const za = camZ.at(ta), zb = camZ.at(tb), z = Math.max(za, zb);
+  let d = Math.abs(zb - za) * Math.hypot(CX, CY);
+  for (const Sc of SCENES) {
+    if (!inWin(Sc, ta) && !inWin(Sc, tb)) continue;
+    for (const L of Sc.layers) d = Math.max(d, layerMove(L, ta, tb) * z);
+    const tr = Sc.tr;
+    if (tr.kind === 'circle' && tb >= tr.t0 && ta < tr.tEnd) d = Math.max(d, tr.rMax * Math.abs(S(tb - tr.t0, tr.sp) - S(ta - tr.t0, tr.sp)));
+    if (tr.kind === 'wipe' && tb >= tr.tStart && ta < tr.tEnd) {
+      const span = tr.dir === 'up' || tr.dir === 'down' ? H : W;
+      for (let k = 0; k < tr.n; k++) for (const t0 of [tr.tStart + k * tr.st, tr.t0 + k * tr.st]) d = Math.max(d, span * 1.08 * Math.abs(S(tb - t0, tr.sp) - S(ta - t0, tr.sp)));
+    }
+  }
+  return d;
+}
+
+/* ---------------- analysis ---------------- */
+function dataShown(L, t) {                         // can a viewer read this layer's numbers at t?
+  if (L.dead || !inWin(L.scene, t)) return false;
+  if (L.outAt != null && t >= (Array.isArray(L.outAt) ? Math.max(...L.outAt) : L.outAt)) return false;   // its data has begun to leave
+  const cp = L.kind === 'text' ? (L.typed ? L.tc : L.copies[0]) : L.copies[0];
+  if (!cp) return false;
+  const st = copyState(L, cp, t);
+  if (st.op < 0.9 || Math.abs(st.sc) < 0.9) return false;
+  if (L.kind === 'text' && L.typed) return typedCount(L, frameOf(t) / FPS) > 0 || (!!L.scene.wrap && t < L.scene.wrapEnd);
+  if (L.kind === 'columns' || L.kind === 'bars') return L.vals.some((P) => Math.abs(P.at(t)) * L.G.k >= 1);
+  if (L.kind === 'line') return L.G.series.some((s) => s.draw.at(t) > 1e-3);
+  if (L.kind === 'donut') return L.sweep.at(t) > 1e-3 * L.G.total;
+  if (L.kind === 'note') return typedCount(L, frameOf(t) / FPS) > 0;
+  return true;
+}
+function sourceOn(Sc, t) {
+  const L = Sc.source, st = copyState(L, L.tc, t);
+  if (st.op < 0.5 || Math.abs(st.sc) < 0.5 || !inWin(Sc, t)) return false;
+  return (!!Sc.wrap && t < Sc.wrapEnd) || frameOf(t) / FPS >= L.spec.enter.at - 1e-9;   // typing has begun: the cursor, then the characters
+}
+function visible(t) {
+  for (const Sc of SCENES) {
+    if (!inWin(Sc, t)) continue;
+    if (Sc.spec.bg && col(Sc.spec.bg) !== PAL.bg) return true;
+    if (Sc.tr.kind === 'circle' && t >= Sc.tr.t0 && t < Sc.tr.tEnd) return true;
+    for (const L of Sc.layers) {
+      if (L.dead) continue;
+      if (L.kind === 'text' && L.typed) { const st = copyState(L, L.tc, t); if (st.op >= 0.5 && Math.abs(st.sc) > 0.01 && (typedCount(L, frameOf(t) / FPS) > 0 || (Sc.wrap && t < Sc.wrapEnd))) return true; continue; }
+      const cps = L.kind === 'text' ? L.copies : [L.copies[0]];
+      for (const cp of cps) {
+        const st = copyState(L, cp, t);
+        if (st.op < 0.5 || Math.abs(st.sc) < 0.01) continue;
+        if (L.kind === 'text' || L.kind === 'counter') return true;
+        if (L.kind === 'mark') { if (L.fill && st.fo > 0.5) return true; if (L.stroke && clamp01(st.tb) - clamp01(st.ta) > 0.02) return true; continue; }
+        if (L.kind === 'note') { if (L.dot.at(t) > 0.5 || typedCount(L, frameOf(t) / FPS) > 0) return true; continue; }
+        if (L.bt && L.bt.at(t) > 0.05) return true;
+        if (dataShown(L, t) || (L.kind === 'donut' && L.sweep.at(t) > 0.02 * L.G.total)) return true;
+      }
+    }
+  }
+  for (const Sc of SCENES) if (Sc.tr.kind === 'wipe' && t >= Sc.tr.tStart && t < Sc.tr.tEnd) return true;
+  return false;
+}
+// when a scene is at rest: its entrances landed, its numbers showing their final values, before it leaves
+function sceneTimes(Sc) {
+  if (Sc.times) return Sc.times;
+  const exits = Sc.layers.map((L) => (L.spec.exit || Sc.spec.exit ? (L.spec.exit || Sc.spec.exit).at : Infinity));
+  const next = SCENES.filter((o) => o !== Sc && o.t0 > Sc.t0 && o.t0 <= Sc.t1 + 1e-9).map((o) => (o.tr.kind === 'wipe' ? o.tr.tStart : o.t0));
+  const end = Math.min(Sc.t1, ...exits, ...next) - 2 / FPS;
+  const lands = [Sc.t0];
+  for (const L of Sc.layers) {
+    if (L.dead) continue;
+    for (const cp of L.copies) if (cp.land != null) lands.push(cp.land + 0.25);
+    if (L.typed && L.kind !== 'note' && L.spec.enter) lands.push(L.spec.enter.at + L.line.glyphs.length / FPS);
+    if (L.kind === 'note') lands.push(L.typeAt + L.line.glyphs.length / FPS, L.lead.settleEnd() - 0.2);
+  }
+  let settled = Sc.t0;
+  for (const d of DPROPS) if (d.L.scene === Sc) settled = Math.max(settled, lastOff(d, Sc.t0, end));
+  const grow = Sc.layers.filter((L) => L.growMid != null && !L.dead).map((L) => L.growMid);
+  const landed = Math.max(...lands, settled) + 0.1;
+  let rest = Math.min(landed, end);
+  if (Sc.punch && rest > Sc.punch.at - 2 / FPS) rest = Sc.punch.at - 2 / FPS >= landed - 0.1 - 1e-6 ? Sc.punch.at - 2 / FPS : Math.min(end, Sc.punch.at + settle(SP.PUNCH));
+  Sc.times = { rest, landed, end, settled, grow: grow.length ? Math.max(...grow) : null };
+  return Sc.times;
+}
+function lastOff(d, a, b) {                        // the last frame in [a, b] where a number is not yet where it is heading
+  let last = a;
+  for (let n = Math.ceil(a * FPS); n <= Math.floor(b * FPS); n++) { const t = n / FPS; if (Math.abs(d.P.at(t) - targetAt(d.P, t)) >= d.tol) last = t + 1 / FPS; }
+  return last;
+}
+function checks(add) {
+  for (const [name, status, detail] of ISSUES) add(name, status, detail);
+  for (const D of Object.values(DATA)) add(`data: ${D.id}`, D.err.length ? 'FAIL' : 'PASS', D.err.length ? D.err.join('; ') : `${D.series.reduce((s, x) => s + x.values.length, 0)} value(s), ${D.fmt.suffix ? `"${D.fmt.suffix}" ` : ''}source ${D.source}: "${(FILM.sources || {})[D.source]}"`);
+  // springs: a value bound to data moves on a critically damped spring, or it shows a number that is not there
+  const bad = new Map();
+  for (const d of DPROPS) for (const e of d.P.ev) if (!e.set && e.sp[0] < 1) {
+    const z = e.sp[0], os = Math.exp(-z * Math.PI / Math.sqrt(1 - z * z)), name = Object.keys(SP).find((k) => SP[k] === e.sp) || `[${e.sp}]`;
+    const to = targetAt(d.P, e.t), f = d.L.dsets[0] ? d.L.dsets[0].fmt : DFMT, show = (v) => (d.what === 'sweep' || /draw$/.test(d.what) ? +v.toFixed(3) : fmtNum(v, f));
+    if (!bad.has(d.L.id)) bad.set(d.L.id, `${d.what}: ${name} (zeta ${z}) overshoots by ${(os * 100).toFixed(1)} %: heading for ${show(to)} it shows ${show(to + e.d * os)} on the way, a number the data does not hold. Data moves on zeta = 1 springs only (COUNT, GROW, SWEEP, TRACE, EXIT)`);
+  }
+  const dl = [...new Set(DPROPS.map((d) => d.L))];
+  for (const L of dl) add(`data spring: ${L.id}`, bad.has(L.id) ? 'FAIL' : 'PASS', bad.get(L.id) || `${DPROPS.filter((d) => d.L === L).length} data value(s), every spring critically damped`);
+  for (const Sc of SCENES) {
+    const live = Sc.layers.filter((L) => !L.dead);
+    const words = live.reduce((s, L) => s + (L.words || 0), 0);
+    add(`words: ${Sc.id}`, words > 4 ? 'FAIL' : 'PASS', `${words} words of display type (at most 4 a beat; a counter counts as one)`);
+    for (const L of live) {
+      for (const tx of L.texts) {
+        checkLiveArea(add, tx.id, tx.b, L.spec.bleed);
+        if (tx.mono && tx.size < 24 * U) add(`small print: ${tx.id}`, 'WARN', `${tx.size.toFixed(1)} px is hard to read in a feed (24 px or more at 1080)`);
+      }
+      if (L.spec.y != null && ['text', 'counter', 'note'].includes(L.kind) && L.spec.y % UNIT) add(`grid: ${L.id}`, 'WARN', `baseline ${L.spec.y} is not on the ${UNIT} px grid`);
+      if (L.markBox) checkLiveArea(add, `${L.id} marks`, L.markBox, L.spec.bleed);
+      else if (L.kind === 'mark') checkLiveArea(add, L.id, L.box, L.spec.bleed);
+      if (L.texts.some((x) => x.chart)) checkSpacing(add, L.texts.filter((x) => x.chart), 6 * U);
+      if (L.markBox) for (const x of L.texts) if (x.chart && hitsMarks(L, x.b, 2 * U)) add(`collision: ${x.id}`, 'FAIL', 'a label of the chart overlaps its own bars, line or ring at rest');
+    }
+    // text of one layer against text and marks of another, at rest
+    for (let i = 0; i < live.length; i++) for (let j = i + 1; j < live.length; j++) {
+      const A = live[i], B = live[j], linked = (A.kind === 'note' && A.C === B) || (B.kind === 'note' && B.C === A);
+      for (const a of A.texts) for (const b of B.texts) checkSpacing(add, [a, b], linked ? 0 : 16 * U);
+      for (const [T, M] of [[A, B], [B, A]]) if (M.markBox) for (const a of T.texts) if (hitsMarks(M, a.b)) add(`collision: ${a.id} / ${M.id}`, 'FAIL', 'text overlaps the marks of a chart at rest');
+    }
+    // the source line is on screen whenever a chart can be read, and complete at the scene's rest still
+    if (Sc.source) {
+      let bad = -1;
+      const data = live.filter((L) => L !== Sc.source && (DATA_KINDS.includes(L.kind) || L.refs.length));
+      for (let n = 0; n < NFR && bad < 0; n++) { const t = n / FPS; if (data.some((L) => dataShown(L, t)) && !sourceOn(Sc, t)) bad = n; }
+      add(`source: ${Sc.id}`, bad >= 0 ? 'FAIL' : 'PASS', bad >= 0 ? `frame ${bad} (t ${(bad / FPS).toFixed(3)}) shows numbers without the source line: start it sooner or keep it longer (source: { at })` : `"${Sc.source.text}" is on screen whenever its numbers are`);
+    }
+    // every value landed in the rest still
+    const sd = DPROPS.filter((d) => d.L.scene === Sc && !d.L.dead);
+    if (sd.length) {
+      const { rest } = sceneTimes(Sc), n = Math.round(rest * FPS), t = n / FPS;
+      const off = sd.filter((d) => Math.abs(d.P.at(t) - targetAt(d.P, t)) >= d.tol);
+      const srcOk = !Sc.source || (typedCount(Sc.source, t) >= Sc.source.line.glyphs.length || (Sc.wrap && t < Sc.wrapEnd));
+      add(`landed: ${Sc.id}`, off.length || !srcOk ? 'FAIL' : 'PASS', off.length ? `rest still frame ${n}: ${off.slice(0, 4).map((d) => `${d.L.id}.${d.what} at ${+d.P.at(t).toFixed(3)} of ${+targetAt(d.P, t).toFixed(3)}`).join('; ')}: give the scene longer before it leaves, or a stiffer critically damped spring`
+        : !srcOk ? `rest still frame ${n}: the source line is still typing` : `rest still frame ${n} (t ${t.toFixed(3)}): ${sd.length} data values at their final numbers, the source line complete`);
+    }
+  }
+  for (const L of Object.values(LAYERS)) {
+    if (L.dead) continue;
+    const bg = L.spec.on || L.scene.bgRole;
+    if (L.kind === 'counter') add(`counter: ${L.id}`, 'PASS', `lands on "${fmtNum(L.final, L.fmt)}" in ${L.N.sw.length} fixed slots (digit slot ${L.N.dw.toFixed(1)} px): the count never shifts a digit`);
+    if (['columns', 'bars', 'line'].includes(L.kind)) {
+      const G = L.G, mn = G.mn, mx = G.mx, vs = G.all;
+      const over = vs.filter((v) => v > mx + 1e-9 || v < mn - 1e-9);
+      if (over.length) add(`axis: ${L.id}`, 'FAIL', `${over.map((v) => fmtNum(v, L.dsets[0].fmt)).join(', ')} outside the axis ${mn} to ${mx}: a clipped bar or line is a truncated axis`);
+      else if (L.kind !== 'line' && (mn > 0 || mx < 0)) add(`axis: ${L.id}`, 'FAIL', `the value axis runs ${mn} to ${mx} and leaves out zero: a bar's length must start at zero`);
+      else if (L.kind === 'line' && (mn > 0 || mx < 0)) add(`axis: ${L.id}`, G.grid.length ? 'WARN' : 'FAIL', G.grid.length ? `the axis runs ${mn} to ${mx}, not from zero: the tick labels show it, and DESIGN.md says why` : `the axis runs ${mn} to ${mx}, not from zero, with no tick labels: the line's height would mislead. Start at zero or show ticks (grid)`);
+      else add(`axis: ${L.id}`, 'PASS', `${fmtNum(mn, L.dsets[0].fmt)} to ${fmtNum(mx, L.dsets[0].fmt)}, from zero, every value inside`);
+    }
+    if (L.kind === 'donut') {
+      const G = L.G, w = L.whole;
+      add(`slices: ${L.id}`, G.n > 5 ? 'FAIL' : 'PASS', G.n > 5 ? `${G.n} slices: at most 5 in a donut; fold the smallest into one remainder or use bars` : `${G.n} slices`);
+      if (G.vals.some((v) => v < 0)) add(`whole: ${L.id}`, 'FAIL', 'a negative share: a donut shows parts of a whole');
+      else if (w.total == null) add(`whole: ${L.id}`, 'FAIL', 'no total: give the whole as data.total so the parts can be checked against it');
+      else if (w.remainder) add(`whole: ${L.id}`, 'PASS', `parts sum to ${+w.sum.toFixed(6)} of ${w.total}; the remainder is shown as ${w.remainder}`);
+      else add(`whole: ${L.id}`, Math.abs(w.sum - w.total) <= w.tol ? 'PASS' : 'FAIL', Math.abs(w.sum - w.total) <= w.tol ? `parts sum to ${+w.sum.toFixed(6)} of ${w.total} (within rounding)` : `parts sum to ${+w.sum.toFixed(6)}, not the whole ${w.total}: fix the data, or show the rest with remainder: 'OTHER'`);
+    }
+    if (L.marks && L.marks.length && L.kind !== 'counter') {
+      const cs = L.marks, low = cs.filter((r) => contrast(col(r), col(bg)) < 3);
+      const pairs = [];
+      if (L.kind === 'donut') for (let k = 0; k < L.G.n; k++) { const a = L.G.fillRole[k], b = L.G.fillRole[(k + 1) % L.G.n]; if (a && b && a !== b && L.G.n > 1) pairs.push([a, b]); }
+      else for (let i = 0; i < cs.length; i++) for (let j = i + 1; j < cs.length; j++) pairs.push([cs[i], cs[j]]);
+      let worstN = Infinity, worstC = Infinity, wn = '', wc = '';
+      for (const [a, b] of pairs) {
+        const n = deltaE(col(a), col(b)), c2 = Math.min(deltaE(col(a), col(b), 'protan'), deltaE(col(a), col(b), 'deutan'));
+        if (n < worstN) { worstN = n; wn = `${a}/${b}`; }
+        if (c2 < worstC) { worstC = c2; wc = `${a}/${b}`; }
+      }
+      const st = low.length || worstN < 15 || worstC < 6 ? 'FAIL' : worstC < 8 ? 'WARN' : 'PASS';
+      add(`colours: ${L.id}`, st, low.length ? `${low.map((r) => `${r} ${contrast(col(r), col(bg)).toFixed(2)}:1`).join(', ')} on ${bg}: every mark at least 3:1 against its background`
+        : pairs.length ? `each mark at least 3:1 on ${bg}; worst pair ${wn} dE ${worstN.toFixed(1)} (needs 15), ${wc} dE ${worstC.toFixed(1)} under protan/deutan simulation (needs 8, 6 with direct labels)` : `${cs[0]} ${contrast(col(cs[0]), col(bg)).toFixed(2)}:1 on ${bg}`);
+    }
+  }
+}
+// does a text box touch the marks of a chart (its bars, lines and points, or ring), at rest or at any retarget?
+function hitsMarks(M, b, pad = 4 * U) {
+  const G = M.G, over = (r) => b[0] < r[2] + pad && b[2] > r[0] - pad && b[1] < r[3] + pad && b[3] > r[1] - pad;
+  const inside = (x, y, e) => x > b[0] - e && x < b[2] + e && y > b[1] - e && y < b[3] + e;
+  if (M.kind === 'columns' || M.kind === 'bars') {
+    for (let i = 0; i < G.n; i++) for (const set of G.sets) {
+      const e = barEnd(G, set[i]), m = G.mid(i);
+      if (over(G.horiz ? [Math.min(G.zero, e), m - G.bw / 2, Math.max(G.zero, e), m + G.bw / 2] : [m - G.bw / 2, Math.min(G.zero, e), m + G.bw / 2, Math.max(G.zero, e)])) return true;
+    }
+    return false;
+  }
+  if (M.kind === 'line') {
+    for (const s0 of G.series) for (const set of s0.sets) {
+      const pts = linePts(G, set.map(G.y), G.n - 1), e = G.lw / 2 + pad;
+      for (let i = 1; i < pts.length; i++) {
+        const [x0, y0] = pts[i - 1], [x1, y1] = pts[i], k = Math.max(1, Math.ceil(Math.hypot(x1 - x0, y1 - y0) / 3));
+        for (let j = 0; j <= k; j++) if (inside(x0 + (x1 - x0) * j / k, y0 + (y1 - y0) * j / k, e)) return true;
+      }
+      for (let i = 0; i < G.n; i++) if (inside(G.xs[i], G.y(set[i]), G.pr + 3 * U + pad)) return true;
+    }
+    return false;
+  }
+  if (M.kind === 'donut') {
+    const nx = Math.max(b[0], Math.min(G.cx, b[2])), ny = Math.max(b[1], Math.min(G.cy, b[3]));
+    const far = Math.max(...[[b[0], b[1]], [b[2], b[1]], [b[0], b[3]], [b[2], b[3]]].map(([x, y]) => Math.hypot(x - G.cx, y - G.cy)));
+    return Math.hypot(nx - G.cx, ny - G.cy) < G.R + pad && far > G.r - pad;
+  }
+  return over(M.markBox);
+}
+function lastChange(see) {
+  for (const L of Object.values(LAYERS)) {
+    if (L.dead) continue;
+    if (L.typed) see((L.kind === 'note' ? L.typeAt : L.spec.enter.at) + (L.line.glyphs.length + 3) / FPS, `${L.id} finishes typing`);
+    for (const s of L.labelSwap || []) see(s, `${L.id} relabels`);
+  }
+}
+function stills(push) {
+  for (const Sc of SCENES) {
+    const tm = sceneTimes(Sc);
+    if (Sc.in !== 'none' && Sc.t0 > 0) push((Sc.tr.kind === 'wipe' ? Sc.t0 - Sc.tr.cover : Sc.t0 + 0.1) * FPS, `${Sc.id}-in`, `${Sc.in} into ${Sc.id}`);
+    if (tm.grow != null && tm.grow < tm.rest - 0.1) push(tm.grow * FPS, `${Sc.id}-grow`, `${Sc.id}: the data growing`);
+    push(tm.rest * FPS, `${Sc.id}-rest`, DPROPS.some((d) => d.L.scene === Sc) ? `${Sc.id} at rest, every value landed` : `${Sc.id} at rest`);
+  }
+  const wrap = SCENES.find((s) => s.wrap);
+  if (wrap) push(Math.max(1, Math.round(wrap.wrap.exit * FPS + 6)), 'loop-out', `${wrap.id} leaving, the first scene arriving`);
+}
+function layout() {
+  const r = (v) => Math.round(v * 10) / 10, bx = (b) => b.map(r);
+  return { data: Object.fromEntries(Object.values(DATA).map((D) => [D.id, { source: D.source, cats: D.cats, series: D.series.map((s) => ({ name: s.name, values: s.values })), total: D.total }])),
+    scenes: SCENES.map((Sc) => ({ id: Sc.id, t0: Sc.t0, t1: Sc.t1, rest: r(sceneTimes(Sc).rest * 1000) / 1000,
+      source: Sc.source ? { text: Sc.source.text, typedFrom: r(Sc.source.spec.enter.at * 1000) / 1000, leaves: Sc.source.sourceOut != null ? r(Sc.source.sourceOut * 1000) / 1000 : 'with the scene' } : null })),
+    layers: Object.values(LAYERS).filter((L) => !L.dead).map((L) => {
+      const o = { id: L.id, scene: L.scene.id, kind: L.kind, box: bx(L.box) };
+      if (L.line) Object.assign(o, { text: L.line.text, size: r(L.line.size), capH: r(L.line.capH), capTop: r(L.line.capTop), baseline: L.line.baseline, trackEm: r(L.line.trackEm) });
+      if (L.N) Object.assign(o, { final: fmtNum(L.final, L.fmt), size: r(L.N.size), capH: r(L.N.capH), baseline: L.N.y, slots: L.N.sw.length, slot: r(L.N.dw) });
+      if (L.G && L.kind !== 'donut') Object.assign(o, { zero: r(L.G.zero), pxPerUnit: +L.G.k.toPrecision(4), axis: [L.G.mn, L.G.mx], band: L.G.band && r(L.G.band), bar: L.G.bw && r(L.G.bw) });
+      if (L.kind === 'donut') Object.assign(o, { r: [r(L.G.r), r(L.G.R)], total: L.G.total, slices: L.G.cats.map((c, k) => `${c} ${r(L.G.vals[k] / L.G.total * 360)} deg`) });
+      if (L.texts.length > 1) o.labels = L.texts.map((x) => ({ id: x.id, box: bx(x.b) }));
+      return o;
+    }) };
+}
+
+function build() {
+  buildData();
+  buildScenes();
+  for (const L of Object.values(LAYERS)) if (L.typed && L.kind === 'text' && !L.dead) {   // typed small print moves as one piece
+    L.tc = { ox: 0, oy: 0, P: {} };
+    const Sc = L.scene;
+    for (const key of Object.keys(KEYS)) L.tc.P[key] = new Prop(KEYS[key], `${L.id}.${key}`);
+    if (Sc.wrap) { const w = Sc.wrap, v = stateVals(w.to || { scale: 0 }); for (const [k, x] of Object.entries(v)) L.tc.P[k].to(w.exit + (w.stagger ? noteSec(w.stagger) * L.li : 0), x, w.spring || 'EXIT'); for (const k of Object.keys(v)) L.tc.P[k].set(Sc.wrapEnd, KEYS[k]); }
+    const ex = L.spec.exit || (L.isSource ? null : Sc.spec.exit);
+    if (ex && typeof ex.to === 'object') for (const [k, x] of Object.entries(stateVals(ex.to))) L.tc.P[k].to(ex.at, x, springFor(k, ex.spring || 'EXIT'));
+  }
+  for (const Sc of SCENES) if (Sc.source) sourceExit(Sc);
+  for (const L of Object.values(LAYERS)) if (!L.dead && L.spec.accent) {
+    const lands = L.copies.map((cp) => cp.land).filter((v) => v != null);
+    let t = L.spec.accent;
+    if (t === 'land') {
+      const ds = DPROPS.filter((d) => d.L === L);
+      t = ds.length ? Math.max(...ds.map((d) => lastOff(d, L.scene.t0, sceneTimes(L.scene).end))) : Math.max(...lands, L.scene.t0);
+    }
+    accentAt(t, L.id);
+  }
+}
+
+boot({
+  name: 'charts',
+  springs: { COUNT: [1, 9], GROW: [1, 11], SWEEP: [1, 8], TRACE: [1, 10], POP: [0.5, 22] },
+  build, draw: (c, t, q) => drawFrame(c, t, q), disp, checks, lastChange, stills, layout, visible,
+});
+})();
+
+</script>
+</body>
+</html>
