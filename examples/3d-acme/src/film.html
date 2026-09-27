@@ -1,0 +1,1264 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Acme 3D loop</title>
+<style>
+@font-face{font-family:"Unbounded";font-style:normal;font-weight:900;font-display:block;src:url(data:font/woff2;base64,__FONT:unbounded-latin-900-normal.woff2__) format("woff2")}
+@font-face{font-family:"IBM Plex Mono";font-style:normal;font-weight:500;font-display:block;src:url(data:font/woff2;base64,__FONT:ibm-plex-mono-latin-500-normal.woff2__) format("woff2")}
+*,*::before,*::after{transition:none!important;animation:none!important}
+html,body{margin:0;height:100%;background:#221A3D}
+body{display:grid;place-items:center;overflow:hidden}
+canvas{display:block;max-width:100vw;max-height:100vh;width:auto;height:auto}
+</style>
+</head>
+<body>
+<canvas id="c" width="1080" height="1080"></canvas>
+<script>
+(() => {
+'use strict';
+
+/* ==========================================================================
+ * FILM: the part you edit. Everything below CORE BEGIN stays as it is.
+ *
+ * A 3D film is a world (background, floor, light), a camera, and objects:
+ * extruded type and SVG logos, and primitives (box, sphere, torus, cylinder,
+ * cone, capsule). World units are arbitrary; y is up, the floor is y = 0.
+ * Every object is at rest at pos / rot / scale and moves on springs:
+ *   enter: { at, from: {state}, spring, stagger }  from `from` to rest
+ *   keys:  [{ at, to: {state}, spring, stagger }]
+ *   exit:  { at, to: {state}, spring }
+ * A state holds dx dy dz (units from rest), rx ry rz (degrees added), scale.
+ * loop behaviours (spin, bob, orbit, wobble) run whole cycles per loop.
+ * A 'cycle' loop keeps moving through the seam; every value ends where it
+ * starts (a full turn counts: 360 degrees is where it started).
+ * ========================================================================== */
+const BPM = 120;
+const beat = (n) => n * 60 / BPM;            // quarter notes
+const bar = (n) => beat(4 * n);              // 4/4 bars
+
+const FILM = {
+  title: 'Acme 3D loop',
+  alt: 'The word ACME in chunky extruded letters, cream faces with coral sides, stands on a violet floor inside a yellow ring that wobbles round it, while teal spheres bob past. The letters flip over one by one, then hop in a wave. Example.com. Demo copy, fictional product.',
+  W: 1080, H: 1080, FPS: 60, DUR: bar(5), BPM,
+  loop: 'cycle',
+  palette: { bg: '#221A3D', cream: '#FFF1DE', coral: '#FF6F61', sun: '#FFC53D', teal: '#35D0BA', lilac: '#9D8CFF', ink: '#221A3D' },
+  fonts: {
+    display: { family: 'Unbounded', weight: 900 },
+    mono: { family: 'IBM Plex Mono', weight: 500 },
+  },
+  grid: { margin: 104, unit: 8 },
+  poster: beat(12),
+  world: {
+    light: { dir: [-0.38, -0.8, -0.9], key: 0.74, ambient: 0.34, soft: 1.3 },   // dir: where the light travels (here: from above, front, right)
+    floor: { y: 0, shadow: 0.42 },          // a shadow catcher: the floor is the background, darkened where shadowed
+    rim: 0.18,                              // a white rim on edges turned from the camera
+  },
+  camera: {
+    fov: 30, target: [0, 0.35, 0], dist: 16.5, yaw: -16, pitch: 14,
+    sway: [1, 10],                          // [cycles per loop, degrees of yaw]
+    keys: [{ at: beat(2), dist: 15, spring: 'DOLLY' }, { at: beat(14), dist: 16.5, spring: 'DOLLY' }],
+  },
+  objects: [
+    { id: 'ACME', kind: 'text', text: 'ACME', font: 'display', cap: 1.08, depth: 0.5, bevel: 0.05, track: 40,
+      color: 'cream', side: 'coral', gloss: 0.35, pos: [0, 0.02, 0],
+      keys: [
+        { at: beat(3), to: { rx: -360 }, spring: 'FLIP', stagger: 16 },
+        { at: beat(10), to: { dy: 1.1 }, spring: 'HOP', stagger: 16 },
+        { at: beat(10.75), to: { dy: 0 }, spring: 'LAND', stagger: 16 },
+      ] },
+    { id: 'RING', kind: 'torus', r: 3.6, tube: 0.13, color: 'sun', gloss: 0.6, pos: [0, 0.24, 0], rot: [4, 0, 3],
+      loop: { orbit: [1, 0] } },
+    { id: 'ORB', kind: 'sphere', r: 0.34, color: 'teal', gloss: 0.7, pos: [0, 0.7, 0],
+      repeat: { radial: 3, r: 4.3, start: 30 }, loop: { orbit: [-1, 0], bob: [4, 0.3], phase: 'index' } },
+    { id: 'CUBE', kind: 'box', size: [0.8, 0.8, 0.8], radius: 0.15, color: 'lilac', gloss: 0.4, pos: [3.2, 0.4, -3.4], rot: [0, 30, 0],
+      loop: { spin: ['y', 1] } },
+  ],
+  labels: [
+    { id: 'URL', text: 'EXAMPLE.COM', font: 'mono', size: 40, track: 60, anchor: 'C', x: 540, y: 880, color: 'sun' },
+    { id: 'DEMO', text: 'DEMO COPY, FICTIONAL PRODUCT', font: 'mono', size: 26, track: 20, anchor: 'C', x: 540, y: 944, color: 'cream' },
+  ],
+};
+
+/* ===== CORE BEGIN: shared/core.js, synced by tools/sync.mjs. Do not edit it here. ===== */
+/* ==========================================================================
+ * CORE: the deterministic runtime every motion-* engine shares.
+ * Source: shared/core.js in the motion-launch-videos repo, copied into each
+ * template by tools/sync.mjs. Do not edit it inside a film.
+ *
+ * seek(t) is a pure function of (t mod DUR): same t, same pixels, whatever was
+ * drawn before. No timers, no Date, no Math.random, no state between calls.
+ *   - Springs are closed-form step responses, one per target change, snapped
+ *     to exactly 1 once settled. A Prop is a base value plus its springs.
+ *     Springs still settling when the loop ends carry over the seam.
+ *   - Periodic motion runs a whole number of cycles per loop (cyc, wave,
+ *     loopNoise), so it is exact at the seam by construction.
+ *   - Randomness is seeded (mulberry32, hash).
+ *   - Continuous motion reads the exact t; discrete state (typing, drawings
+ *     held on twos, sprite frames, line boil) reads the quantised q, so every
+ *     subframe of one output frame agrees on it.
+ *   - Motion blur averages 1 to 64 subframes on a trailing 270-degree
+ *     shutter, one per 5 px of movement, never across a hard cut.
+ * The engine below describes its vertical through hooks (build, draw, disp,
+ * checks, stills, layout, visible, lastChange) and calls boot(ENGINE) last.
+ * The core keeps its internals to itself and exports the helpers listed at
+ * its end, so an engine can name its own functions freely.
+ * ========================================================================== */
+const CORE = (() => {
+const { W, H, FPS, DUR } = FILM;
+const NFR = Math.round(DUR * FPS);                 // output frames in the loop
+const CX = W / 2, CY = H / 2;
+const U = Math.min(W, H) / 1080;                   // scale for built-in pixel constants
+const PAL = FILM.palette;
+const USED = new Set();                            // palette roles the film draws with
+const col = (k) => PAL[k] || k;                    // look a role up (while drawing)
+const role = (k) => { USED.add(k); return PAL[k] || k; };   // resolve and register a role (at build time)
+const GRID = FILM.grid || {};
+const MARGIN = GRID.margin != null ? GRID.margin : Math.round(104 * U);
+const UNIT = GRID.unit || 8;
+const MEASURE = W - 2 * MARGIN;
+const LOOP = FILM.loop || 'hold';                  // 'hold': ends on a still copy of frame 0; 'cycle': periodic, continuous over the seam; 'none'
+const BLUR = FILM.blur !== false;                  // false: one sample per frame (cartoon, pixel art)
+const SHUTTER = 0.75;                              // 270 degrees, trailing
+const MIN_SAMPLES = 4, MAX_SAMPLES = 64, PX_PER_SAMPLE = 5;   // Uint16 sums hold up to 257 x 255
+const TAU = Math.PI * 2;
+
+const canvas = document.getElementById('c');
+canvas.width = W; canvas.height = H;
+canvas.setAttribute('role', 'img');
+canvas.setAttribute('aria-label', FILM.alt || FILM.title || '');
+if (FILM.title) document.title = FILM.title;
+document.documentElement.style.background = PAL.bg;
+document.body.style.background = PAL.bg;
+// CPU raster everywhere: Chrome moves a canvas from GPU to CPU after repeated getImageData
+// reads, which changes antialiasing mid-render. Pin every 2D context from its first call.
+const ctx = canvas.getContext('2d', { willReadFrequently: true, alpha: false });
+const mkCanvas = (w = W, h = H) => { const c = document.createElement('canvas'); c.width = w; c.height = h; return c; };
+const mk2d = (w, h) => { const c = mkCanvas(w, h); return [c, c.getContext('2d', { willReadFrequently: true })]; };
+const mctx = mkCanvas().getContext('2d', { willReadFrequently: true });   // measuring only
+
+/* ---------------- springs: closed-form step responses ---------------- */
+// [zeta, omega]. Underdamped (zeta < 1) overshoots and lands; zeta = 1 glides in without overshoot.
+// Engines add their own (boot merges ENGINE.springs, then FILM.springs).
+const SP = {
+  SLAM: [0.60, 30.0], LAND: [0.72, 28.0], PUNCH: [0.65, 31.0], FADE: [1, 32.4],
+  FOCUS: [1, 19.5], EXIT: [1, 32.4], PAN: [1, 32.4], DRAW: [1, 32.4],
+  LINE: [0.80, 15.6], MASK: [1, 19.5], TICK: [1, 32.4],
+};
+const spring = (sp) => { const s = typeof sp === 'string' ? SP[sp] : sp; if (!s) throw new Error(`unknown spring ${sp}`); return s; };
+const settle = (sp) => 16 / (sp[0] * sp[1]);       // after this the response snaps to exactly 1
+function S(tau, sp) {
+  const z = sp[0], w = sp[1];
+  if (tau <= 0) return 0;
+  if (tau >= settle(sp)) return 1;                 // residual < 2e-6 of the move: snap, so loops are bit-exact
+  if (z < 1) {
+    const wd = w * Math.sqrt(1 - z * z);
+    return 1 - Math.exp(-z * w * tau) * (Math.cos(wd * tau) + (z * w / wd) * Math.sin(wd * tau));
+  }
+  return 1 - (1 + w * tau) * Math.exp(-w * tau);
+}
+function dS(tau, sp) {                             // d S / d tau, per second
+  const z = sp[0], w = sp[1];
+  if (tau <= 0 || tau >= settle(sp)) return 0;
+  if (z < 1) { const wd = w * Math.sqrt(1 - z * z); return (w * w / wd) * Math.exp(-z * w * tau) * Math.sin(wd * tau); }
+  return w * w * tau * Math.exp(-w * tau);
+}
+// the visible landing: the first crossing of the target when underdamped, 95 % when critically damped
+function landT(sp) {
+  sp = spring(sp);
+  const z = sp[0], w = sp[1];
+  if (z < 1) { const wd = w * Math.sqrt(1 - z * z); return (Math.PI - Math.atan(wd / (z * w))) / wd; }
+  let a = 0, b = settle(sp);
+  for (let i = 0; i < 40; i++) { const m = (a + b) / 2; if (S(m, sp) < 0.95) a = m; else b = m; }
+  return b;
+}
+
+// A property = base value + one spring per target change (superposed). set() is an instant jump
+// that cancels earlier springs; use it only while the element is invisible, at a hard cut, or hidden
+// inside fast motion blur. Events are added in time order. In a looping film, springs still settling
+// at the end of the loop carry over the seam into its start (only while no set() has happened yet),
+// so the film is continuous there; the value a Prop ends on must equal the value it starts from.
+const PROPS = [];
+class Prop {
+  constructor(v0, name) { this.v0 = v0; this.last = v0; this.ev = []; this.tLast = -Infinity; this.name = name || '?'; this.tail = null; this.firstSet = Infinity; PROPS.push(this); }
+  order(t) { if (t < this.tLast - 1e-9) throw new Error(`${this.name}: event at ${t} added after one at ${this.tLast}`); this.tLast = t; this.tail = null; }
+  to(t, v, sp) { this.order(t); this.ev.push({ t, d: v - this.last, sp: spring(sp), set: false }); this.last = v; return this; }
+  set(t, v) { this.order(t); this.ev.push({ t, v, set: true }); this.last = v; return this; }
+  seam() {                                         // the springs that carry over the seam
+    if (this.tail) return this.tail;
+    let k = -1;
+    this.firstSet = Infinity;
+    for (let i = 0; i < this.ev.length; i++) if (this.ev[i].set) { k = i; if (this.firstSet === Infinity) this.firstSet = this.ev[i].t; }
+    this.tail = LOOP === 'none' ? [] : this.ev.slice(k + 1).filter((e) => e.d !== 0 && e.t + settle(e.sp) > DUR);
+    return this.tail;
+  }
+  at(t) {
+    let v = this.v0, i0 = 0;
+    const ev = this.ev;
+    for (let i = 0; i < ev.length; i++) if (ev[i].set && ev[i].t <= t) { v = ev[i].v; i0 = i + 1; }
+    for (let i = i0; i < ev.length; i++) { const e = ev[i]; if (!e.set) v += e.d * S(t - e.t, e.sp); }
+    const tail = this.seam();
+    if (tail.length && t < this.firstSet) for (const e of tail) v += e.d * (S(t + DUR - e.t, e.sp) - 1);
+    return v;
+  }
+  vel(t) {                                         // per second
+    let v = 0, i0 = 0;
+    const ev = this.ev;
+    for (let i = 0; i < ev.length; i++) if (ev[i].set && ev[i].t <= t) i0 = i + 1;
+    for (let i = i0; i < ev.length; i++) { const e = ev[i]; if (!e.set) v += e.d * dS(t - e.t, e.sp); }
+    const tail = this.seam();
+    if (tail.length && t < this.firstSet) for (const e of tail) v += e.d * dS(t + DUR - e.t, e.sp);
+    return v;
+  }
+  active(a, b) {                                   // does the value change anywhere in (a, b]?
+    for (const e of this.ev) {
+      if (e.set) { if (e.t > a && e.t <= b) return true; }
+      else if (e.d !== 0 && e.t < b && e.t + settle(e.sp) > a) return true;
+    }
+    if (a < this.firstSet) for (const e of this.seam()) if (e.t - DUR < b && e.t - DUR + settle(e.sp) > a) return true;
+    return false;
+  }
+  settleEnd() { let m = -Infinity; for (const e of this.ev) m = Math.max(m, e.set ? e.t : e.t + settle(e.sp)); return m; }
+  lastSet(a, b) { let m = -Infinity; for (const e of this.ev) if (e.set && e.t > a && e.t <= b && e.t > m) m = e.t; return m; }
+}
+
+/* ---------------- periodic motion and seeded randomness ---------------- */
+// n whole cycles per loop: exact at the seam by construction. Use these for anything that never stops
+// (an idle bob, a spin, a drifting field) and set ENGINE.always, or declare its windows with activeIn.
+const cyc = (t, n, phase = 0) => TAU * (n * t / DUR + phase);
+const wave = (t, n, phase = 0) => Math.sin(cyc(t, n, phase));
+function mulberry32(a) {
+  return function () {
+    a |= 0; a = (a + 0x6D2B79F5) | 0;
+    let t = Math.imul(a ^ (a >>> 15), 1 | a);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+// three integers to [0, 1), well mixed: a pure replacement for Math.random keyed by what it decides
+function hash(a, b = 0, c = 0) {
+  let h = Math.imul((a | 0) ^ 0x3C6EF372, 0x85EBCA6B);
+  h = Math.imul(h ^ (h >>> 13) ^ (b | 0), 0xC2B2AE35);
+  h = Math.imul(h ^ (h >>> 16) ^ (c | 0), 0x27D4EB2F);
+  h ^= h >>> 15; h = Math.imul(h, 0x85EBCA6B); h ^= h >>> 13; h = Math.imul(h, 0xC2B2AE35); h ^= h >>> 16;
+  return (h >>> 0) / 4294967296;
+}
+// smooth noise in [-1, 1] that loops exactly: three whole harmonics (n, 2n+1, 4n+3 cycles per loop) with seeded phases
+function loopNoise(t, n, seed) {
+  return (Math.sin(cyc(t, n, hash(seed, 1))) + 0.5 * Math.sin(cyc(t, 2 * n + 1, hash(seed, 2))) + 0.25 * Math.sin(cyc(t, 4 * n + 3, hash(seed, 3)))) / 1.75;
+}
+function shuffled(arr, seed) {                     // Fisher-Yates on a copy, seeded
+  const r = mulberry32(seed), a = arr.slice();
+  for (let i = a.length - 1; i > 0; i--) { const j = Math.floor(r() * (i + 1)); const x = a[i]; a[i] = a[j]; a[j] = x; }
+  return a;
+}
+
+/* ---------------- time ---------------- */
+const wrapT = (t) => ((t % DUR) + DUR) % DUR;
+const frameOf = (t) => Math.ceil(t * FPS - 1e-9);  // all subframes of output frame n map to n
+const typed = (q, ts, n) => Math.max(0, Math.min(n, Math.ceil((q - ts) * FPS - 1e-6)));   // one character per frame
+const noteSec = (v) => (typeof v === 'number' && v >= 1 ? 4 * 60 / FILM.BPM / v : v);     // 16 -> a 16th note
+const drawing = (q, fps) => Math.floor(q * fps + 1e-6);    // index of the held drawing (12 fps = on twos at 24, fives at 60)
+
+/* ---------------- colour ---------------- */
+function rgbOf(hex) { const h = String(hex).replace('#', ''); const n = parseInt(h.length === 3 ? h.replace(/./g, '$&$&') : h.slice(0, 6), 16); return [(n >> 16) & 255, (n >> 8) & 255, n & 255]; }
+const hexOf = (r, g, b) => '#' + [r, g, b].map((v) => Math.max(0, Math.min(255, Math.round(v))).toString(16).padStart(2, '0')).join('').toUpperCase();
+function mix(a, b, k) { const x = rgbOf(a), y = rgbOf(b); return hexOf(x[0] + (y[0] - x[0]) * k, x[1] + (y[1] - x[1]) * k, x[2] + (y[2] - x[2]) * k); }
+function hueChroma(r, g, b) {
+  const mx = Math.max(r, g, b), mn = Math.min(r, g, b), C = mx - mn;
+  if (C === 0) return [0, 0];
+  let h;
+  if (mx === r) h = 60 * (((g - b) / C) % 6); else if (mx === g) h = 60 * ((b - r) / C + 2); else h = 60 * ((r - g) / C + 4);
+  return [h < 0 ? h + 360 : h, C];
+}
+const hueDist = (a, b) => { const d = Math.abs(a - b) % 360; return d > 180 ? 360 - d : d; };
+function lum(hex) { const c = rgbOf(hex).map((v) => { v /= 255; return v <= 0.04045 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4); }); return 0.2126 * c[0] + 0.7152 * c[1] + 0.0722 * c[2]; }
+const contrast = (a, b) => { const x = lum(a), y = lum(b); return (Math.max(x, y) + 0.05) / (Math.min(x, y) + 0.05); };
+function inksClash(a, b) {                         // two inks may share a pixel only when that cannot make a new hue
+  const [ha, ca] = hueChroma(...rgbOf(a)), [hb, cb] = hueChroma(...rgbOf(b));
+  return ca >= 40 && cb >= 40 && hueDist(ha, hb) > 13;
+}
+
+/* ---------------- fonts and type ---------------- */
+const face = (r) => { const f = FILM.fonts && FILM.fonts[r]; if (!f) throw new Error(`no font role "${r}"`); return f; };
+const fontStr = (r, size) => { const f = face(r); return `${f.style === 'italic' ? 'italic ' : ''}${f.weight} ${size}px "${f.family}"`; };
+function setFont(c, f) { c.font = f; c.fontKerning = 'normal'; c.letterSpacing = '0px'; c.textBaseline = 'alphabetic'; c.textAlign = 'left'; }
+function capRatio(r) { setFont(mctx, fontStr(r, 1000)); return mctx.measureText('H').actualBoundingBoxAscent / 1000; }
+const TEXT = {};                                   // font role -> every character it draws (checked against the font's cmap)
+const useText = (r, s) => { face(r); TEXT[r] = (TEXT[r] || '') + s; return s; };
+function textByFace() {
+  const out = {};
+  for (const [r, s] of Object.entries(TEXT)) { const f = face(r), k = `${f.family}|${f.weight}`; out[k] = (out[k] || '') + s; }
+  return out;
+}
+
+// One line of type, one glyph at a time: the font's kerning recovered from pair widths, optical
+// pairs on top (1/1000 em), then a fixed tracking, a tracking solved to span `justify` px, or a
+// size solved (`fit`) so the ink spans the measure (or `fit: <px>`). `cap: <px>` sizes from a cap
+// height. x and anchor ('L', 'R', 'C') place the ink edge or centre. Measured once, after the fonts load.
+function measureRun(o, size) {
+  const font = fontStr(o.font || 'display', size);
+  setFont(mctx, font);
+  const ch = Array.from(o.text), n = ch.length;
+  const met = ch.map((c) => mctx.measureText(c));
+  const adv = met.map((m) => m.width);
+  const gap = [];
+  for (let i = 0; i < n - 1; i++) {
+    const kern = mctx.measureText(ch[i] + ch[i + 1]).width - adv[i] - adv[i + 1];
+    gap.push(adv[i] + kern + ((o.pairs || {})[ch[i] + ch[i + 1]] || 0) / 1000 * size);
+  }
+  const pens = (T) => { const x = [0]; for (let i = 0; i < n - 1; i++) x.push(x[i] + gap[i] + T); return x; };
+  const inkW = (x) => (x[n - 1] + met[n - 1].actualBoundingBoxRight) - (x[0] - met[0].actualBoundingBoxLeft);
+  return { font, ch, n, met, pens, inkW };
+}
+function layoutText(o) {
+  const r = o.font || 'display';
+  useText(r, o.text);
+  let size = o.size != null ? o.size : o.cap != null ? o.cap / capRatio(r) : 100;
+  const width = o.fit ? (o.fit === true ? MEASURE : o.fit) : null;
+  if (width) for (let k = 0; k < 3; k++) {         // ink width is linear in size; converge
+    const m = measureRun(o, size);
+    size *= width / m.inkW(m.pens((o.track || 0) / 1000 * size));
+  }
+  const m = measureRun(o, size), { ch, n, met } = m;
+  const T = o.justify != null && n > 1 ? (o.justify - m.inkW(m.pens(0))) / (n - 1) : (o.track || 0) / 1000 * size;
+  const x = m.pens(T);
+  const inkL0 = x[0] - met[0].actualBoundingBoxLeft, inkR0 = x[n - 1] + met[n - 1].actualBoundingBoxRight;
+  const anchor = o.anchor || 'L';
+  const ax = o.x != null ? o.x : anchor === 'R' ? W - MARGIN : anchor === 'C' ? CX : MARGIN;
+  const shift = anchor === 'R' ? ax - inkR0 : anchor === 'C' ? ax - (inkL0 + inkR0) / 2 : ax - inkL0;
+  let slot = 0;
+  const glyphs = ch.map((c, i) => {
+    const sp = /\s/.test(c);
+    const g = { ch: c, i, x: x[i] + shift, space: sp, slot: sp ? -1 : slot,
+      inkL: x[i] + shift - met[i].actualBoundingBoxLeft, inkR: x[i] + shift + met[i].actualBoundingBoxRight,
+      asc: met[i].actualBoundingBoxAscent, desc: met[i].actualBoundingBoxDescent };
+    if (!sp) slot++;
+    return g;
+  });
+  setFont(mctx, m.font);
+  const capH = mctx.measureText('H').actualBoundingBoxAscent;
+  const ink = glyphs.filter((g) => !g.space);
+  const base = o.baseline != null ? o.baseline : 0;
+  return { id: o.id, text: o.text, role: r, font: m.font, size, baseline: base, glyphs, slots: slot,
+    trackPx: T, trackEm: T / size * 1000, inkL: inkL0 + shift, inkR: inkR0 + shift, capH, capTop: base - capH,
+    top: base - Math.max(...ink.map((g) => g.asc)), bottom: base + Math.max(...ink.map((g) => g.desc)) };
+}
+
+// A canvas filter blurs a layer the size of the whole canvas (about 25 ms at 1080 px). Blurred
+// glyphs are instead drawn once into small sprites, blur quantised to steps nobody can see, in a
+// bounded cache. A sprite is a pure function of (font, glyph, colour, blur): a hit and a miss give
+// the same pixels, so seek() stays pure.
+const SPRITES = new Map();
+let spritePx = 0;
+const SPRITE_BUDGET = 24e6;
+const blurQ = (b) => (b < 4 ? Math.round(b * 4) / 4 : b < 10 ? Math.round(b * 2) / 2 : Math.round(b));
+function glyphSprite(font, ch, color, b) {
+  const key = font + '|' + ch + '|' + color + '|' + b;
+  let s = SPRITES.get(key);
+  if (s) { SPRITES.delete(key); SPRITES.set(key, s); return s; }
+  setFont(mctx, font);
+  const m = mctx.measureText(ch), pad = Math.ceil(3 * b) + 2;
+  const c = mkCanvas(Math.max(1, Math.ceil(m.actualBoundingBoxLeft + m.actualBoundingBoxRight) + 2 * pad), Math.max(1, Math.ceil(m.actualBoundingBoxAscent + m.actualBoundingBoxDescent) + 2 * pad));
+  const x = c.getContext('2d', { willReadFrequently: true });
+  setFont(x, font);
+  x.fillStyle = color; x.filter = `blur(${b}px)`;
+  const ox = pad + m.actualBoundingBoxLeft, oy = pad + m.actualBoundingBoxAscent;
+  x.fillText(ch, ox, oy);
+  s = { c, ox, oy, px: c.width * c.height };
+  SPRITES.set(key, s); spritePx += s.px;
+  for (const [k, v] of SPRITES) { if (spritePx <= SPRITE_BUDGET) break; SPRITES.delete(k); spritePx -= v.px; }
+  return s;
+}
+function fillGlyph(c, ch, x, y, color, a, blur) {
+  if (!(a > 0.002)) return;
+  c.globalAlpha = a > 1 ? 1 : a;
+  c.filter = 'none';
+  const bq = blur > 0.05 ? blurQ(blur) : 0;
+  if (bq > 0) { const s = glyphSprite(c.font, ch, color, bq); c.drawImage(s.c, x - s.ox, y - s.oy); return; }
+  c.fillStyle = color;
+  c.fillText(ch, x, y);
+}
+// Draw a laid-out line. fx(g) may return { dx, dy, op, blur, sx, sy, rot, color, ch, pivot } per glyph
+// ('base' scales and turns about the glyph's foot on the baseline, 'mid' about its centre), or null to hide it.
+function drawText(c, L, color, fx) {
+  setFont(c, L.font);
+  for (const g of L.glyphs) {
+    if (g.space) continue;
+    const e = fx ? fx(g) : {};
+    if (!e) continue;
+    const op = e.op != null ? e.op : 1;
+    if (!(op > 0.002)) continue;
+    const dx = e.dx || 0, dy = e.dy || 0, x = g.x + dx, y = L.baseline + dy;
+    const sx = e.sx != null ? e.sx : 1, sy = e.sy != null ? e.sy : 1, rot = e.rot || 0;
+    const cc = e.color || color, ch = e.ch || g.ch;
+    if (rot || sx !== 1 || sy !== 1) {
+      const px = (g.inkL + g.inkR) / 2 + dx, py = e.pivot === 'base' ? y : y - L.capH / 2;
+      c.save(); c.translate(px, py); c.rotate(rot); c.scale(sx, sy); c.translate(-px, -py);
+      fillGlyph(c, ch, x, y, cc, op, e.blur || 0);
+      c.restore();
+    } else fillGlyph(c, ch, x, y, cc, op, e.blur || 0);
+  }
+  c.globalAlpha = 1; c.filter = 'none';
+}
+
+/* ---------------- SVG paths ---------------- */
+// A path from SVG path data: Path2D to draw it, its length and points for trims and morphs.
+// Measured once through a hidden SVG element (the only DOM the core touches besides the canvas).
+let svgRoot = null;
+function svgPath(d) {
+  if (!svgRoot) {
+    svgRoot = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+    svgRoot.setAttribute('style', 'position:absolute;left:0;top:0;width:0;height:0;overflow:hidden');
+    document.body.appendChild(svgRoot);
+  }
+  const el = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+  el.setAttribute('d', d);
+  svgRoot.appendChild(el);
+  const len = el.getTotalLength(), bb = el.getBBox();
+  return { d, p2d: new Path2D(d), len, box: [bb.x, bb.y, bb.x + bb.width, bb.y + bb.height],
+    points: (n) => { const out = []; for (let i = 0; i < n; i++) { const p = el.getPointAtLength(len * i / n); out.push([p.x, p.y]); } return out; } };
+}
+
+/* ---------------- registries the engine fills while it builds ---------------- */
+const CUTS = [];                                   // hard cuts: motion blur never averages across them
+const ACTIVE = [];                                 // [a, b] windows where something moves outside the Props
+const ACCENTS = [];                                // { t, what }: accent frames (stills and the palette gate)
+const WARN = [];                                   // timeline warnings for the critique
+const CONTRAST = [];                               // { id, fg, bg, min }: text that must read
+let ENGINE = null;
+const cutAt = (t) => { if (t > 1e-9 && t < DUR && !CUTS.includes(t)) CUTS.push(t); };
+const activeIn = (a, b) => { ACTIVE.push([a, b]); };
+const accentAt = (t, what) => { ACCENTS.push({ t, what }); };
+const needContrast = (id, fg, bg, min) => { CONTRAST.push({ id, fg, bg: bg || 'bg', min }); };
+
+/* ---------------- frame ---------------- */
+function draw(c, tIn) {
+  const t = wrapT(tIn);
+  let nq = frameOf(t);
+  if (nq >= NFR) nq -= NFR;                        // the last subframes of the loop belong to frame 0
+  const q = nq / FPS;
+  c.setTransform(1, 0, 0, 1, 0, 0);
+  c.globalCompositeOperation = 'source-over'; c.globalAlpha = 1; c.filter = 'none';
+  c.fillStyle = PAL.bg; c.fillRect(0, 0, W, H);
+  ENGINE.draw(c, t, q, nq);
+  c.setTransform(1, 0, 0, 1, 0, 0);
+  c.globalCompositeOperation = 'source-over'; c.globalAlpha = 1; c.filter = 'none';
+}
+let isReady = false;
+function seek(t) { if (!isReady) return false; draw(ctx, Number(t)); return true; }
+
+/* ---------------- motion blur ---------------- */
+// Subframes on a trailing shutter, clamped to a hard cut so the first frame after it is not a
+// double exposure. How many: 1 when nothing changes (exact: the mean of identical samples is the
+// sample), else one per 5 px of the engine's measured displacement, 4 to 64.
+function shutterTimes(n, k) {
+  const tn = n / FPS, out = [];
+  for (let i = k - 1; i >= 0; i--) {
+    let t = k === 1 ? tn : tn - i * SHUTTER / (FPS * (k - 1));
+    for (const cut of CUTS) if (tn >= cut && t < cut) t = cut;
+    if (ENGINE.seamCut && tn === 0 && t < 0) t = 0;   // a cut at the loop point itself
+    out.push(t);
+  }
+  return out;
+}
+function motionAt(n) {
+  if (!BLUR) return { samples: 1, disp: 0 };
+  const ta = wrapT(shutterTimes(n, 2)[0]), tb = wrapT(n / FPS);
+  const spans = ta === tb ? [] : ta < tb ? [[ta, tb]] : [[ta, DUR], [0, tb]];   // a shutter clamped flat against a cut cannot move
+  let moving = false;
+  for (const [a, b] of spans) if (ENGINE.always || ACTIVE.some(([x, y]) => x < b && y > a) || PROPS.some((p) => p.active(a, b))) { moving = true; break; }
+  if (!moving) return { samples: 1, disp: 0 };
+  const minS = ENGINE.minSamples || MIN_SAMPLES;    // an engine whose every sample is costly (WebGL) may allow 2
+  const disp = ENGINE.disp ? ENGINE.disp(ta, tb) : PX_PER_SAMPLE * minS;
+  return { samples: Math.max(minS, Math.min(MAX_SAMPLES, Math.ceil(disp / PX_PER_SAMPLE))), disp };
+}
+let SUM = null;
+function renderFrame(n) {
+  if (!isReady) return 0;
+  const { samples } = motionAt(n);
+  const times = shutterTimes(n, samples);
+  if (samples === 1) { draw(ctx, times[0]); return 1; }
+  if (ENGINE.accumulate) { ENGINE.accumulate(ctx, times); return samples; }
+  if (!SUM) SUM = new Uint16Array(W * H * 4); else SUM.fill(0);
+  for (const t of times) {
+    draw(ctx, t);
+    const px = ctx.getImageData(0, 0, W, H).data;
+    for (let i = 0; i < px.length; i++) SUM[i] += px[i];
+  }
+  const out = ctx.createImageData(W, H), o = out.data, half = samples >> 1;
+  for (let i = 0; i < o.length; i++) o[i] = ((SUM[i] + half) / samples) | 0;
+  ctx.putImageData(out, 0, 0);
+  return samples;
+}
+
+/* ---------------- analysis (never called by seek) ---------------- */
+function accentFrames() { return ACCENTS.map((m) => ({ what: m.what, t: Math.round(m.t * 1000) / 1000, frame: Math.round(m.t * FPS) % NFR })); }
+
+// Off-palette scan. Default: pixels with chroma >= 40 whose hue is more than 13 degrees from every
+// chromatic palette colour (two inks mixed into a new one), counted as `area` only where the 4
+// neighbours are off too (patches 3+ px across, not the 1-px antialiasing fringe). strict: any pixel
+// that is not exactly a palette colour (pixel art).
+function offPalette(frames, mode, strict) {
+  const cols = Object.values(PAL).map(rgbOf);
+  const hues = cols.map((c) => hueChroma(...c)).filter(([, c]) => c >= 40).map(([h]) => h);
+  const exact = new Set(cols.map(([r, g, b]) => (r << 16) | (g << 8) | b));
+  const out = [];
+  for (const n of frames) {
+    if (mode === 'seek') seek(n / FPS); else renderFrame(n);
+    const px = ctx.getImageData(0, 0, W, H).data, off = new Uint8Array(W * H);
+    let count = 0; const seen = {};
+    for (let p = 0, i = 0; p < W * H; p++, i += 4) {
+      let bad;
+      if (strict) bad = !exact.has((px[i] << 16) | (px[i + 1] << 8) | px[i + 2]);
+      else { const [h, C] = hueChroma(px[i], px[i + 1], px[i + 2]); bad = C >= 40 && !hues.some((hp) => hueDist(h, hp) <= 13); }
+      if (bad) { off[p] = 1; count++; const k = `${px[i]},${px[i + 1]},${px[i + 2]}`; seen[k] = (seen[k] || 0) + 1; }
+    }
+    let area = strict ? count : 0;
+    if (!strict) for (let y = 1; y < H - 1; y++) for (let x = 1; x < W - 1; x++) { const p = y * W + x; if (off[p] && off[p - 1] && off[p + 1] && off[p - W] && off[p + W]) area++; }
+    const top = Object.entries(seen).sort((a, b) => b[1] - a[1]).slice(0, 3).map(([k, v]) => `(${k})x${v}`).join(' ');
+    out.push({ frame: n, count, area, top });
+  }
+  return out;
+}
+
+// the last moment anything on screen can change: spring settles, active windows, accents, and the
+// engine's own discrete state (typing, blinking, snaps)
+function lastChange() {
+  let t = -Infinity, what = 'nothing moves';
+  const see = (v, w) => { if (v > t) { t = v; what = w; } };
+  for (const p of PROPS) see(p.settleEnd(), `${p.name} settles`);
+  for (const w of ACTIVE) see(w[1], 'an active window ends');
+  for (const m of ACCENTS) see(m.t + 3 / FPS, `the accent on ${m.what} ends`);
+  if (ENGINE.lastChange) ENGINE.lastChange(see);
+  return { t, what };
+}
+function loopChecks(add) {
+  for (const p of PROPS) for (const e of p.ev) if (e.t >= DUR - 1e-9 || e.t < 0) { add('timeline', 'WARN', `${p.name}: an event at ${e.t.toFixed(3)} s is outside the loop (0 to ${DUR})`); break; }
+  if (LOOP === 'hold') {
+    const last = lastChange(), need = DUR - (1 + SHUTTER) / FPS, hold = Math.floor((DUR - last.t) * FPS + 1e-6);
+    add('loop tail', last.t <= need ? 'PASS' : 'FAIL', `last change at ${last.t.toFixed(3)} s (${last.what}); still hold at least ${hold} frames (needs >= 2; loopcheck counts identical pixels)`);
+  } else if (LOOP === 'cycle') {
+    const open = PROPS.filter((p) => Math.abs(p.last - p.v0) > 1e-6);
+    add('loop closes', open.length ? 'FAIL' : 'PASS', open.length
+      ? `${open.slice(0, 6).map((p) => `${p.name} ends at ${+p.last.toFixed(3)} but starts at ${+p.v0.toFixed(3)}`).join('; ')}${open.length > 6 ? ` and ${open.length - 6} more` : ''}: the loop jumps`
+      : `${PROPS.length} props return to where they start; springs still settling at the end carry over the seam`);
+    if (ENGINE.cycles) for (const c of ENGINE.cycles()) {
+      const k = DUR / c.period;
+      add(`cycle: ${c.what}`, Math.abs(k - Math.round(k)) < 1e-6 ? 'PASS' : 'FAIL', `${+k.toFixed(4)} cycles per loop (period ${+c.period.toFixed(4)} s); must be whole`);
+    }
+  }
+}
+// frames where nothing is on screen (a blank flash between scenes), from the engine's visible(t)
+function emptyRuns() {
+  const runs = [];
+  let start = -1;
+  for (let n = 0; n <= NFR; n++) {
+    const empty = n < NFR && !ENGINE.visible(n / FPS);
+    if (empty && start < 0) start = n;
+    if (!empty && start >= 0) { runs.push([start, n - 1]); start = -1; }
+  }
+  return runs;
+}
+// Collision and live-area helpers for engines' checks. Boxes are [x0, y0, x1, y1] in canvas px.
+function checkLiveArea(add, id, b, bleed) {
+  if (bleed) return;
+  const out = [];
+  if (b[0] < MARGIN - 1) out.push(`left ${b[0].toFixed(1)} < ${MARGIN}`);
+  if (b[2] > W - MARGIN + 1) out.push(`right ${b[2].toFixed(1)} > ${W - MARGIN}`);
+  if (b[1] < MARGIN - 1) out.push(`top ${b[1].toFixed(1)} < ${MARGIN}`);
+  if (b[3] > H - MARGIN + 1) out.push(`bottom ${b[3].toFixed(1)} > ${H - MARGIN}`);
+  add(`live area: ${id}`, out.length ? 'FAIL' : 'PASS', out.join(', ') || `${b.map((v) => v.toFixed(0)).join(', ')}`);
+}
+function checkSpacing(add, items, tight = 16 * U) {  // items: [{ id, b }] on screen together at rest
+  for (let i = 0; i < items.length; i++) for (let j = i + 1; j < items.length; j++) {
+    const a = items[i].b, b = items[j].b;
+    const dx = Math.max(0, a[0] - b[2], b[0] - a[2]), dy = Math.max(0, a[1] - b[3], b[1] - a[3]);
+    const gap = dx === 0 && dy === 0 ? -1 : Math.hypot(dx, dy);
+    if (gap < 0) add(`collision: ${items[i].id} / ${items[j].id}`, 'FAIL', 'boxes overlap at rest');
+    else if (gap < tight) add(`cramped: ${items[i].id} / ${items[j].id}`, 'WARN', `${gap.toFixed(1)} px apart (< ${tight.toFixed(0)} px)`);
+  }
+}
+function critique() {
+  const checks = [];
+  const add = (name, status, detail) => checks.push({ name, status, detail });
+  if (ENGINE.checks) ENGINE.checks(add);
+  for (const c of CONTRAST) {
+    const r = contrast(col(c.fg), col(c.bg));
+    add(`contrast: ${c.id}`, r < c.min ? 'FAIL' : 'PASS', `${r.toFixed(2)}:1 on ${c.bg} (needs ${c.min}:1)`);
+  }
+  const stray = [...USED].filter((k) => !(k in PAL));
+  add('palette roles', stray.length ? 'FAIL' : 'PASS', stray.length ? `not in the palette: ${stray.join(', ')}` : `${USED.size} roles used, all in the palette`);
+  loopChecks(add);
+  if (ENGINE.visible) {
+    const minRun = Math.max(2, Math.round(FPS / 15));
+    for (const [a, b] of emptyRuns()) if (b - a + 1 >= minRun)
+      add('blank frames', 'WARN', `frames ${a}-${b} (t ${(a / FPS).toFixed(3)}-${(b / FPS).toFixed(3)}) show nothing: start the next entrance sooner, or pop it in at the cut`);
+  }
+  for (const w of WARN) add('timeline', 'WARN', w);
+  return checks;
+}
+// review stills: the engine's plan (each scene in and at rest, each transition) plus every accent frame
+function stillsPlan() {
+  const plan = [], seen = new Set();
+  const push = (frame, name, what) => { frame = Math.max(0, Math.min(NFR - 1, Math.round(frame))); if (seen.has(frame)) return; seen.add(frame); plan.push({ frame, name, what }); };
+  if (ENGINE.stills) ENGINE.stills(push);
+  for (const m of accentFrames()) push(m.frame, `accent-${m.what}`, `accent on ${m.what}`);
+  return plan.sort((a, b) => a.frame - b.frame);
+}
+function layoutTable() {
+  return { film: { W, H, FPS, DUR, frames: NFR, bpm: FILM.BPM, loop: LOOP, blur: BLUR, margin: MARGIN, measure: MEASURE, engine: ENGINE.name },
+    ...(ENGINE.layout ? ENGINE.layout() : {}), cuts: CUTS, accents: accentFrames(), warnings: WARN };
+}
+
+/* ---------------- boot ---------------- */
+function filmChars() {                              // every character any string in FILM holds, to load the fonts with
+  const s = new Set('H0');
+  const walk = (v, d) => { if (typeof v === 'string') { for (const c of v) s.add(c); } else if (v && typeof v === 'object' && d < 12) for (const k in v) walk(v[k], d + 1); };
+  walk(FILM, 0);
+  return [...s].join('');
+}
+function boot(E) {
+  ENGINE = E;
+  Object.assign(SP, E.springs || {}, FILM.springs || {});
+  for (const [k, v] of Object.entries(SP)) if (!(v[0] > 0 && v[0] <= 1 && v[1] > 0)) throw new Error(`spring ${k}: zeta must be in (0, 1] and omega > 0`);
+  window.DURATION = DUR; window.FPS = FPS; window.WIDTH = W; window.HEIGHT = H;
+  window.FILM_META = { title: FILM.title, poster: FILM.poster || 0, bg: PAL.bg, palette: PAL, loop: LOOP, blur: BLUR,
+    engine: E.name, strictPalette: !!E.strictPalette, seamCut: !!E.seamCut, gif: E.gif || null };
+  Object.assign(window, { seek, renderFrame, motionAt, layoutTable, critique, stillsPlan, textByFace, accentFrames, misFrames: accentFrames, offPalette });
+  const roles = Object.keys(FILM.fonts || {}), sample = filmChars();
+  window.ready = Promise.all(roles.map((r) => document.fonts.load(fontStr(r, 100), sample)))
+    .then((sets) => { if (sets.some((s) => !s.length)) throw new Error('a font face failed to load'); return E.build(); })
+    .then(() => {
+      for (const p of PROPS) p.seam();
+      CUTS.sort((a, b) => a - b);
+      isReady = true;
+      seek(0);
+      return true;
+    });
+  // Preview: requestAnimationFrame is the only time source and it only calls seek().
+  // Space pauses, the arrow keys step one frame, ?t=3.5 opens paused at a time.
+  if (!/[?&]capture\b/.test(location.search)) {
+    window.ready.then(() => {
+      const m = /[?&]t=([\d.]+)/.exec(location.search);
+      let paused = !!m, pos = m ? Number(m[1]) : 0, last = null;
+      const tick = (ts) => {
+        if (!paused && last !== null) pos = wrapT(pos + (ts - last) / 1000);
+        last = ts; seek(pos); requestAnimationFrame(tick);
+      };
+      addEventListener('keydown', (e) => {
+        if (e.key === ' ') { paused = !paused; e.preventDefault(); }
+        if (e.key === 'ArrowRight') { paused = true; pos = wrapT(Math.round(pos * FPS + 1) / FPS); }
+        if (e.key === 'ArrowLeft') { paused = true; pos = wrapT(Math.round(pos * FPS - 1) / FPS); }
+      });
+      requestAnimationFrame(tick);
+    });
+  }
+}
+
+  return { W, H, FPS, DUR, NFR, CX, CY, U, PAL, col, role, GRID, MARGIN, UNIT, MEASURE, LOOP, BLUR, SHUTTER, TAU,
+    canvas, ctx, mkCanvas, mk2d, mctx,
+    SP, spring, settle, S, dS, landT, Prop, PROPS,
+    cyc, wave, mulberry32, hash, loopNoise, shuffled,
+    wrapT, frameOf, typed, noteSec, drawing,
+    rgbOf, hexOf, mix, hueChroma, hueDist, lum, contrast, inksClash,
+    face, fontStr, setFont, capRatio, useText, measureRun, layoutText, blurQ, glyphSprite, fillGlyph, drawText,
+    svgPath, CUTS, ACTIVE, ACCENTS, WARN, CONTRAST, cutAt, activeIn, accentAt, needContrast,
+    checkLiveArea, checkSpacing, seek, boot };
+})();
+const { W, H, FPS, DUR, NFR, CX, CY, U, PAL, col, role, GRID, MARGIN, UNIT, MEASURE, LOOP, BLUR, SHUTTER, TAU,
+  canvas, ctx, mkCanvas, mk2d, mctx,
+  SP, spring, settle, S, dS, landT, Prop, PROPS,
+  cyc, wave, mulberry32, hash, loopNoise, shuffled,
+  wrapT, frameOf, typed, noteSec, drawing,
+  rgbOf, hexOf, mix, hueChroma, hueDist, lum, contrast, inksClash,
+  face, fontStr, setFont, capRatio, useText, measureRun, layoutText, blurQ, glyphSprite, fillGlyph, drawText,
+  svgPath, CUTS, ACTIVE, ACCENTS, WARN, CONTRAST, cutAt, activeIn, accentAt, needContrast,
+  checkLiveArea, checkSpacing, seek, boot } = CORE;
+/* ===== CORE END ===== */
+
+/* ==========================================================================
+ * ENGINE: motion-3d. A small WebGL2 renderer: extruded type and SVG paths,
+ * primitives, a key light with soft shadow-mapped shadows on a shadow-catcher
+ * floor, 4x MSAA, hue-preserving shading, a spring-driven orbit camera.
+ * ========================================================================== */
+const DEG = Math.PI / 180;
+const WORLD = FILM.world || {};
+const OBJECTS = [], LABELS = [];
+let gl = null, glc = null, G = {};
+let camP = null;
+
+/* ---------------- small linear algebra (column-major, like GL) ---------------- */
+const m4 = {
+  id: () => { const m = new Float32Array(16); m[0] = m[5] = m[10] = m[15] = 1; return m; },
+  mul(a, b) { const o = new Float32Array(16); for (let c = 0; c < 4; c++) for (let r = 0; r < 4; r++) { let s = 0; for (let k = 0; k < 4; k++) s += a[k * 4 + r] * b[c * 4 + k]; o[c * 4 + r] = s; } return o; },
+  persp(fovy, asp, n, f) { const t = 1 / Math.tan(fovy / 2), o = new Float32Array(16); o[0] = t / asp; o[5] = t; o[10] = (f + n) / (n - f); o[11] = -1; o[14] = 2 * f * n / (n - f); return o; },
+  ortho(l, r, b, t, n, f) { const o = new Float32Array(16); o[0] = 2 / (r - l); o[5] = 2 / (t - b); o[10] = -2 / (f - n); o[12] = -(r + l) / (r - l); o[13] = -(t + b) / (t - b); o[14] = -(f + n) / (f - n); o[15] = 1; return o; },
+  look(e, c, up) {
+    let z = [e[0] - c[0], e[1] - c[1], e[2] - c[2]]; const zl = Math.hypot(...z); z = z.map((v) => v / zl);
+    let x = [up[1] * z[2] - up[2] * z[1], up[2] * z[0] - up[0] * z[2], up[0] * z[1] - up[1] * z[0]]; const xl = Math.hypot(...x) || 1; x = x.map((v) => v / xl);
+    const y = [z[1] * x[2] - z[2] * x[1], z[2] * x[0] - z[0] * x[2], z[0] * x[1] - z[1] * x[0]];
+    const o = new Float32Array(16);
+    o[0] = x[0]; o[4] = x[1]; o[8] = x[2]; o[1] = y[0]; o[5] = y[1]; o[9] = y[2]; o[2] = z[0]; o[6] = z[1]; o[10] = z[2];
+    o[12] = -(x[0] * e[0] + x[1] * e[1] + x[2] * e[2]); o[13] = -(y[0] * e[0] + y[1] * e[1] + y[2] * e[2]); o[14] = -(z[0] * e[0] + z[1] * e[1] + z[2] * e[2]); o[15] = 1;
+    return o;
+  },
+  trs(t, r, s) {                                  // translate * Rz * Ry * Rx * scale (r in radians)
+    const [cx, cy, cz] = r.map(Math.cos), [sx, sy, sz] = r.map(Math.sin);
+    const R = [cy * cz, cy * sz, -sy, sx * sy * cz - cx * sz, sx * sy * sz + cx * cz, sx * cy, cx * sy * cz + sx * sz, cx * sy * sz - sx * cz, cx * cy];
+    const o = new Float32Array(16);
+    o[0] = R[0] * s[0]; o[1] = R[1] * s[0]; o[2] = R[2] * s[0];
+    o[4] = R[3] * s[1]; o[5] = R[4] * s[1]; o[6] = R[5] * s[1];
+    o[8] = R[6] * s[2]; o[9] = R[7] * s[2]; o[10] = R[8] * s[2];
+    o[12] = t[0]; o[13] = t[1]; o[14] = t[2]; o[15] = 1;
+    return o;
+  },
+  apply(m, p) { const x = p[0], y = p[1], z = p[2], w = m[3] * x + m[7] * y + m[11] * z + m[15]; return [(m[0] * x + m[4] * y + m[8] * z + m[12]) / w, (m[1] * x + m[5] * y + m[9] * z + m[13]) / w, (m[2] * x + m[6] * y + m[10] * z + m[14]) / w]; },
+  normal(m) {                                     // inverse transpose of the upper 3x3
+    const a = m[0], b = m[1], c = m[2], d = m[4], e = m[5], f = m[6], g = m[8], h = m[9], i = m[10];
+    const A = e * i - f * h, B = -(d * i - f * g), C = d * h - e * g, det = a * A + b * B + c * C || 1;
+    return new Float32Array([A / det, B / det, C / det, -(b * i - c * h) / det, (a * i - c * g) / det, -(a * h - b * g) / det, (b * f - c * e) / det, -(a * f - c * d) / det, (a * e - b * d) / det]);
+  },
+};
+const srgbToLin = (v) => (v <= 0.04045 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4));
+const linOf = (hex) => rgbOf(hex).map((v) => srgbToLin(v / 255));
+
+/* ---------------- meshes ---------------- */
+// A mesh is interleaved position + normal, drawn as triangles, with its bounding box.
+function mesh(P, N, I) {
+  let x0 = Infinity, y0 = Infinity, z0 = Infinity, x1 = -Infinity, y1 = -Infinity, z1 = -Infinity;
+  for (let i = 0; i < P.length; i += 3) { x0 = Math.min(x0, P[i]); x1 = Math.max(x1, P[i]); y0 = Math.min(y0, P[i + 1]); y1 = Math.max(y1, P[i + 1]); z0 = Math.min(z0, P[i + 2]); z1 = Math.max(z1, P[i + 2]); }
+  return { P: new Float32Array(P), N: new Float32Array(N), I: new Uint32Array(I), box: [x0, y0, z0, x1, y1, z1] };
+}
+function grid(nu, nv, f) {                        // a parametric surface: f(u, v) -> [x, y, z, nx, ny, nz]
+  const P = [], N = [], I = [];
+  for (let j = 0; j <= nv; j++) for (let i = 0; i <= nu; i++) { const q = f(i / nu, j / nv); P.push(q[0], q[1], q[2]); N.push(q[3], q[4], q[5]); }
+  for (let j = 0; j < nv; j++) for (let i = 0; i < nu; i++) { const a = j * (nu + 1) + i, b = a + 1, c = a + nu + 1, d = c + 1; I.push(a, c, b, b, c, d); }
+  return { P, N, I };
+}
+function merge(parts) { const P = [], N = [], I = []; for (const p of parts) { const o = P.length / 3; P.push(...p.P); N.push(...p.N); for (const i of p.I) I.push(i + o); } return mesh(P, N, I); }
+function sphereMesh(r, n = 48) { return merge([grid(n, n / 2, (u, v) => { const th = v * Math.PI, ph = u * TAU, x = Math.sin(th) * Math.cos(ph), y = Math.cos(th), z = Math.sin(th) * Math.sin(ph); return [r * x, r * y, r * z, x, y, z]; })]); }
+function torusMesh(R, r, n = 96, m = 32) { return merge([grid(n, m, (u, v) => { const a = u * TAU, b = v * TAU, cx = Math.cos(a), sx = Math.sin(a), nx = Math.cos(b) * cx, ny = Math.sin(b), nz = Math.cos(b) * sx; return [(R + r * Math.cos(b)) * cx, r * Math.sin(b), (R + r * Math.cos(b)) * sx, nx, ny, nz]; })]); }
+function discPart(r, y, up, n) { const P = [0, y, 0], N = [0, up, 0], I = []; for (let i = 0; i <= n; i++) { const a = i / n * TAU; P.push(r * Math.cos(a), y, r * Math.sin(a)); N.push(0, up, 0); } for (let i = 1; i <= n; i++) I.push(0, up > 0 ? i + 1 : i, up > 0 ? i : i + 1); return { P, N, I }; }
+function cylinderMesh(r, h, n = 64) { return merge([grid(n, 1, (u, v) => { const a = u * TAU; return [r * Math.cos(a), h / 2 - v * h, r * Math.sin(a), Math.cos(a), 0, Math.sin(a)]; }), discPart(r, h / 2, 1, n), discPart(r, -h / 2, -1, n)]); }
+function coneMesh(r, h, n = 64) { const k = r / h, s = 1 / Math.hypot(1, k); return merge([grid(n, 1, (u, v) => { const a = u * TAU, rr = r * v; return [rr * Math.cos(a), h / 2 - v * h, rr * Math.sin(a), Math.cos(a) * s, k * s, Math.sin(a) * s]; }), discPart(r, -h / 2, -1, n)]); }
+function capsuleMesh(r, h, n = 48) { return merge([grid(n, n, (u, v) => { const th = v * Math.PI, ph = u * TAU, x = Math.sin(th) * Math.cos(ph), y = Math.cos(th), z = Math.sin(th) * Math.sin(ph); return [r * x, r * y + (y >= 0 ? h / 2 : -h / 2), r * z, x, y, z]; })]); }
+function boxMesh(size, radius = 0, n = 14) {      // a rounded box: a subdivided cube pulled onto rounded edges
+  const hx = size[0] / 2, hy = size[1] / 2, hz = size[2] / 2, r = Math.min(radius, hx, hy, hz), parts = [];
+  const faces = [[0, 1, 2, 1], [0, 1, 2, -1], [1, 2, 0, 1], [1, 2, 0, -1], [2, 0, 1, 1], [2, 0, 1, -1]];   // [u axis, v axis, normal axis, sign]
+  const h = [hx, hy, hz];
+  for (const [ua, va, na, sg] of faces) parts.push(grid(n, n, (u, v) => {
+    const p = [0, 0, 0]; p[ua] = (u * 2 - 1) * h[ua] * (sg > 0 ? 1 : -1); p[va] = (v * 2 - 1) * h[va]; p[na] = sg * h[na];
+    if (na === 1) p[ua] *= -1;
+    const inner = p.map((c, k) => Math.max(-(h[k] - r), Math.min(h[k] - r, c))), d = p.map((c, k) => c - inner[k]), dl = Math.hypot(...d);
+    const nn = dl > 1e-9 ? d.map((c) => c / dl) : [0, 0, 0].map((_, k) => (k === na ? sg : 0));
+    const q = r > 0 && dl > 1e-9 ? inner.map((c, k) => c + nn[k] * r) : p;
+    return [q[0], q[1], q[2], nn[0], nn[1], nn[2]];
+  }));
+  return merge(parts);
+}
+
+/* ---------------- extruded outlines: raster -> contours -> triangles -> a bevelled solid ---------------- */
+// Marching squares on the alpha of a rasterised glyph or path, at 50 % coverage, linearly interpolated.
+function contours(alpha, w, h) {
+  const v = (x, y) => (x < 0 || y < 0 || x >= w || y >= h ? 0 : alpha[(y * w + x) * 4 + 3] / 255);
+  const segs = [], key = (x, y, e) => `${x},${y},${e}`;
+  const pt = (x, y, e) => {                       // e 0: horizontal edge (x,y)-(x+1,y); 1: vertical (x,y)-(x,y+1)
+    const a = v(x, y), b = e ? v(x, y + 1) : v(x + 1, y), k = Math.abs(b - a) < 1e-9 ? 0.5 : (0.5 - a) / (b - a);
+    return e ? [x + 0.5, y + 0.5 + k] : [x + 0.5 + k, y + 0.5];
+  };
+  for (let y = -1; y < h; y++) for (let x = -1; x < w; x++) {
+    const tl = v(x, y) >= 0.5, tr = v(x + 1, y) >= 0.5, br = v(x + 1, y + 1) >= 0.5, bl = v(x, y + 1) >= 0.5;
+    const idx = (tl ? 8 : 0) | (tr ? 4 : 0) | (br ? 2 : 0) | (bl ? 1 : 0);
+    if (idx === 0 || idx === 15) continue;
+    const T = key(x, y, 0), R = key(x + 1, y, 1), B = key(x, y + 1, 0), L = key(x, y, 1);
+    const P = { [T]: () => pt(x, y, 0), [R]: () => pt(x + 1, y, 1), [B]: () => pt(x, y + 1, 0), [L]: () => pt(x, y, 1) };
+    const add = (a, b) => segs.push([a, b, P[a](), P[b]()]);
+    const center = (v(x, y) + v(x + 1, y) + v(x + 1, y + 1) + v(x, y + 1)) / 4 >= 0.5;
+    switch (idx) {
+      case 1: case 14: add(L, B); break;
+      case 2: case 13: add(B, R); break;
+      case 3: case 12: add(L, R); break;
+      case 4: case 11: add(T, R); break;
+      case 6: case 9: add(T, B); break;
+      case 7: case 8: add(L, T); break;
+      case 5: if (center) { add(L, T); add(B, R); } else { add(L, B); add(T, R); } break;
+      case 10: if (center) { add(T, R); add(L, B); } else { add(L, T); add(B, R); } break;
+    }
+  }
+  const at = new Map();
+  segs.forEach((s, i) => { for (const k of [s[0], s[1]]) { if (!at.has(k)) at.set(k, []); at.get(k).push(i); } });
+  const used = new Uint8Array(segs.length), loops = [];
+  for (let i = 0; i < segs.length; i++) {
+    if (used[i]) continue;
+    const loop = [];
+    let si = i, from = segs[i][0];
+    for (let guard = 0; guard < segs.length + 2; guard++) {
+      used[si] = 1;
+      const s = segs[si], fwd = s[0] === from, next = fwd ? s[1] : s[0];
+      loop.push(fwd ? s[2] : s[3]);
+      const nb = at.get(next).find((j) => !used[j]);
+      if (nb == null) break;
+      si = nb; from = next;
+    }
+    if (loop.length >= 3) loops.push(loop);
+  }
+  return loops;
+}
+function simplify(loop, tol) {                    // Douglas-Peucker on a closed loop
+  const n = loop.length;
+  if (n < 8) return loop;
+  let far = 0, fd = -1; for (let i = 1; i < n; i++) { const d = Math.hypot(loop[i][0] - loop[0][0], loop[i][1] - loop[0][1]); if (d > fd) { fd = d; far = i; } }
+  const dp = (pts) => {
+    if (pts.length < 3) return pts;
+    const a = pts[0], b = pts[pts.length - 1], L = Math.hypot(b[0] - a[0], b[1] - a[1]) || 1e-9;
+    let mi = 0, md = -1;
+    for (let i = 1; i < pts.length - 1; i++) { const d = Math.abs((b[0] - a[0]) * (a[1] - pts[i][1]) - (a[0] - pts[i][0]) * (b[1] - a[1])) / L; if (d > md) { md = d; mi = i; } }
+    if (md <= tol) return [a, b];
+    const l = dp(pts.slice(0, mi + 1)), r = dp(pts.slice(mi));
+    return l.slice(0, -1).concat(r);
+  };
+  const A = dp(loop.slice(0, far + 1)), B = dp(loop.slice(far).concat([loop[0]]));
+  return A.slice(0, -1).concat(B.slice(0, -1));
+}
+const area2 = (p) => { let a = 0; for (let i = 0; i < p.length; i++) { const q = p[i], r = p[(i + 1) % p.length]; a += q[0] * r[1] - r[0] * q[1]; } return a / 2; };
+function inside(pt, poly) { let c = false; for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) { const a = poly[i], b = poly[j]; if ((a[1] > pt[1]) !== (b[1] > pt[1]) && pt[0] < (b[0] - a[0]) * (pt[1] - a[1]) / (b[1] - a[1]) + a[0]) c = !c; } return c; }
+// Solids with their holes, in math coordinates (y up): outers counter-clockwise, holes clockwise.
+function shapesOf(loops) {
+  const L = loops.map((p) => ({ p, a: area2(p) })).filter((o) => Math.abs(o.a) > 1e-6);
+  for (const o of L) o.depth = L.filter((q) => q !== o && Math.abs(q.a) > Math.abs(o.a) && inside(o.p[0], q.p)).length;
+  const outers = L.filter((o) => o.depth % 2 === 0).map((o) => ({ outer: o.a > 0 ? o.p : o.p.slice().reverse(), holes: [], src: o }));
+  for (const o of L.filter((q) => q.depth % 2 === 1)) {
+    const host = outers.filter((s) => inside(o.p[0], s.outer) && s.src.depth === o.depth - 1).sort((a, b) => Math.abs(a.src.a) - Math.abs(b.src.a))[0];
+    if (host) host.holes.push(o.a < 0 ? o.p : o.p.slice().reverse());
+  }
+  return outers;
+}
+// Ear clipping with holes bridged in (each hole joined to the outline at a mutually visible vertex).
+function triangulate(outer, holes) {
+  let poly = outer.slice();
+  const cross = (o, a, b) => (a[0] - o[0]) * (b[1] - o[1]) - (a[1] - o[1]) * (b[0] - o[0]);
+  const inTri = (p, a, b, c) => cross(a, b, p) >= -1e-12 && cross(b, c, p) >= -1e-12 && cross(c, a, p) >= -1e-12;
+  for (const h of holes.slice().sort((a, b) => Math.max(...b.map((p) => p[0])) - Math.max(...a.map((p) => p[0])))) {
+    const mi = h.reduce((bi, p, i) => (p[0] > h[bi][0] ? i : bi), 0), M = h[mi];
+    let best = -1, bx = Infinity;
+    for (let i = 0; i < poly.length; i++) {         // the nearest outline edge crossed by a ray from M toward +x
+      const a = poly[i], b = poly[(i + 1) % poly.length];
+      if ((a[1] - M[1]) * (b[1] - M[1]) > 0 || a[1] === b[1]) continue;
+      const x = a[0] + (M[1] - a[1]) / (b[1] - a[1]) * (b[0] - a[0]);
+      if (x >= M[0] && x < bx) { bx = x; best = a[0] > b[0] ? i : (i + 1) % poly.length; }
+    }
+    if (best < 0) continue;
+    const I = [bx, M[1]], Pp = poly[best];
+    let pick = best, pickAng = Infinity;              // a reflex vertex inside the triangle M I P blocks the view: take the closest in angle
+    for (let i = 0; i < poly.length; i++) {
+      const q = poly[i], prev = poly[(i - 1 + poly.length) % poly.length], next = poly[(i + 1) % poly.length];
+      if (i === best || cross(prev, q, next) > 0) continue;
+      if (inTri(q, M, I, Pp) || inTri(q, M, Pp, I)) { const ang = Math.abs(Math.atan2(q[1] - M[1], q[0] - M[0])); if (ang < pickAng) { pickAng = ang; pick = i; } }
+    }
+    const P0 = poly[pick];
+    poly = poly.slice(0, pick + 1).concat(h.slice(mi), h.slice(0, mi + 1), [P0], poly.slice(pick + 1));
+  }
+  const idx = poly.map((_, i) => i), tris = [];
+  let guard = 0;
+  while (idx.length > 3 && guard++ < 100000) {
+    let clipped = false;
+    for (let k = 0; k < idx.length; k++) {
+      const i0 = idx[(k - 1 + idx.length) % idx.length], i1 = idx[k], i2 = idx[(k + 1) % idx.length];
+      const a = poly[i0], b = poly[i1], c = poly[i2];
+      if (cross(a, b, c) <= 1e-12) continue;
+      let ok = true;
+      for (const j of idx) { if (j === i0 || j === i1 || j === i2) continue; const p = poly[j]; if ((p[0] === a[0] && p[1] === a[1]) || (p[0] === b[0] && p[1] === b[1]) || (p[0] === c[0] && p[1] === c[1])) continue; if (inTri(p, a, b, c)) { ok = false; break; } }
+      if (!ok) continue;
+      tris.push([a, b, c]); idx.splice(k, 1); clipped = true; break;
+    }
+    if (!clipped) {                                   // degenerate leftovers: drop the flattest vertex and go on
+      let k = 0, m = Infinity;
+      for (let q = 0; q < idx.length; q++) { const v = Math.abs(cross(poly[idx[(q - 1 + idx.length) % idx.length]], poly[idx[q]], poly[idx[(q + 1) % idx.length]])); if (v < m) { m = v; k = q; } }
+      idx.splice(k, 1);
+    }
+  }
+  if (idx.length === 3 && cross(poly[idx[0]], poly[idx[1]], poly[idx[2]]) > 0) tris.push([poly[idx[0]], poly[idx[1]], poly[idx[2]]]);
+  return tris;
+}
+// the outline pushed inward by b along each vertex's bisector (a mitre, limited at sharp corners)
+function inset(loop, b) {
+  const n = loop.length, out = [];
+  for (let i = 0; i < n; i++) {
+    const p = loop[(i - 1 + n) % n], q = loop[i], r = loop[(i + 1) % n];
+    const e1 = [q[0] - p[0], q[1] - p[1]], e2 = [r[0] - q[0], r[1] - q[1]], l1 = Math.hypot(...e1) || 1, l2 = Math.hypot(...e2) || 1;
+    const n1 = [e1[1] / l1, -e1[0] / l1], n2 = [e2[1] / l2, -e2[0] / l2];   // outward for a counter-clockwise outline (y up)
+    let m = [n1[0] + n2[0], n1[1] + n2[1]]; const ml = Math.hypot(...m) || 1; m = [m[0] / ml, m[1] / ml];
+    const k = b / Math.max(0.35, m[0] * n1[0] + m[1] * n1[1]);
+    out.push([q[0] - m[0] * k, q[1] - m[1] * k]);
+  }
+  return out;
+}
+// One solid: front and back caps, a bevel ring on each side, and the walls, with smooth normals on curves.
+function extrude(shapes, depth, bevel) {
+  const front = [], side = [], d = depth / 2, b = Math.min(bevel, depth * 0.45);
+  const P = [[], []], N = [[], []], I = [[], []];   // 0: faces (front colour), 1: sides (side colour)
+  const put = (k, p, n) => { P[k].push(p[0], p[1], p[2]); N[k].push(n[0], n[1], n[2]); return P[k].length / 3 - 1; };
+  const nrm = (v) => { const l = Math.hypot(...v) || 1; return v.map((c) => c / l); };
+  for (const sh of shapes) {
+    const loops = [sh.outer, ...sh.holes];
+    const ins = loops.map((l) => (b > 0 ? inset(l, b) : l));
+    for (const [z, nz] of [[d, 1], [-d, -1]]) for (const t of triangulate(ins[0], ins.slice(1))) {
+      const ia = put(0, [t[0][0], t[0][1], z], [0, 0, nz]), ib = put(0, [t[1][0], t[1][1], z], [0, 0, nz]), ic = put(0, [t[2][0], t[2][1], z], [0, 0, nz]);
+      I[0].push(...(nz > 0 ? [ia, ib, ic] : [ia, ic, ib]));
+    }
+    loops.forEach((l, li) => {                      // walls and bevels, edge by edge; normals shared where the outline turns gently
+      const n = l.length, en = [];
+      for (let i = 0; i < n; i++) { const p = l[i], q = l[(i + 1) % n], e = [q[0] - p[0], q[1] - p[1]], el = Math.hypot(...e) || 1; en.push([e[1] / el, -e[0] / el]); }
+      const vn = (i, e) => { const a = en[(i - 1 + n) % n], c = en[i], dot = a[0] * c[0] + a[1] * c[1]; if (dot > 0.78) { const m = nrm([a[0] + c[0], a[1] + c[1]]); return m; } return e === 0 ? a : c; };
+      for (let i = 0; i < n; i++) {
+        const j = (i + 1) % n, p = l[i], q = l[j], pi = ins[li][i], qi = ins[li][j];
+        const na = vn(i, 1), nb = vn(j, 0);
+        const quad = (A, B, C, D, nA, nB, nC, nD) => { const a = put(1, A, nA), bb = put(1, B, nB), c = put(1, C, nC), dd = put(1, D, nD); I[1].push(a, bb, c, bb, dd, c); };
+        const zf = d - b, zb = -d + b;
+        quad([p[0], p[1], zf], [q[0], q[1], zf], [p[0], p[1], zb], [q[0], q[1], zb], [na[0], na[1], 0], [nb[0], nb[1], 0], [na[0], na[1], 0], [nb[0], nb[1], 0]);
+        if (b > 0) for (const s of [1, -1]) {
+          const tilt = (v) => nrm([v[0] * 0.55, v[1] * 0.55, s]), side_ = (v) => nrm([v[0], v[1], s * 0.35]);
+          const A = [pi[0], pi[1], s * d], B = [qi[0], qi[1], s * d], C = [p[0], p[1], s * (d - b)], D = [q[0], q[1], s * (d - b)];
+          if (s > 0) quad(A, B, C, D, tilt(na), tilt(nb), side_(na), side_(nb)); else quad(C, D, A, B, side_(na), side_(nb), tilt(na), tilt(nb));
+        }
+      }
+    });
+  }
+  return [mesh(P[0], N[0], I[0]), mesh(P[1], N[1], I[1])];
+}
+// rasterise something at `px` per unit and return its solids, in units, centred on its ink box
+function solidsOf(paint, wpx, hpx, unitPx, tol = 0.45) {
+  const [cv, cx] = mk2d(wpx, hpx);
+  cx.clearRect(0, 0, wpx, hpx); cx.fillStyle = '#000'; paint(cx);
+  const alpha = cx.getImageData(0, 0, wpx, hpx).data;
+  const loops = contours(alpha, wpx, hpx).map((l) => simplify(l, tol)).filter((l) => l.length >= 3);
+  let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+  for (const l of loops) for (const [x, y] of l) { x0 = Math.min(x0, x); x1 = Math.max(x1, x); y0 = Math.min(y0, y); y1 = Math.max(y1, y); }
+  const cxm = (x0 + x1) / 2, cym = (y0 + y1) / 2;
+  const toU = (l) => l.map(([x, y]) => [(x - cxm) / unitPx, -(y - cym) / unitPx]);
+  return { shapes: shapesOf(loops.map(toU)), w: (x1 - x0) / unitPx, h: (y1 - y0) / unitPx, cxm, cym, loops: loops.length };
+}
+
+/* ---------------- WebGL ---------------- */
+const VS = `#version 300 es
+layout(location=0) in vec3 aP; layout(location=1) in vec3 aN;
+uniform mat4 uM, uVP, uLVP; uniform mat3 uNM;
+out vec3 vW; out vec3 vN; out vec4 vL;
+void main(){ vec4 w = uM * vec4(aP, 1.0); vW = w.xyz; vN = uNM * aN; vL = uLVP * w; gl_Position = uVP * w; }`;
+const FS = `#version 300 es
+precision highp float; precision highp sampler2DShadow;
+in vec3 vW; in vec3 vN; in vec4 vL;
+uniform vec3 uC, uBg, uLd, uCam; uniform float uGloss, uAmb, uKey, uRim, uToon, uFloor, uShadowK, uTexel, uSoft;
+uniform sampler2DShadow uSh;
+out vec4 o;
+vec3 srgb(vec3 c){ c = clamp(c, 0.0, 1.0); return mix(c * 12.92, 1.055 * pow(c, vec3(1.0 / 2.4)) - 0.055, step(0.0031308, c)); }
+float shadow(){
+  vec3 p = vL.xyz / vL.w * 0.5 + 0.5;
+  if (p.x < 0.0 || p.x > 1.0 || p.y < 0.0 || p.y > 1.0 || p.z > 1.0) return 1.0;
+  float s = 0.0;
+  for (int i = 0; i < 2; i++) for (int j = 0; j < 2; j++) s += texture(uSh, vec3(p.xy + (vec2(float(i), float(j)) - 0.5) * 2.0 * uTexel * uSoft, p.z - 0.0007));
+  return s / 4.0;                                        // four filtered taps: sixteen depth tests, soft enough, cheap on a CPU
+}
+void main(){
+  float sh = shadow();
+  if (uFloor > 0.5) { o = vec4(srgb(uBg * (1.0 - uShadowK * (1.0 - sh))), 1.0); return; }
+  vec3 N = normalize(vN), L = normalize(-uLd), V = normalize(uCam - vW);
+  float ndl = max(dot(N, L), 0.0) * sh;
+  if (uToon > 0.5) ndl = ndl > 0.55 ? 1.0 : ndl > 0.18 ? 0.6 : 0.22;
+  vec3 c = uC * (uAmb + uKey * ndl);                     // hue kept: the surface colour times a light level
+  vec3 H = normalize(L + V);
+  float spec = pow(max(dot(N, H), 0.0), mix(10.0, 180.0, uGloss)) * uGloss * sh;
+  float rim = pow(1.0 - max(dot(N, V), 0.0), 3.0) * uRim;
+  c += vec3(spec * 0.85 + rim);                          // white light added: lighter, never a new hue
+  o = vec4(srgb(c), 1.0);
+}`;
+const DVS = `#version 300 es
+layout(location=0) in vec3 aP; uniform mat4 uM, uLVP; void main(){ gl_Position = uLVP * uM * vec4(aP, 1.0); }`;
+const DFS = `#version 300 es
+precision highp float; out vec4 o; void main(){ o = vec4(1.0); }`;
+function program(vs, fs) {
+  const sh = (t, s) => { const x = gl.createShader(t); gl.shaderSource(x, s); gl.compileShader(x); if (!gl.getShaderParameter(x, gl.COMPILE_STATUS)) throw new Error(gl.getShaderInfoLog(x)); return x; };
+  const p = gl.createProgram(); gl.attachShader(p, sh(gl.VERTEX_SHADER, vs)); gl.attachShader(p, sh(gl.FRAGMENT_SHADER, fs)); gl.linkProgram(p);
+  if (!gl.getProgramParameter(p, gl.LINK_STATUS)) throw new Error(gl.getProgramInfoLog(p));
+  const u = {}; const n = gl.getProgramParameter(p, gl.ACTIVE_UNIFORMS); for (let i = 0; i < n; i++) { const a = gl.getActiveUniform(p, i); u[a.name] = gl.getUniformLocation(p, a.name); }
+  return { p, u };
+}
+function upload(M) {
+  const vao = gl.createVertexArray(); gl.bindVertexArray(vao);
+  const b = gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER, b); gl.bufferData(gl.ARRAY_BUFFER, M.P, gl.STATIC_DRAW); gl.enableVertexAttribArray(0); gl.vertexAttribPointer(0, 3, gl.FLOAT, false, 0, 0);
+  const nb = gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER, nb); gl.bufferData(gl.ARRAY_BUFFER, M.N, gl.STATIC_DRAW); gl.enableVertexAttribArray(1); gl.vertexAttribPointer(1, 3, gl.FLOAT, false, 0, 0);
+  const ib = gl.createBuffer(); gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, ib); gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, M.I, gl.STATIC_DRAW);
+  gl.bindVertexArray(null);
+  return { vao, n: M.I.length, box: M.box };
+}
+function initGL() {
+  glc = document.createElement('canvas'); glc.width = W; glc.height = H;
+  gl = glc.getContext('webgl2', { antialias: false, preserveDrawingBuffer: true, alpha: true, premultipliedAlpha: false, depth: true });   // RGBA8, like the multisampled buffer it resolves from
+  if (!gl) throw new Error('WebGL2 is not available in this browser');
+  G.main = program(VS, FS); G.depth = program(DVS, DFS);
+  G.samples = Math.min(4, gl.getParameter(gl.MAX_SAMPLES));
+  G.fb = gl.createFramebuffer();
+  const rb = gl.createRenderbuffer(), db = gl.createRenderbuffer();
+  gl.bindRenderbuffer(gl.RENDERBUFFER, rb); gl.renderbufferStorageMultisample(gl.RENDERBUFFER, G.samples, gl.RGBA8, W, H);
+  gl.bindRenderbuffer(gl.RENDERBUFFER, db); gl.renderbufferStorageMultisample(gl.RENDERBUFFER, G.samples, gl.DEPTH_COMPONENT24, W, H);
+  gl.bindFramebuffer(gl.FRAMEBUFFER, G.fb); gl.framebufferRenderbuffer(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.RENDERBUFFER, rb); gl.framebufferRenderbuffer(gl.FRAMEBUFFER, gl.DEPTH_ATTACHMENT, gl.RENDERBUFFER, db);
+  G.shN = 1024;
+  G.shTex = gl.createTexture(); gl.bindTexture(gl.TEXTURE_2D, G.shTex);
+  gl.texStorage2D(gl.TEXTURE_2D, 1, gl.DEPTH_COMPONENT24, G.shN, G.shN);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_COMPARE_MODE, gl.COMPARE_REF_TO_TEXTURE); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_COMPARE_FUNC, gl.LEQUAL);
+  G.shFb = gl.createFramebuffer(); gl.bindFramebuffer(gl.FRAMEBUFFER, G.shFb); gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.DEPTH_ATTACHMENT, gl.TEXTURE_2D, G.shTex, 0);
+  gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+  const F = 200;
+  G.floor = upload(mesh([-F, 0, -F, F, 0, -F, -F, 0, F, F, 0, F], [0, 1, 0, 0, 1, 0, 0, 1, 0, 0, 1, 0], [0, 2, 1, 1, 2, 3]));
+}
+
+/* ---------------- objects, copies and their springs ---------------- */
+const KEYS3 = ['dx', 'dy', 'dz', 'rx', 'ry', 'rz', 'sc'];
+function stateOf3(s) { const o = {}; if (!s) return o; for (const k of ['dx', 'dy', 'dz', 'rx', 'ry', 'rz']) if (s[k] != null) o[k] = s[k]; if (s.scale != null) o.sc = s.scale; return o; }
+function orderOf3(n, how, seed) { if (how === 'reverse') return [...Array(n).keys()].map((k) => n - 1 - k); if (how === 'random') { const p = shuffled([...Array(n).keys()], seed); return [...Array(n).keys()].map((k) => p.indexOf(k)); } return [...Array(n).keys()]; }
+function geometryOf(o) {
+  switch (o.kind) {
+    case 'sphere': return [sphereMesh(o.r || 1)];
+    case 'torus': return [torusMesh(o.r || 1, o.tube || 0.25)];
+    case 'box': return [boxMesh(o.size || [1, 1, 1], o.radius || 0)];
+    case 'cylinder': return [cylinderMesh(o.r || 0.5, o.h || 1)];
+    case 'cone': return [coneMesh(o.r || 0.5, o.h || 1)];
+    case 'capsule': return [capsuleMesh(o.r || 0.4, o.h || 1)];
+    default: throw new Error(`${o.id}: unknown kind "${o.kind}"`);
+  }
+}
+function buildObject(o, oi) {
+  const Ob = { spec: o, id: o.id, oi, copies: [], color: linOf(role(o.color || 'fg')), side: linOf(role(o.side || o.color || 'fg')) };
+  const rest = { pos: o.pos || [0, 0, 0], rot: (o.rot || [0, 0, 0]).map((v) => v * DEG), sc: o.scale != null ? o.scale : 1 };
+  let parts = [];                                  // [{ meshes, offset: [x, y, z] }]
+  if (o.kind === 'text') {                         // one extruded solid per glyph, so letters can move one by one
+    const capPx = 360, line = layoutText({ id: o.id, text: o.text, font: o.font || 'display', cap: capPx, track: o.track || 0, pairs: o.pairs, anchor: 'C', x: 0, baseline: 0 });
+    const unitPx = capPx / (o.cap || 1.5);
+    Ob.line = line; Ob.capU = o.cap || 1.5;
+    for (const g of line.glyphs) {
+      if (g.space) continue;
+      const pad = 24, w = Math.ceil(g.inkR - g.inkL) + 2 * pad, h = Math.ceil(g.asc + g.desc) + 2 * pad;
+      const S = solidsOf((cx) => { setFont(cx, line.font); cx.fillText(g.ch, pad - (g.inkL - g.x), pad + g.asc); }, w, h, unitPx);
+      const ox = ((g.inkL + g.inkR) / 2) / unitPx, oy = ((g.asc - g.desc) / 2) / unitPx;   // the glyph's ink centre, from the line's centre and baseline
+      parts.push({ meshes: extrude(S.shapes, o.depth != null ? o.depth : 0.5, o.bevel != null ? o.bevel : 0.05), offset: [ox, oy, 0], ch: g.ch, w: S.w, h: S.h });
+    }
+  } else if (o.kind === 'path') {                  // an extruded SVG path (a logo), `size` units across its longer side
+    const P = svgPath(o.d), [x0, y0, x1, y1] = P.box, px = 900 / Math.max(x1 - x0, y1 - y0), pad = 24;
+    const S = solidsOf((cx) => { cx.setTransform(px, 0, 0, px, pad - x0 * px, pad - y0 * px); cx.fill(P.p2d, o.rule || 'nonzero'); cx.setTransform(1, 0, 0, 1, 0, 0); }, Math.ceil((x1 - x0) * px) + 2 * pad, Math.ceil((y1 - y0) * px) + 2 * pad, 900 / (o.size || 2));
+    parts.push({ meshes: extrude(S.shapes, o.depth != null ? o.depth : 0.4, o.bevel != null ? o.bevel : 0.04), offset: [0, 0, 0] });
+  } else parts.push({ meshes: geometryOf(o), offset: [0, 0, 0] });
+  // copies: one per glyph, or per repeat
+  const rep = o.repeat;
+  const reps = !rep ? [{ ox: 0, oy: 0, oz: 0, ory: 0 }] : rep.radial ? [...Array(rep.radial).keys()].map((k) => { const a = TAU * k / rep.radial + (rep.start || 0) * DEG; return { ox: (rep.r || 0) * Math.sin(a), oy: 0, oz: (rep.r || 0) * Math.cos(a), ory: a }; })
+    : [...Array(rep.n || 1).keys()].map((k) => ({ ox: k * (rep.dx || 0), oy: k * (rep.dy || 0), oz: k * (rep.dz || 0), ory: 0 }));
+  for (const part of parts) { const up = part.meshes.map(upload); for (const r of reps) Ob.copies.push({ part, rep: r, gl: up }); }
+  const n = Ob.copies.length, en = o.enter, from = { dx: 0, dy: 0, dz: 0, rx: 0, ry: 0, rz: 0, sc: 1, ...stateOf3(en && en.from) };
+  const ranks = (spec) => (spec && spec.stagger ? orderOf3(n, spec.order, 0x3D + oi) : null);
+  const enR = ranks(en), keyR = (o.keys || []).map(ranks), exR = ranks(o.exit);
+  Ob.copies.forEach((cp, k) => {
+    cp.k = k; cp.P = {}; cp.phase = o.loop && o.loop.phase === 'index' ? k / n : 0;
+    for (const key of KEYS3) cp.P[key] = new Prop(from[key] != null ? from[key] : (key === 'sc' ? 1 : 0), `${o.id}${n > 1 ? '#' + k : ''}.${key}`);
+    const ev = [], st = (spec, R) => (spec && spec.stagger ? noteSec(spec.stagger) * R[k] : 0);
+    if (en) { const t = en.at + st(en, enR); cp.land = t + landT(en.spring || 'LAND'); for (const [key, v] of Object.entries(from)) if (v !== (key === 'sc' ? 1 : 0)) ev.push([t, key, key === 'sc' ? 1 : 0, en.spring]); }
+    (o.keys || []).forEach((kk, j) => { const t = kk.at + st(kk, keyR[j]); for (const [key, v] of Object.entries(stateOf3(kk.to))) ev.push([t, key, v, kk.spring]); });
+    if (o.exit) { const t = o.exit.at + st(o.exit, exR); for (const [key, v] of Object.entries(stateOf3(o.exit.to))) ev.push([t, key, v, o.exit.spring || 'EXIT']); }
+    ev.sort((a, b) => a[0] - b[0]);
+    for (const [t, key, v, sp] of ev) cp.P[key].to(t, v, sp || 'LAND');
+    for (const key of ['rx', 'ry', 'rz']) {         // a whole turn is where it started: fold it back once it has settled
+      const p = cp.P[key], turns = Math.round((p.last - p.v0) / 360);
+      if (turns && Math.abs(p.last - p.v0 - 360 * turns) < 1e-9) { const tEnd = p.settleEnd(); if (tEnd < DUR - 1e-6) p.set(tEnd, p.v0); }
+    }
+  });
+  Ob.rest = rest;
+  if (o.accent != null) accentAt(o.accent === 'land' ? Math.max(...Ob.copies.map((c) => c.land || 0)) : o.accent, o.id);
+  if (o.kind === 'text') needContrast(o.id, o.color, 'bg', 3);
+  return Ob;
+}
+// The model matrix of one copy at t. The object's frame (its rest place and turn, a spin about a local
+// axis, a wobble) carries every copy; each copy (a glyph, a repeat) then moves, turns and scales about its
+// own centre; an orbit turns the whole thing about the world's vertical axis.
+const I3 = [1, 1, 1], O3 = [0, 0, 0];
+function modelOf(Ob, cp, t) {
+  const o = Ob.spec, P = cp.P, B = o.loop || {}, ph = cp.phase, rs = Ob.rest.sc;
+  const pos = Ob.rest.pos.slice();
+  if (B.bob) pos[1] += B.bob[1] * Math.sin(cyc(t, B.bob[0], ph));
+  let M = m4.trs(pos, Ob.rest.rot, I3);
+  if (B.spin) { const r = [0, 0, 0]; r['xyz'.indexOf(B.spin[0])] = TAU * B.spin[1] * t / DUR; M = m4.mul(M, m4.trs(O3, r, I3)); }
+  if (B.wobble) M = m4.mul(M, m4.trs(O3, [0, 0, B.wobble[1] * DEG * Math.sin(cyc(t, B.wobble[0], ph))], I3));
+  const off = cp.part.offset, r = cp.rep, sc = rs * P.sc.at(t);
+  M = m4.mul(M, m4.trs([(off[0] + r.ox) * rs + P.dx.at(t), (off[1] + r.oy) * rs + P.dy.at(t), (off[2] + r.oz) * rs + P.dz.at(t)],
+    [P.rx.at(t) * DEG, r.ory + P.ry.at(t) * DEG, P.rz.at(t) * DEG], [sc, sc, sc]));
+  if (B.orbit) M = m4.mul(m4.trs(O3, [0, TAU * B.orbit[0] * t / DUR, 0], I3), M);
+  return M;
+}
+function cameraAt(t) {
+  const C = FILM.camera || {}, P = camP;
+  let yaw = P.yaw.at(t), pitch = P.pitch.at(t);
+  if (C.sway) yaw += C.sway[1] * Math.sin(cyc(t, C.sway[0]));
+  if (C.orbit) yaw += 360 * C.orbit * t / DUR;
+  const d = P.dist.at(t), tg = [P.tx.at(t), P.ty.at(t), P.tz.at(t)], y = yaw * DEG, p = pitch * DEG;
+  const eye = [tg[0] + d * Math.cos(p) * Math.sin(y), tg[1] + d * Math.sin(p), tg[2] + d * Math.cos(p) * Math.cos(y)];
+  const view = m4.look(eye, tg, [0, 1, 0]), proj = m4.persp(P.fov.at(t) * DEG, W / H, 0.1, 200);
+  return { eye, vp: m4.mul(proj, view) };
+}
+const toScreen = (vp, p) => { const q = m4.apply(vp, p); return [(q[0] * 0.5 + 0.5) * W, (1 - (q[1] * 0.5 + 0.5)) * H, q[2]]; };
+function boxCorners(b) { const out = []; for (const x of [b[0], b[3]]) for (const y of [b[1], b[4]]) for (const z of [b[2], b[5]]) out.push([x, y, z]); return out; }
+
+/* ---------------- a frame ---------------- */
+function renderGL(t) {
+  const cam = cameraAt(t);
+  const Lt = WORLD.light || {}, ld = Lt.dir || [-0.5, -1, -0.5], ll = Math.hypot(...ld), L = ld.map((v) => v / ll);
+  const R = (WORLD.shadowBox || 9), center = [0, 1, 0];
+  const lview = m4.look([center[0] - L[0] * 30, center[1] - L[1] * 30, center[2] - L[2] * 30], center, Math.abs(L[1]) > 0.99 ? [0, 0, 1] : [0, 1, 0]);
+  const lvp = m4.mul(m4.ortho(-R, R, -R, R, 1, 60), lview);
+  const draws = [];
+  for (const Ob of OBJECTS) for (const cp of Ob.copies) { const M = modelOf(Ob, cp, t); if (Math.abs(M[0]) + Math.abs(M[5]) + Math.abs(M[10]) < 1e-6) continue; draws.push({ Ob, cp, M }); }
+  // shadow pass: depth from the light
+  gl.bindFramebuffer(gl.FRAMEBUFFER, G.shFb); gl.viewport(0, 0, G.shN, G.shN);
+  gl.enable(gl.DEPTH_TEST); gl.disable(gl.CULL_FACE); gl.clear(gl.DEPTH_BUFFER_BIT);
+  gl.useProgram(G.depth.p); gl.uniformMatrix4fv(G.depth.u.uLVP, false, lvp);
+  for (const d of draws) if (d.Ob.spec.shadow !== false) { gl.uniformMatrix4fv(G.depth.u.uM, false, d.M); for (const m of d.cp.gl) { gl.bindVertexArray(m.vao); gl.drawElements(gl.TRIANGLES, m.n, gl.UNSIGNED_INT, 0); } }
+  // main pass into the multisampled buffer
+  gl.bindFramebuffer(gl.FRAMEBUFFER, G.fb); gl.viewport(0, 0, W, H);
+  const bg = rgbOf(PAL.bg).map((v) => v / 255);
+  gl.clearColor(bg[0], bg[1], bg[2], 1); gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+  const u = G.main.u; gl.useProgram(G.main.p);
+  gl.uniformMatrix4fv(u.uVP, false, cam.vp); gl.uniformMatrix4fv(u.uLVP, false, lvp);
+  gl.uniform3fv(u.uLd, L); gl.uniform3fv(u.uCam, cam.eye); gl.uniform3fv(u.uBg, linOf(PAL.bg));
+  gl.uniform1f(u.uAmb, Lt.ambient != null ? Lt.ambient : 0.3); gl.uniform1f(u.uKey, Lt.key != null ? Lt.key : 0.75); gl.uniform1f(u.uRim, WORLD.rim != null ? WORLD.rim : 0.15);
+  gl.uniform1f(u.uTexel, 1 / G.shN); gl.uniform1f(u.uSoft, Lt.soft != null ? Lt.soft : 1.5);
+  gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, G.shTex); gl.uniform1i(u.uSh, 0);
+  if (WORLD.floor !== false) {
+    const F = WORLD.floor || {};
+    gl.uniform1f(u.uFloor, 1); gl.uniform1f(u.uShadowK, F.shadow != null ? F.shadow : 0.4);
+    const M = m4.trs([0, F.y || 0, 0], [0, 0, 0], [1, 1, 1]);
+    gl.uniformMatrix4fv(u.uM, false, M); gl.uniformMatrix3fv(u.uNM, false, m4.normal(M));
+    gl.bindVertexArray(G.floor.vao); gl.drawElements(gl.TRIANGLES, G.floor.n, gl.UNSIGNED_INT, 0);
+  }
+  gl.uniform1f(u.uFloor, 0);
+  for (const d of draws) {
+    const o = d.Ob.spec;
+    gl.uniformMatrix4fv(u.uM, false, d.M); gl.uniformMatrix3fv(u.uNM, false, m4.normal(d.M));
+    gl.uniform1f(u.uGloss, o.gloss != null ? o.gloss : 0.35); gl.uniform1f(u.uToon, o.toon ? 1 : 0);
+    d.cp.gl.forEach((m, i) => { gl.uniform3fv(u.uC, i === 1 ? d.Ob.side : d.Ob.color); gl.bindVertexArray(m.vao); gl.drawElements(gl.TRIANGLES, m.n, gl.UNSIGNED_INT, 0); });
+  }
+  gl.bindVertexArray(null);
+  gl.bindFramebuffer(gl.READ_FRAMEBUFFER, G.fb); gl.bindFramebuffer(gl.DRAW_FRAMEBUFFER, null);
+  gl.blitFramebuffer(0, 0, W, H, 0, 0, W, H, gl.COLOR_BUFFER_BIT, gl.NEAREST);
+  gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+}
+function drawFrame(c, t, q) {
+  renderGL(t);
+  c.drawImage(glc, 0, 0);
+  for (const Lb of LABELS) {                        // flat labels over the picture: sharp type for small print
+    const a = Lb.op ? Lb.op.at(t) : 1;
+    if (!(a > 0.002)) continue;
+    setFont(c, Lb.line.font);
+    for (const g of Lb.line.glyphs) if (!g.space) fillGlyph(c, g.ch, g.x, Lb.line.baseline, Lb.color, a, 0);
+  }
+  c.globalAlpha = 1;
+}
+
+/* ---------------- motion and analysis ---------------- */
+function disp(ta, tb) {                            // how far any corner of any object moves on screen
+  const va = cameraAt(ta).vp, vb = cameraAt(tb).vp;
+  let d = 0;
+  for (const Ob of OBJECTS) for (const cp of Ob.copies) {
+    const Ma = modelOf(Ob, cp, ta), Mb = modelOf(Ob, cp, tb);
+    for (const m of cp.gl) for (const p of boxCorners(m.box)) {
+      const a = toScreen(va, m4.apply(Ma, p)), b = toScreen(vb, m4.apply(Mb, p));
+      if (a[2] > 1 || b[2] > 1) continue;
+      d = Math.max(d, Math.hypot(b[0] - a[0], b[1] - a[1]));
+    }
+  }
+  for (const Lb of LABELS) if (Lb.op && Lb.op.active(ta, tb)) d = Math.max(d, 4);
+  return d;
+}
+function screenBox(Ob, t) {
+  const vp = cameraAt(t).vp;
+  let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+  for (const cp of Ob.copies) { const M = modelOf(Ob, cp, t); for (const m of cp.gl) for (const p of boxCorners(m.box)) { const s = toScreen(vp, m4.apply(M, p)); x0 = Math.min(x0, s[0]); x1 = Math.max(x1, s[0]); y0 = Math.min(y0, s[1]); y1 = Math.max(y1, s[1]); } }
+  return [x0, y0, x1, y1];
+}
+function visible(t) {
+  for (const Ob of OBJECTS) { const b = screenBox(Ob, t); if (b[2] > 0 && b[0] < W && b[3] > 0 && b[1] < H && Ob.copies.some((cp) => Math.abs(cp.P.sc.at(t)) > 0.05)) return true; }
+  return LABELS.some((Lb) => !Lb.op || Lb.op.at(t) > 0.5);
+}
+function checks(add) {
+  const samples = [0, DUR * 0.25, DUR * 0.5, DUR * 0.75];
+  for (const Ob of OBJECTS) {
+    if (Ob.spec.kind === 'text') {
+      for (const t of samples) { const b = screenBox(Ob, t); if (b[0] < MARGIN - 1 || b[2] > W - MARGIN + 1 || b[1] < MARGIN - 1 || b[3] > H - MARGIN + 1) { add(`live area: ${Ob.id}`, 'FAIL', `leaves the margins at ${t.toFixed(2)} s: ${b.map((v) => v.toFixed(0)).join(', ')}`); break; } }
+      const vp = cameraAt(0).vp, a = toScreen(vp, [0, 0, 0]), b = toScreen(vp, [0, Ob.capU, 0]), cap = Math.abs(a[1] - b[1]);
+      add(`type size: ${Ob.id}`, cap < 60 ? 'WARN' : 'PASS', `cap height about ${cap.toFixed(0)} px on screen at 0 s${cap < 60 ? ' (small for a title at feed size)' : ''}`);
+      const words = Ob.spec.text.split(/\s+/).filter(Boolean).length;
+      add(`words: ${Ob.id}`, words > 4 ? 'FAIL' : 'PASS', `${words} words`);
+      const tris = Ob.copies.reduce((s, cp) => s + cp.gl.reduce((q, m) => q + m.n / 3, 0), 0);
+      add(`mesh: ${Ob.id}`, tris > 0 ? 'PASS' : 'FAIL', `${Ob.copies.length} glyph solids, ${tris} triangles`);
+    }
+    if (Ob.spec.kind === 'path') { const tris = Ob.copies.reduce((s, cp) => s + cp.gl.reduce((q, m) => q + m.n / 3, 0), 0); add(`mesh: ${Ob.id}`, tris > 0 ? 'PASS' : 'FAIL', `${tris} triangles`); }
+  }
+  for (const Lb of LABELS) {
+    checkLiveArea(add, Lb.id, [Lb.line.inkL, Lb.line.top, Lb.line.inkR, Lb.line.bottom], Lb.bleed);
+    if (Lb.line.baseline % UNIT) add(`grid: ${Lb.id}`, 'WARN', `baseline ${Lb.line.baseline} is not on the ${UNIT} px grid`);
+  }
+  checkSpacing(add, LABELS.map((Lb) => ({ id: Lb.id, b: [Lb.line.inkL, Lb.line.top, Lb.line.inkR, Lb.line.bottom] })));
+  add('renderer', 'PASS', `WebGL2, ${G.samples}x MSAA, ${G.shN} px shadow map`);
+}
+function cycles() {
+  const out = [], C = FILM.camera || {};
+  if (C.sway) out.push({ what: 'camera sway', period: DUR / C.sway[0] });
+  if (C.orbit) out.push({ what: 'camera orbit', period: DUR / C.orbit });
+  for (const Ob of OBJECTS) { const B = Ob.spec.loop || {}; for (const k of ['spin', 'bob', 'orbit', 'wobble']) if (B[k]) { const n = k === 'spin' ? B[k][1] : B[k][0]; if (n) out.push({ what: `${Ob.id} ${k}`, period: DUR / Math.abs(n) }); } }
+  return out;
+}
+function stills(push) {
+  const keys = new Set();
+  for (const Ob of OBJECTS) {
+    const o = Ob.spec;
+    if (o.enter) keys.add(o.enter.at + 0.8);
+    for (const k of o.keys || []) keys.add(k.at + (k.stagger ? noteSec(k.stagger) * Math.max(0, Ob.copies.length - 1) / 2 : 0) + 0.15);
+  }
+  for (const k of (FILM.camera || {}).keys || []) keys.add(k.at + 0.6);
+  [...keys].sort((a, b) => a - b).forEach((t, i) => push(wrapT(t) * FPS, `key-${i + 1}`, `at ${wrapT(t).toFixed(2)} s`));
+  push(NFR / 2, 'midpoint', 'halfway through the loop');
+}
+function layout() {
+  return { objects: OBJECTS.map((Ob) => ({ id: Ob.id, kind: Ob.spec.kind, copies: Ob.copies.length, triangles: Ob.copies.reduce((s, cp) => s + cp.gl.reduce((q, m) => q + m.n / 3, 0), 0), screenBoxAt0: screenBox(Ob, 0).map((v) => Math.round(v)) })),
+    labels: LABELS.map((Lb) => ({ id: Lb.id, size: Lb.line.size, box: [Lb.line.inkL, Lb.line.top, Lb.line.inkR, Lb.line.bottom].map((v) => Math.round(v)) })) };
+}
+
+function build() {
+  initGL();
+  const C = FILM.camera || {};
+  camP = { yaw: new Prop(C.yaw || 0, 'camera.yaw'), pitch: new Prop(C.pitch != null ? C.pitch : 12, 'camera.pitch'), dist: new Prop(C.dist || 14, 'camera.dist'), fov: new Prop(C.fov || 30, 'camera.fov'),
+    tx: new Prop((C.target || [0, 1, 0])[0], 'camera.tx'), ty: new Prop((C.target || [0, 1, 0])[1], 'camera.ty'), tz: new Prop((C.target || [0, 1, 0])[2], 'camera.tz') };
+  for (const k of (C.keys || []).slice().sort((a, b) => a.at - b.at)) {
+    for (const f of ['yaw', 'pitch', 'dist', 'fov']) if (k[f] != null) camP[f].to(k.at, k[f], k.spring || 'DOLLY');
+    if (k.target) ['tx', 'ty', 'tz'].forEach((f, i) => camP[f].to(k.at, k.target[i], k.spring || 'DOLLY'));
+  }
+  (FILM.objects || []).forEach((o, i) => OBJECTS.push(buildObject(o, i)));
+  for (const L0 of FILM.labels || []) {
+    const line = layoutText({ id: L0.id, text: L0.text, font: L0.font || 'mono', size: L0.size, cap: L0.cap, fit: L0.fit, track: L0.track, anchor: L0.anchor || 'C', x: L0.x, baseline: L0.y });
+    const Lb = { ...L0, line, color: role(L0.color || 'fg') };
+    if (L0.enter) { Lb.op = new Prop(0, `${L0.id}.op`); Lb.op.to(L0.enter.at, 1, 'FADE'); if (L0.exit) Lb.op.to(L0.exit.at, 0, 'FADE'); }
+    LABELS.push(Lb);
+    needContrast(L0.id, L0.color || 'fg', L0.on || 'bg', (L0.size || 99) < 40 ? 4.5 : 3);
+  }
+}
+
+boot({
+  name: '3d',
+  springs: { FLIP: [0.55, 12], HOP: [0.8, 22], DOLLY: [1, 3.2], SETTLE: [0.62, 9] },
+  always: true,
+  minSamples: 2,                                    // every subframe is a full render: slow drifts take 2, still one per 5 px
+  build, draw: (c, t, q) => drawFrame(c, t, q), disp, checks, cycles, stills, layout, visible,
+});
+})();
+</script>
+</body>
+</html>
