@@ -1,0 +1,16 @@
+{
+  "name": "motion-pixel-scripts",
+  "private": true,
+  "description": "Scripts for the motion-pixel skill: build one self-contained HTML pixel-art film, render it to MP4, GIF and poster with a strict palette, verify the loop.",
+  "type": "module",
+  "license": "MIT",
+  "engines": { "node": ">=20" },
+  "scripts": {
+    "fonts": "node scripts/fonts.mjs",
+    "build": "node scripts/build.mjs",
+    "render": "node scripts/render.mjs"
+  },
+  "dependencies": {
+    "playwright-core": "1.63.0"
+  }
+}
