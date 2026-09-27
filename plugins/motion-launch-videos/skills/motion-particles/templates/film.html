@@ -1,0 +1,1568 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Acme Signal particles loop</title>
+<style>
+@font-face{font-family:"Sora";font-style:normal;font-weight:800;font-display:block;src:url(data:font/woff2;base64,__FONT:sora-latin-800-normal.woff2__) format("woff2")}
+@font-face{font-family:"IBM Plex Mono";font-style:normal;font-weight:500;font-display:block;src:url(data:font/woff2;base64,__FONT:ibm-plex-mono-latin-500-normal.woff2__) format("woff2")}
+*,*::before,*::after{transition:none!important;animation:none!important}
+html,body{margin:0;height:100%;background:#07080C}
+body{display:grid;place-items:center;overflow:hidden}
+canvas{display:block;max-width:100vw;max-height:100vh;width:auto;height:auto}
+</style>
+</head>
+<body>
+<canvas id="c" width="1080" height="1080"></canvas>
+<script>
+(() => {
+'use strict';
+
+/* ==========================================================================
+ * FILM: the part you edit. Everything below CORE BEGIN stays as it is.
+ *
+ * Times are seconds; beat(n) and bar(n) put them on the tempo grid.
+ * Positions are canvas pixels. Colours are palette role names.
+ * A swarm of `swarm.n` particles; each one's position is a pure function of t.
+ *   formations  where particles can be. The field (every particle's home, a
+ *               drifting starfield), a line of type, shapes (filled, outlined,
+ *               dotted, an SVG path, a grid, a sphere, a cloud), or one derived
+ *               from another (scaled, turned, moved, exploded). Targets are
+ *               sampled once, at build, as blue noise inside the ink. A particle
+ *               a formation does not use stays in the field as dust.
+ *   moves       the chain of formations over time: { at, to, spring, spread,
+ *               order, assign, swirl, accent }. Each particle springs from where
+ *               it is to its target after its own delay, so a move that starts
+ *               before the last one lands bends the path instead of restarting it.
+ *   drift       loop-exact noise on every particle, wide in the field and
+ *               sub-pixel in a formed word, so words hold crisp.
+ * Motion blur is drawn, not sampled: each particle is one streak from where it
+ * was a shutter earlier to where it is, dimmer the longer it is.
+ * A 'cycle' loop (the default here) ends where it starts, formations[0], and
+ * keeps drifting over the seam; a 'hold' loop ends on a still copy of frame 0.
+ * ========================================================================== */
+const BPM = 120;
+const beat = (n) => n * 60 / BPM;            // quarter notes
+const bar = (n) => beat(4 * n);              // 4/4 bars
+
+const FILM = {
+  title: 'Acme Signal particles loop',
+  alt: 'A drifting field of light gathers into the word ACME, bursts outward into streaks, reforms into a ring mark with an orange core, unrolls into example.com, and dissolves back into the drifting field. Demo copy, fictional product.',
+  W: 1080, H: 1080, FPS: 60, DUR: bar(6), BPM,
+  loop: 'cycle',
+  palette: { bg: '#000000', paper: '#F3EFE7', signal: '#FF6A2B' },
+  fonts: {
+    display: { family: 'Sora', weight: 800 },
+    mono: { family: 'IBM Plex Mono', weight: 500 },
+  },
+  grid: { margin: 104, unit: 8 },
+  poster: beat(6.5),
+  swarm: {
+    n: 4600, seed: 7,
+    size: 1.4,                                   // particle radius in px at dot 1
+    streak: { min: 0.2, gamma: 0.55 },           // a streak L px long on a dot d px wide: alpha x max(min, (d / (d + L))^gamma)
+    glow: { gain: 0.55, radius: 12,              // bloom: blur radius in px, strength; keys flare it
+      keys: [{ at: beat(9), gain: 1.1, spring: 'QUICK' }, { at: beat(9.5), gain: 0.55, spring: 'DISSOLVE' }] },
+  },
+  formations: [
+    // Frame 0, and every particle's home: a deep starfield on two slow waves. Most particles are
+    // far and faint (bias), a few near and bright; 15 % are embers in the accent.
+    { id: 'field', field: true, colors: { paper: 0.85, signal: 0.15 },
+      depth: { size: [0.35, 1.9], alpha: [0.06, 1], bias: 2.2 }, vignette: 0.55, twinkle: 0.3,
+      waves: [{ amp: 26, length: 760, dir: -24, n: 1 }, { amp: 12, length: 330, dir: 64, n: 2 }],
+      drift: 7 },
+    // Hook: the name, then a band of light across it.
+    { id: 'acme', text: 'ACME', font: 'display', cap: 184, track: 16, anchor: 'C', x: 540, y: 624,
+      fill: 'paper', dot: 1.25, spacing: 4.1, drift: 0.3, dust: 0.2,
+      glint: { at: beat(6), dur: beat(2), width: 90, dot: 1.55, angle: 14 } },
+    // Anticipation, then the burst: the same particles pulled in 6 %, then thrown outward.
+    { id: 'inhale', from: 'acme', scale: 0.94 },
+    { id: 'burst', from: 'acme', explode: [70, 1000], stretch: [1, 1.7], jitter: 30, push: [40, 220], center: [540, 532] },
+    // The mark: an ember core in a ring, an arc of signal either side; the same band of light crosses it.
+    { id: 'mark', center: [540, 528], dot: 1.15, spacing: 4.1, drift: 0.3, dust: 0.2,
+      glint: { at: beat(12.5), dur: beat(2), width: 110, dot: 1.45, angle: -35 },
+      parts: [
+        { shape: 'circle', x: 540, y: 528, r: 60, fill: 'signal', dot: 1.35, spacing: 3.2 },
+        { shape: 'circle', x: 540, y: 528, r: 178, outline: 44, fill: 'paper' },
+        { shape: 'arc', x: 540, y: 528, r: 298, from: 38, to: 142, outline: 26, fill: 'paper' },
+        { shape: 'arc', x: 540, y: 528, r: 298, from: 218, to: 322, outline: 26, fill: 'paper' },
+      ] },
+    // CTA: the domain, its dot in the accent.
+    { id: 'url', text: 'EXAMPLE.COM', font: 'display', fit: 848, track: 10, anchor: 'C', x: 540, y: 576,
+      fill: 'paper', glyphs: { '.': { fill: 'signal', dot: 1.3, spacing: 2.9 } }, dot: 1.15, spacing: 3.3, drift: 0.3, dust: 0.2,
+      glint: { at: beat(18), dur: beat(1.75), width: 70, dot: 1.5, angle: 14 } },
+  ],
+  moves: [
+    { at: beat(1.5), to: 'acme', spring: 'GATHER', spread: beat(1.5), order: 'random', assign: 'near', swirl: 40, accent: 'land' },
+    { at: beat(8.5), to: 'inhale', spring: 'QUICK', spread: 0 },
+    { at: beat(9), to: 'burst', spring: 'BURST', spread: beat(0.125), order: 'center', accent: beat(9.25) },
+    { at: beat(9.5), to: 'mark', spring: 'REFORM', spread: beat(1), order: 'random', assign: 'angle', accent: 'land' },
+    { at: beat(15), to: 'url', spring: 'GATHER', spread: beat(1), order: 'x', assign: 'x', accent: 'land' },
+    { at: beat(20.5), to: 'field', spring: 'DISSOLVE', spread: beat(2), order: 'random', swirl: -30 },
+  ],
+  camera: [
+    { at: beat(3.5), z: 1.03, spring: 'DOLLY' }, // a slow push while ACME holds
+    { at: beat(9), z: 1.08, spring: 'PUNCH' },   // a kick on the burst
+    { at: beat(9.75), z: 1, spring: 'DOLLY' },   // and back, while the mark forms
+  ],
+  type: [
+    { id: 'CRUMB', text: 'DEMO COPY, FICTIONAL PRODUCT', font: 'mono', size: 26, track: 20, anchor: 'C', x: 540, y: 936,
+      fill: 'paper', at: beat(4.5), erase: beat(21) },
+  ],
+};
+
+/* ===== CORE BEGIN: shared/core.js, synced by tools/sync.mjs. Do not edit it here. ===== */
+/* ==========================================================================
+ * CORE: the deterministic runtime every motion-* engine shares.
+ * Source: shared/core.js in the motion-launch-videos repo, copied into each
+ * template by tools/sync.mjs. Do not edit it inside a film.
+ *
+ * seek(t) is a pure function of (t mod DUR): same t, same pixels, whatever was
+ * drawn before. No timers, no Date, no Math.random, no state between calls.
+ *   - Springs are closed-form step responses, one per target change, snapped
+ *     to exactly 1 once settled. A Prop is a base value plus its springs.
+ *     Springs still settling when the loop ends carry over the seam.
+ *   - Periodic motion runs a whole number of cycles per loop (cyc, wave,
+ *     loopNoise), so it is exact at the seam by construction.
+ *   - Randomness is seeded (mulberry32, hash).
+ *   - Continuous motion reads the exact t; discrete state (typing, drawings
+ *     held on twos, sprite frames, line boil) reads the quantised q, so every
+ *     subframe of one output frame agrees on it.
+ *   - Motion blur averages 1 to 64 subframes on a trailing 270-degree
+ *     shutter, one per 5 px of movement, never across a hard cut.
+ * The engine below describes its vertical through hooks (build, draw, disp,
+ * checks, stills, layout, visible, lastChange) and calls boot(ENGINE) last.
+ * The core keeps its internals to itself and exports the helpers listed at
+ * its end, so an engine can name its own functions freely.
+ * ========================================================================== */
+const CORE = (() => {
+const { W, H, FPS, DUR } = FILM;
+const NFR = Math.round(DUR * FPS);                 // output frames in the loop
+const CX = W / 2, CY = H / 2;
+const U = Math.min(W, H) / 1080;                   // scale for built-in pixel constants
+const PAL = FILM.palette;
+const USED = new Set();                            // palette roles the film draws with
+const col = (k) => PAL[k] || k;                    // look a role up (while drawing)
+const role = (k) => { USED.add(k); return PAL[k] || k; };   // resolve and register a role (at build time)
+const GRID = FILM.grid || {};
+const MARGIN = GRID.margin != null ? GRID.margin : Math.round(104 * U);
+const UNIT = GRID.unit || 8;
+const MEASURE = W - 2 * MARGIN;
+const LOOP = FILM.loop || 'hold';                  // 'hold': ends on a still copy of frame 0; 'cycle': periodic, continuous over the seam; 'none'
+const BLUR = FILM.blur !== false;                  // false: one sample per frame (cartoon, pixel art)
+const SHUTTER = 0.75;                              // 270 degrees, trailing
+const MIN_SAMPLES = 4, MAX_SAMPLES = 64, PX_PER_SAMPLE = 5;   // Uint16 sums hold up to 257 x 255
+const TAU = Math.PI * 2;
+
+const canvas = document.getElementById('c');
+canvas.width = W; canvas.height = H;
+canvas.setAttribute('role', 'img');
+canvas.setAttribute('aria-label', FILM.alt || FILM.title || '');
+if (FILM.title) document.title = FILM.title;
+document.documentElement.style.background = PAL.bg;
+document.body.style.background = PAL.bg;
+// CPU raster everywhere: Chrome moves a canvas from GPU to CPU after repeated getImageData
+// reads, which changes antialiasing mid-render. Pin every 2D context from its first call.
+// An alpha channel, though every frame fills it opaque: on an opaque canvas Chromium draws text with
+// LCD subpixel antialiasing (red and blue fringes on every glyph), whatever the command line says.
+const ctx = canvas.getContext('2d', { willReadFrequently: true, alpha: true });
+const mkCanvas = (w = W, h = H) => { const c = document.createElement('canvas'); c.width = w; c.height = h; return c; };
+const mk2d = (w, h) => { const c = mkCanvas(w, h); return [c, c.getContext('2d', { willReadFrequently: true })]; };
+const mctx = mkCanvas().getContext('2d', { willReadFrequently: true });   // measuring only
+
+/* ---------------- springs: closed-form step responses ---------------- */
+// [zeta, omega]. Underdamped (zeta < 1) overshoots and lands; zeta = 1 glides in without overshoot.
+// Engines add their own (boot merges ENGINE.springs, then FILM.springs).
+const SP = {
+  SLAM: [0.60, 30.0], LAND: [0.72, 28.0], PUNCH: [0.65, 31.0], FADE: [1, 32.4],
+  FOCUS: [1, 19.5], EXIT: [1, 32.4], PAN: [1, 32.4], DRAW: [1, 32.4],
+  LINE: [0.80, 15.6], MASK: [1, 19.5], TICK: [1, 32.4],
+};
+const spring = (sp) => { const s = typeof sp === 'string' ? SP[sp] : sp; if (!s) throw new Error(`unknown spring ${sp}`); return s; };
+const settle = (sp) => 16 / (sp[0] * sp[1]);       // after this the response snaps to exactly 1
+function S(tau, sp) {
+  const z = sp[0], w = sp[1];
+  if (tau <= 0) return 0;
+  if (tau >= settle(sp)) return 1;                 // residual < 2e-6 of the move: snap, so loops are bit-exact
+  if (z < 1) {
+    const wd = w * Math.sqrt(1 - z * z);
+    return 1 - Math.exp(-z * w * tau) * (Math.cos(wd * tau) + (z * w / wd) * Math.sin(wd * tau));
+  }
+  return 1 - (1 + w * tau) * Math.exp(-w * tau);
+}
+function dS(tau, sp) {                             // d S / d tau, per second
+  const z = sp[0], w = sp[1];
+  if (tau <= 0 || tau >= settle(sp)) return 0;
+  if (z < 1) { const wd = w * Math.sqrt(1 - z * z); return (w * w / wd) * Math.exp(-z * w * tau) * Math.sin(wd * tau); }
+  return w * w * tau * Math.exp(-w * tau);
+}
+// the visible landing: the first crossing of the target when underdamped, 95 % when critically damped
+function landT(sp) {
+  sp = spring(sp);
+  const z = sp[0], w = sp[1];
+  if (z < 1) { const wd = w * Math.sqrt(1 - z * z); return (Math.PI - Math.atan(wd / (z * w))) / wd; }
+  let a = 0, b = settle(sp);
+  for (let i = 0; i < 40; i++) { const m = (a + b) / 2; if (S(m, sp) < 0.95) a = m; else b = m; }
+  return b;
+}
+
+// A property = base value + one spring per target change (superposed). set() is an instant jump
+// that cancels earlier springs; use it only while the element is invisible, at a hard cut, or hidden
+// inside fast motion blur. Events are added in time order. In a looping film, springs still settling
+// at the end of the loop carry over the seam into its start (only while no set() has happened yet),
+// so the film is continuous there; the value a Prop ends on must equal the value it starts from.
+const PROPS = [];
+class Prop {
+  constructor(v0, name) { this.v0 = v0; this.last = v0; this.ev = []; this.tLast = -Infinity; this.name = name || '?'; this.tail = null; this.firstSet = Infinity; PROPS.push(this); }
+  order(t) { if (t < this.tLast - 1e-9) throw new Error(`${this.name}: event at ${t} added after one at ${this.tLast}`); this.tLast = t; this.tail = null; }
+  to(t, v, sp) { this.order(t); this.ev.push({ t, d: v - this.last, sp: spring(sp), set: false }); this.last = v; return this; }
+  set(t, v) { this.order(t); this.ev.push({ t, v, set: true }); this.last = v; return this; }
+  seam() {                                         // the springs that carry over the seam
+    if (this.tail) return this.tail;
+    let k = -1;
+    this.firstSet = Infinity;
+    for (let i = 0; i < this.ev.length; i++) if (this.ev[i].set) { k = i; if (this.firstSet === Infinity) this.firstSet = this.ev[i].t; }
+    this.tail = LOOP === 'none' ? [] : this.ev.slice(k + 1).filter((e) => e.d !== 0 && e.t + settle(e.sp) > DUR);
+    return this.tail;
+  }
+  at(t) {
+    let v = this.v0, i0 = 0;
+    const ev = this.ev;
+    for (let i = 0; i < ev.length; i++) if (ev[i].set && ev[i].t <= t) { v = ev[i].v; i0 = i + 1; }
+    for (let i = i0; i < ev.length; i++) { const e = ev[i]; if (!e.set) v += e.d * S(t - e.t, e.sp); }
+    const tail = this.seam();
+    if (tail.length && t < this.firstSet) for (const e of tail) v += e.d * (S(t + DUR - e.t, e.sp) - 1);
+    return v;
+  }
+  vel(t) {                                         // per second
+    let v = 0, i0 = 0;
+    const ev = this.ev;
+    for (let i = 0; i < ev.length; i++) if (ev[i].set && ev[i].t <= t) i0 = i + 1;
+    for (let i = i0; i < ev.length; i++) { const e = ev[i]; if (!e.set) v += e.d * dS(t - e.t, e.sp); }
+    const tail = this.seam();
+    if (tail.length && t < this.firstSet) for (const e of tail) v += e.d * dS(t + DUR - e.t, e.sp);
+    return v;
+  }
+  active(a, b) {                                   // does the value change anywhere in (a, b]?
+    for (const e of this.ev) {
+      if (e.set) { if (e.t > a && e.t <= b) return true; }
+      else if (e.d !== 0 && e.t < b && e.t + settle(e.sp) > a) return true;
+    }
+    if (a < this.firstSet) for (const e of this.seam()) if (e.t - DUR < b && e.t - DUR + settle(e.sp) > a) return true;
+    return false;
+  }
+  settleEnd() { let m = -Infinity; for (const e of this.ev) m = Math.max(m, e.set ? e.t : e.t + settle(e.sp)); return m; }
+  lastSet(a, b) { let m = -Infinity; for (const e of this.ev) if (e.set && e.t > a && e.t <= b && e.t > m) m = e.t; return m; }
+}
+
+/* ---------------- periodic motion and seeded randomness ---------------- */
+// n whole cycles per loop: exact at the seam by construction. Use these for anything that never stops
+// (an idle bob, a spin, a drifting field) and set ENGINE.always, or declare its windows with activeIn.
+const cyc = (t, n, phase = 0) => TAU * (n * t / DUR + phase);
+const wave = (t, n, phase = 0) => Math.sin(cyc(t, n, phase));
+function mulberry32(a) {
+  return function () {
+    a |= 0; a = (a + 0x6D2B79F5) | 0;
+    let t = Math.imul(a ^ (a >>> 15), 1 | a);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+// three integers to [0, 1), well mixed: a pure replacement for Math.random keyed by what it decides
+function hash(a, b = 0, c = 0) {
+  let h = Math.imul((a | 0) ^ 0x3C6EF372, 0x85EBCA6B);
+  h = Math.imul(h ^ (h >>> 13) ^ (b | 0), 0xC2B2AE35);
+  h = Math.imul(h ^ (h >>> 16) ^ (c | 0), 0x27D4EB2F);
+  h ^= h >>> 15; h = Math.imul(h, 0x85EBCA6B); h ^= h >>> 13; h = Math.imul(h, 0xC2B2AE35); h ^= h >>> 16;
+  return (h >>> 0) / 4294967296;
+}
+// smooth noise in [-1, 1] that loops exactly: three whole harmonics (n, 2n+1, 4n+3 cycles per loop) with seeded phases
+function loopNoise(t, n, seed) {
+  return (Math.sin(cyc(t, n, hash(seed, 1))) + 0.5 * Math.sin(cyc(t, 2 * n + 1, hash(seed, 2))) + 0.25 * Math.sin(cyc(t, 4 * n + 3, hash(seed, 3)))) / 1.75;
+}
+function shuffled(arr, seed) {                     // Fisher-Yates on a copy, seeded
+  const r = mulberry32(seed), a = arr.slice();
+  for (let i = a.length - 1; i > 0; i--) { const j = Math.floor(r() * (i + 1)); const x = a[i]; a[i] = a[j]; a[j] = x; }
+  return a;
+}
+
+/* ---------------- time ---------------- */
+const wrapT = (t) => ((t % DUR) + DUR) % DUR;
+const frameOf = (t) => Math.ceil(t * FPS - 1e-9);  // all subframes of output frame n map to n
+const typed = (q, ts, n) => Math.max(0, Math.min(n, Math.ceil((q - ts) * FPS - 1e-6)));   // one character per frame
+const noteSec = (v) => (typeof v === 'number' && v >= 1 ? 4 * 60 / FILM.BPM / v : v);     // 16 -> a 16th note
+const drawing = (q, fps) => Math.floor(q * fps + 1e-6);    // index of the held drawing (12 fps = on twos at 24, fives at 60)
+
+/* ---------------- colour ---------------- */
+function rgbOf(hex) { const h = String(hex).replace('#', ''); const n = parseInt(h.length === 3 ? h.replace(/./g, '$&$&') : h.slice(0, 6), 16); return [(n >> 16) & 255, (n >> 8) & 255, n & 255]; }
+const hexOf = (r, g, b) => '#' + [r, g, b].map((v) => Math.max(0, Math.min(255, Math.round(v))).toString(16).padStart(2, '0')).join('').toUpperCase();
+function mix(a, b, k) { const x = rgbOf(a), y = rgbOf(b); return hexOf(x[0] + (y[0] - x[0]) * k, x[1] + (y[1] - x[1]) * k, x[2] + (y[2] - x[2]) * k); }
+function hueChroma(r, g, b) {
+  const mx = Math.max(r, g, b), mn = Math.min(r, g, b), C = mx - mn;
+  if (C === 0) return [0, 0];
+  let h;
+  if (mx === r) h = 60 * (((g - b) / C) % 6); else if (mx === g) h = 60 * ((b - r) / C + 2); else h = 60 * ((r - g) / C + 4);
+  return [h < 0 ? h + 360 : h, C];
+}
+const hueDist = (a, b) => { const d = Math.abs(a - b) % 360; return d > 180 ? 360 - d : d; };
+function lum(hex) { const c = rgbOf(hex).map((v) => { v /= 255; return v <= 0.04045 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4); }); return 0.2126 * c[0] + 0.7152 * c[1] + 0.0722 * c[2]; }
+const contrast = (a, b) => { const x = lum(a), y = lum(b); return (Math.max(x, y) + 0.05) / (Math.min(x, y) + 0.05); };
+function inksClash(a, b) {                         // two inks may share a pixel only when that cannot make a new hue
+  const [ha, ca] = hueChroma(...rgbOf(a)), [hb, cb] = hueChroma(...rgbOf(b));
+  return ca >= 40 && cb >= 40 && hueDist(ha, hb) > 13;
+}
+
+/* ---------------- fonts and type ---------------- */
+const face = (r) => { const f = FILM.fonts && FILM.fonts[r]; if (!f) throw new Error(`no font role "${r}"`); return f; };
+const fontStr = (r, size) => { const f = face(r); return `${f.style === 'italic' ? 'italic ' : ''}${f.weight} ${size}px "${f.family}"`; };
+function setFont(c, f) { c.font = f; c.fontKerning = 'normal'; c.letterSpacing = '0px'; c.textBaseline = 'alphabetic'; c.textAlign = 'left'; }
+function capRatio(r) { setFont(mctx, fontStr(r, 1000)); return mctx.measureText('H').actualBoundingBoxAscent / 1000; }
+const TEXT = {};                                   // font role -> every character it draws (checked against the font's cmap)
+const useText = (r, s) => { face(r); TEXT[r] = (TEXT[r] || '') + s; return s; };
+function textByFace() {
+  const out = {};
+  for (const [r, s] of Object.entries(TEXT)) { const f = face(r), k = `${f.family}|${f.weight}`; out[k] = (out[k] || '') + s; }
+  return out;
+}
+
+// One line of type, one glyph at a time: the font's kerning recovered from pair widths, optical
+// pairs on top (1/1000 em), then a fixed tracking, a tracking solved to span `justify` px, or a
+// size solved (`fit`) so the ink spans the measure (or `fit: <px>`). `cap: <px>` sizes from a cap
+// height. x and anchor ('L', 'R', 'C') place the ink edge or centre. Measured once, after the fonts load.
+function measureRun(o, size) {
+  const font = fontStr(o.font || 'display', size);
+  setFont(mctx, font);
+  const ch = Array.from(o.text), n = ch.length;
+  const met = ch.map((c) => mctx.measureText(c));
+  const adv = met.map((m) => m.width);
+  const gap = [];
+  for (let i = 0; i < n - 1; i++) {
+    const kern = mctx.measureText(ch[i] + ch[i + 1]).width - adv[i] - adv[i + 1];
+    gap.push(adv[i] + kern + ((o.pairs || {})[ch[i] + ch[i + 1]] || 0) / 1000 * size);
+  }
+  const pens = (T) => { const x = [0]; for (let i = 0; i < n - 1; i++) x.push(x[i] + gap[i] + T); return x; };
+  const inkW = (x) => (x[n - 1] + met[n - 1].actualBoundingBoxRight) - (x[0] - met[0].actualBoundingBoxLeft);
+  return { font, ch, n, met, pens, inkW };
+}
+function layoutText(o) {
+  const r = o.font || 'display';
+  useText(r, o.text);
+  let size = o.size != null ? o.size : o.cap != null ? o.cap / capRatio(r) : 100;
+  const width = o.fit ? (o.fit === true ? MEASURE : o.fit) : null;
+  if (width) for (let k = 0; k < 3; k++) {         // ink width is linear in size; converge
+    const m = measureRun(o, size);
+    size *= width / m.inkW(m.pens((o.track || 0) / 1000 * size));
+  }
+  const m = measureRun(o, size), { ch, n, met } = m;
+  const T = o.justify != null && n > 1 ? (o.justify - m.inkW(m.pens(0))) / (n - 1) : (o.track || 0) / 1000 * size;
+  const x = m.pens(T);
+  const inkL0 = x[0] - met[0].actualBoundingBoxLeft, inkR0 = x[n - 1] + met[n - 1].actualBoundingBoxRight;
+  const anchor = o.anchor || 'L';
+  const ax = o.x != null ? o.x : anchor === 'R' ? W - MARGIN : anchor === 'C' ? CX : MARGIN;
+  const shift = anchor === 'R' ? ax - inkR0 : anchor === 'C' ? ax - (inkL0 + inkR0) / 2 : ax - inkL0;
+  let slot = 0;
+  const glyphs = ch.map((c, i) => {
+    const sp = /\s/.test(c);
+    const g = { ch: c, i, x: x[i] + shift, space: sp, slot: sp ? -1 : slot,
+      inkL: x[i] + shift - met[i].actualBoundingBoxLeft, inkR: x[i] + shift + met[i].actualBoundingBoxRight,
+      asc: met[i].actualBoundingBoxAscent, desc: met[i].actualBoundingBoxDescent };
+    if (!sp) slot++;
+    return g;
+  });
+  setFont(mctx, m.font);
+  const capH = mctx.measureText('H').actualBoundingBoxAscent;
+  const ink = glyphs.filter((g) => !g.space);
+  const base = o.baseline != null ? o.baseline : 0;
+  return { id: o.id, text: o.text, role: r, font: m.font, size, baseline: base, glyphs, slots: slot,
+    trackPx: T, trackEm: T / size * 1000, inkL: inkL0 + shift, inkR: inkR0 + shift, capH, capTop: base - capH,
+    top: base - Math.max(...ink.map((g) => g.asc)), bottom: base + Math.max(...ink.map((g) => g.desc)) };
+}
+
+// A canvas filter blurs a layer the size of the whole canvas (about 25 ms at 1080 px). Blurred
+// glyphs are instead drawn once into small sprites, blur quantised to steps nobody can see, in a
+// bounded cache. A sprite is a pure function of (font, glyph, colour, blur): a hit and a miss give
+// the same pixels, so seek() stays pure.
+const SPRITES = new Map();
+let spritePx = 0;
+const SPRITE_BUDGET = 24e6;
+const blurQ = (b) => (b < 4 ? Math.round(b * 4) / 4 : b < 10 ? Math.round(b * 2) / 2 : Math.round(b));
+function glyphSprite(font, ch, color, b) {
+  const key = font + '|' + ch + '|' + color + '|' + b;
+  let s = SPRITES.get(key);
+  if (s) { SPRITES.delete(key); SPRITES.set(key, s); return s; }
+  setFont(mctx, font);
+  const m = mctx.measureText(ch), pad = Math.ceil(3 * b) + 2;
+  const c = mkCanvas(Math.max(1, Math.ceil(m.actualBoundingBoxLeft + m.actualBoundingBoxRight) + 2 * pad), Math.max(1, Math.ceil(m.actualBoundingBoxAscent + m.actualBoundingBoxDescent) + 2 * pad));
+  const x = c.getContext('2d', { willReadFrequently: true });
+  setFont(x, font);
+  x.fillStyle = color; x.filter = `blur(${b}px)`;
+  const ox = pad + m.actualBoundingBoxLeft, oy = pad + m.actualBoundingBoxAscent;
+  x.fillText(ch, ox, oy);
+  s = { c, ox, oy, px: c.width * c.height };
+  SPRITES.set(key, s); spritePx += s.px;
+  for (const [k, v] of SPRITES) { if (spritePx <= SPRITE_BUDGET) break; SPRITES.delete(k); spritePx -= v.px; }
+  return s;
+}
+function fillGlyph(c, ch, x, y, color, a, blur) {
+  if (!(a > 0.002)) return;
+  c.globalAlpha = a > 1 ? 1 : a;
+  c.filter = 'none';
+  const bq = blur > 0.05 ? blurQ(blur) : 0;
+  if (bq > 0) { const s = glyphSprite(c.font, ch, color, bq); c.drawImage(s.c, x - s.ox, y - s.oy); return; }
+  c.fillStyle = color;
+  c.fillText(ch, x, y);
+}
+// Draw a laid-out line. fx(g) may return { dx, dy, op, blur, sx, sy, rot, color, ch, pivot } per glyph
+// ('base' scales and turns about the glyph's foot on the baseline, 'mid' about its centre), or null to hide it.
+function drawText(c, L, color, fx) {
+  setFont(c, L.font);
+  for (const g of L.glyphs) {
+    if (g.space) continue;
+    const e = fx ? fx(g) : {};
+    if (!e) continue;
+    const op = e.op != null ? e.op : 1;
+    if (!(op > 0.002)) continue;
+    const dx = e.dx || 0, dy = e.dy || 0, x = g.x + dx, y = L.baseline + dy;
+    const sx = e.sx != null ? e.sx : 1, sy = e.sy != null ? e.sy : 1, rot = e.rot || 0;
+    const cc = e.color || color, ch = e.ch || g.ch;
+    if (rot || sx !== 1 || sy !== 1) {
+      const px = (g.inkL + g.inkR) / 2 + dx, py = e.pivot === 'base' ? y : y - L.capH / 2;
+      c.save(); c.translate(px, py); c.rotate(rot); c.scale(sx, sy); c.translate(-px, -py);
+      fillGlyph(c, ch, x, y, cc, op, e.blur || 0);
+      c.restore();
+    } else fillGlyph(c, ch, x, y, cc, op, e.blur || 0);
+  }
+  c.globalAlpha = 1; c.filter = 'none';
+}
+
+/* ---------------- SVG paths ---------------- */
+// A path from SVG path data: Path2D to draw it, its length and points for trims and morphs.
+// Measured once through a hidden SVG element (the only DOM the core touches besides the canvas).
+let svgRoot = null;
+function svgPath(d) {
+  if (!svgRoot) {
+    svgRoot = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+    svgRoot.setAttribute('style', 'position:absolute;left:0;top:0;width:0;height:0;overflow:hidden');
+    document.body.appendChild(svgRoot);
+  }
+  const el = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+  el.setAttribute('d', d);
+  svgRoot.appendChild(el);
+  const len = el.getTotalLength(), bb = el.getBBox();
+  return { d, p2d: new Path2D(d), len, box: [bb.x, bb.y, bb.x + bb.width, bb.y + bb.height],
+    points: (n) => { const out = []; for (let i = 0; i < n; i++) { const p = el.getPointAtLength(len * i / n); out.push([p.x, p.y]); } return out; } };
+}
+
+/* ---------------- registries the engine fills while it builds ---------------- */
+const CUTS = [];                                   // hard cuts: motion blur never averages across them
+const ACTIVE = [];                                 // [a, b] windows where something moves outside the Props
+const ACCENTS = [];                                // { t, what }: accent frames (stills and the palette gate)
+const WARN = [];                                   // timeline warnings for the critique
+const CONTRAST = [];                               // { id, fg, bg, min }: text that must read
+let ENGINE = null;
+const cutAt = (t) => { if (t > 1e-9 && t < DUR && !CUTS.includes(t)) CUTS.push(t); };
+const activeIn = (a, b) => { ACTIVE.push([a, b]); };
+const accentAt = (t, what) => { ACCENTS.push({ t, what }); };
+const needContrast = (id, fg, bg, min) => { CONTRAST.push({ id, fg, bg: bg || 'bg', min }); };
+
+/* ---------------- frame ---------------- */
+function draw(c, tIn) {
+  const t = wrapT(tIn);
+  let nq = frameOf(t);
+  if (nq >= NFR) nq -= NFR;                        // the last subframes of the loop belong to frame 0
+  const q = nq / FPS;
+  c.setTransform(1, 0, 0, 1, 0, 0);
+  c.globalCompositeOperation = 'source-over'; c.globalAlpha = 1; c.filter = 'none';
+  c.fillStyle = PAL.bg; c.fillRect(0, 0, W, H);
+  ENGINE.draw(c, t, q, nq);
+  c.setTransform(1, 0, 0, 1, 0, 0);
+  c.globalCompositeOperation = 'source-over'; c.globalAlpha = 1; c.filter = 'none';
+}
+let isReady = false;
+function seek(t) { if (!isReady) return false; draw(ctx, Number(t)); return true; }
+
+/* ---------------- motion blur ---------------- */
+// Subframes on a trailing shutter, clamped to a hard cut so the first frame after it is not a
+// double exposure. How many: 1 when nothing changes (exact: the mean of identical samples is the
+// sample), else one per 5 px of the engine's measured displacement, 4 to 64.
+function shutterTimes(n, k) {
+  const tn = n / FPS, out = [];
+  for (let i = k - 1; i >= 0; i--) {
+    let t = k === 1 ? tn : tn - i * SHUTTER / (FPS * (k - 1));
+    for (const cut of CUTS) if (tn >= cut && t < cut) t = cut;
+    if (ENGINE.seamCut && tn === 0 && t < 0) t = 0;   // a cut at the loop point itself
+    out.push(t);
+  }
+  return out;
+}
+function motionAt(n) {
+  if (!BLUR) return { samples: 1, disp: 0 };
+  const ta = wrapT(shutterTimes(n, 2)[0]), tb = wrapT(n / FPS);
+  const spans = ta === tb ? [] : ta < tb ? [[ta, tb]] : [[ta, DUR], [0, tb]];   // a shutter clamped flat against a cut cannot move
+  let moving = false;
+  for (const [a, b] of spans) if (ENGINE.always || ACTIVE.some(([x, y]) => x < b && y > a) || PROPS.some((p) => p.active(a, b))) { moving = true; break; }
+  if (!moving) return { samples: 1, disp: 0 };
+  const minS = ENGINE.minSamples || MIN_SAMPLES;    // an engine whose every sample is costly (WebGL) may allow 2
+  const disp = ENGINE.disp ? ENGINE.disp(ta, tb) : PX_PER_SAMPLE * minS;
+  return { samples: Math.max(minS, Math.min(MAX_SAMPLES, Math.ceil(disp / PX_PER_SAMPLE))), disp };
+}
+let SUM = null;
+function renderFrame(n) {
+  if (!isReady) return 0;
+  const { samples } = motionAt(n);
+  const times = shutterTimes(n, samples);
+  if (samples === 1) { draw(ctx, times[0]); return 1; }
+  if (ENGINE.accumulate) { ENGINE.accumulate(ctx, times); return samples; }
+  if (!SUM) SUM = new Uint16Array(W * H * 4); else SUM.fill(0);
+  for (const t of times) {
+    draw(ctx, t);
+    const px = ctx.getImageData(0, 0, W, H).data;
+    for (let i = 0; i < px.length; i++) SUM[i] += px[i];
+  }
+  const out = ctx.createImageData(W, H), o = out.data, half = samples >> 1;
+  for (let i = 0; i < o.length; i++) o[i] = ((SUM[i] + half) / samples) | 0;
+  ctx.putImageData(out, 0, 0);
+  return samples;
+}
+
+/* ---------------- analysis (never called by seek) ---------------- */
+function accentFrames() { return ACCENTS.map((m) => ({ what: m.what, t: Math.round(m.t * 1000) / 1000, frame: Math.round(m.t * FPS) % NFR })); }
+
+// Off-palette scan. Default: pixels with chroma >= 40 whose hue is more than 13 degrees from every
+// chromatic palette colour (two inks mixed into a new one), counted as `area` only where the 4
+// neighbours are off too (patches 3+ px across, not the 1-px antialiasing fringe). strict: any pixel
+// that is not exactly a palette colour (pixel art).
+function offPalette(frames, mode, strict) {
+  const cols = Object.values(PAL).map(rgbOf);
+  const hues = cols.map((c) => hueChroma(...c)).filter(([, c]) => c >= 40).map(([h]) => h);
+  const exact = new Set(cols.map(([r, g, b]) => (r << 16) | (g << 8) | b));
+  const out = [];
+  for (const n of frames) {
+    if (mode === 'seek') seek(n / FPS); else renderFrame(n);
+    const px = ctx.getImageData(0, 0, W, H).data, off = new Uint8Array(W * H);
+    let count = 0; const seen = {};
+    for (let p = 0, i = 0; p < W * H; p++, i += 4) {
+      let bad;
+      if (strict) bad = !exact.has((px[i] << 16) | (px[i + 1] << 8) | px[i + 2]);
+      else { const [h, C] = hueChroma(px[i], px[i + 1], px[i + 2]); bad = C >= 40 && !hues.some((hp) => hueDist(h, hp) <= 13); }
+      if (bad) { off[p] = 1; count++; const k = `${px[i]},${px[i + 1]},${px[i + 2]}`; seen[k] = (seen[k] || 0) + 1; }
+    }
+    let area = strict ? count : 0;
+    if (!strict) for (let y = 1; y < H - 1; y++) for (let x = 1; x < W - 1; x++) { const p = y * W + x; if (off[p] && off[p - 1] && off[p + 1] && off[p - W] && off[p + W]) area++; }
+    const top = Object.entries(seen).sort((a, b) => b[1] - a[1]).slice(0, 3).map(([k, v]) => `(${k})x${v}`).join(' ');
+    out.push({ frame: n, count, area, top });
+  }
+  return out;
+}
+
+// the last moment anything on screen can change: spring settles, active windows, accents, and the
+// engine's own discrete state (typing, blinking, snaps)
+function lastChange() {
+  let t = -Infinity, what = 'nothing moves';
+  const see = (v, w) => { if (v > t) { t = v; what = w; } };
+  for (const p of PROPS) see(p.settleEnd(), `${p.name} settles`);
+  for (const w of ACTIVE) see(w[1], 'an active window ends');
+  for (const m of ACCENTS) see(m.t + 3 / FPS, `the accent on ${m.what} ends`);
+  if (ENGINE.lastChange) ENGINE.lastChange(see);
+  return { t, what };
+}
+function loopChecks(add) {
+  for (const p of PROPS) for (const e of p.ev) if (e.t >= DUR - 1e-9 || e.t < 0) { add('timeline', 'WARN', `${p.name}: an event at ${e.t.toFixed(3)} s is outside the loop (0 to ${DUR})`); break; }
+  if (LOOP === 'hold') {
+    const last = lastChange(), need = DUR - (1 + SHUTTER) / FPS, hold = Math.floor((DUR - last.t) * FPS + 1e-6);
+    add('loop tail', last.t <= need ? 'PASS' : 'FAIL', `last change at ${last.t.toFixed(3)} s (${last.what}); still hold at least ${hold} frames (needs >= 2; loopcheck counts identical pixels)`);
+  } else if (LOOP === 'cycle') {
+    const open = PROPS.filter((p) => Math.abs(p.last - p.v0) > 1e-6);
+    add('loop closes', open.length ? 'FAIL' : 'PASS', open.length
+      ? `${open.slice(0, 6).map((p) => `${p.name} ends at ${+p.last.toFixed(3)} but starts at ${+p.v0.toFixed(3)}`).join('; ')}${open.length > 6 ? ` and ${open.length - 6} more` : ''}: the loop jumps`
+      : `${PROPS.length} props return to where they start; springs still settling at the end carry over the seam`);
+    if (ENGINE.cycles) for (const c of ENGINE.cycles()) {
+      const k = DUR / c.period;
+      add(`cycle: ${c.what}`, Math.abs(k - Math.round(k)) < 1e-6 ? 'PASS' : 'FAIL', `${+k.toFixed(4)} cycles per loop (period ${+c.period.toFixed(4)} s); must be whole`);
+    }
+  }
+}
+// frames where nothing is on screen (a blank flash between scenes), from the engine's visible(t)
+function emptyRuns() {
+  const runs = [];
+  let start = -1;
+  for (let n = 0; n <= NFR; n++) {
+    const empty = n < NFR && !ENGINE.visible(n / FPS);
+    if (empty && start < 0) start = n;
+    if (!empty && start >= 0) { runs.push([start, n - 1]); start = -1; }
+  }
+  return runs;
+}
+// Collision and live-area helpers for engines' checks. Boxes are [x0, y0, x1, y1] in canvas px.
+function checkLiveArea(add, id, b, bleed) {
+  if (bleed) return;
+  const out = [];
+  if (b[0] < MARGIN - 1) out.push(`left ${b[0].toFixed(1)} < ${MARGIN}`);
+  if (b[2] > W - MARGIN + 1) out.push(`right ${b[2].toFixed(1)} > ${W - MARGIN}`);
+  if (b[1] < MARGIN - 1) out.push(`top ${b[1].toFixed(1)} < ${MARGIN}`);
+  if (b[3] > H - MARGIN + 1) out.push(`bottom ${b[3].toFixed(1)} > ${H - MARGIN}`);
+  add(`live area: ${id}`, out.length ? 'FAIL' : 'PASS', out.join(', ') || `${b.map((v) => v.toFixed(0)).join(', ')}`);
+}
+function checkSpacing(add, items, tight = 16 * U) {  // items: [{ id, b }] on screen together at rest
+  for (let i = 0; i < items.length; i++) for (let j = i + 1; j < items.length; j++) {
+    const a = items[i].b, b = items[j].b;
+    const dx = Math.max(0, a[0] - b[2], b[0] - a[2]), dy = Math.max(0, a[1] - b[3], b[1] - a[3]);
+    const gap = dx === 0 && dy === 0 ? -1 : Math.hypot(dx, dy);
+    if (gap < 0) add(`collision: ${items[i].id} / ${items[j].id}`, 'FAIL', 'boxes overlap at rest');
+    else if (gap < tight) add(`cramped: ${items[i].id} / ${items[j].id}`, 'WARN', `${gap.toFixed(1)} px apart (< ${tight.toFixed(0)} px)`);
+  }
+}
+function critique() {
+  const checks = [];
+  const add = (name, status, detail) => checks.push({ name, status, detail });
+  if (ENGINE.checks) ENGINE.checks(add);
+  for (const c of CONTRAST) {
+    const r = contrast(col(c.fg), col(c.bg));
+    add(`contrast: ${c.id}`, r < c.min ? 'FAIL' : 'PASS', `${r.toFixed(2)}:1 on ${c.bg} (needs ${c.min}:1)`);
+  }
+  const stray = [...USED].filter((k) => !(k in PAL));
+  add('palette roles', stray.length ? 'FAIL' : 'PASS', stray.length ? `not in the palette: ${stray.join(', ')}` : `${USED.size} roles used, all in the palette`);
+  loopChecks(add);
+  if (ENGINE.visible) {
+    const minRun = Math.max(2, Math.round(FPS / 15));
+    for (const [a, b] of emptyRuns()) if (b - a + 1 >= minRun)
+      add('blank frames', 'WARN', `frames ${a}-${b} (t ${(a / FPS).toFixed(3)}-${(b / FPS).toFixed(3)}) show nothing: start the next entrance sooner, or pop it in at the cut`);
+  }
+  for (const w of WARN) add('timeline', 'WARN', w);
+  return checks;
+}
+// review stills: the engine's plan (each scene in and at rest, each transition) plus every accent frame
+function stillsPlan() {
+  const plan = [], seen = new Set();
+  const push = (frame, name, what) => { frame = Math.max(0, Math.min(NFR - 1, Math.round(frame))); if (seen.has(frame)) return; seen.add(frame); plan.push({ frame, name, what }); };
+  if (ENGINE.stills) ENGINE.stills(push);
+  for (const m of accentFrames()) push(m.frame, `accent-${m.what}`, `accent on ${m.what}`);
+  return plan.sort((a, b) => a.frame - b.frame);
+}
+function layoutTable() {
+  return { film: { W, H, FPS, DUR, frames: NFR, bpm: FILM.BPM, loop: LOOP, blur: BLUR, margin: MARGIN, measure: MEASURE, engine: ENGINE.name },
+    ...(ENGINE.layout ? ENGINE.layout() : {}), cuts: CUTS, accents: accentFrames(), warnings: WARN };
+}
+
+/* ---------------- boot ---------------- */
+function filmChars() {                              // every character any string in FILM holds, to load the fonts with
+  const s = new Set('H0');
+  const walk = (v, d) => { if (typeof v === 'string') { for (const c of v) s.add(c); } else if (v && typeof v === 'object' && d < 12) for (const k in v) walk(v[k], d + 1); };
+  walk(FILM, 0);
+  return [...s].join('');
+}
+function boot(E) {
+  ENGINE = E;
+  Object.assign(SP, E.springs || {}, FILM.springs || {});
+  for (const [k, v] of Object.entries(SP)) if (!(v[0] > 0 && v[0] <= 1 && v[1] > 0)) throw new Error(`spring ${k}: zeta must be in (0, 1] and omega > 0`);
+  window.DURATION = DUR; window.FPS = FPS; window.WIDTH = W; window.HEIGHT = H;
+  window.FILM_META = { title: FILM.title, poster: FILM.poster || 0, bg: PAL.bg, palette: PAL, loop: LOOP, blur: BLUR,
+    engine: E.name, strictPalette: !!E.strictPalette, seamCut: !!E.seamCut, gif: E.gif || null };
+  Object.assign(window, { seek, renderFrame, motionAt, layoutTable, critique, stillsPlan, textByFace, accentFrames, misFrames: accentFrames, offPalette });
+  const roles = Object.keys(FILM.fonts || {}), sample = filmChars();
+  window.ready = Promise.all(roles.map((r) => document.fonts.load(fontStr(r, 100), sample)))
+    .then((sets) => { if (sets.some((s) => !s.length)) throw new Error('a font face failed to load'); return E.build(); })
+    .then(() => {
+      for (const p of PROPS) p.seam();
+      CUTS.sort((a, b) => a - b);
+      isReady = true;
+      seek(0);
+      return true;
+    });
+  // Preview: requestAnimationFrame is the only time source and it only calls seek().
+  // Space pauses, the arrow keys step one frame, ?t=3.5 opens paused at a time.
+  if (!/[?&]capture\b/.test(location.search)) {
+    window.ready.then(() => {
+      const m = /[?&]t=([\d.]+)/.exec(location.search);
+      let paused = !!m, pos = m ? Number(m[1]) : 0, last = null;
+      const tick = (ts) => {
+        if (!paused && last !== null) pos = wrapT(pos + (ts - last) / 1000);
+        last = ts; seek(pos); requestAnimationFrame(tick);
+      };
+      addEventListener('keydown', (e) => {
+        if (e.key === ' ') { paused = !paused; e.preventDefault(); }
+        if (e.key === 'ArrowRight') { paused = true; pos = wrapT(Math.round(pos * FPS + 1) / FPS); }
+        if (e.key === 'ArrowLeft') { paused = true; pos = wrapT(Math.round(pos * FPS - 1) / FPS); }
+      });
+      requestAnimationFrame(tick);
+    });
+  }
+}
+
+  return { W, H, FPS, DUR, NFR, CX, CY, U, PAL, col, role, GRID, MARGIN, UNIT, MEASURE, LOOP, BLUR, SHUTTER, TAU,
+    canvas, ctx, mkCanvas, mk2d, mctx,
+    SP, spring, settle, S, dS, landT, Prop, PROPS,
+    cyc, wave, mulberry32, hash, loopNoise, shuffled,
+    wrapT, frameOf, typed, noteSec, drawing,
+    rgbOf, hexOf, mix, hueChroma, hueDist, lum, contrast, inksClash,
+    face, fontStr, setFont, capRatio, useText, measureRun, layoutText, blurQ, glyphSprite, fillGlyph, drawText,
+    svgPath, CUTS, ACTIVE, ACCENTS, WARN, CONTRAST, cutAt, activeIn, accentAt, needContrast,
+    checkLiveArea, checkSpacing, seek, boot };
+})();
+const { W, H, FPS, DUR, NFR, CX, CY, U, PAL, col, role, GRID, MARGIN, UNIT, MEASURE, LOOP, BLUR, SHUTTER, TAU,
+  canvas, ctx, mkCanvas, mk2d, mctx,
+  SP, spring, settle, S, dS, landT, Prop, PROPS,
+  cyc, wave, mulberry32, hash, loopNoise, shuffled,
+  wrapT, frameOf, typed, noteSec, drawing,
+  rgbOf, hexOf, mix, hueChroma, hueDist, lum, contrast, inksClash,
+  face, fontStr, setFont, capRatio, useText, measureRun, layoutText, blurQ, glyphSprite, fillGlyph, drawText,
+  svgPath, CUTS, ACTIVE, ACCENTS, WARN, CONTRAST, cutAt, activeIn, accentAt, needContrast,
+  checkLiveArea, checkSpacing, seek, boot } = CORE;
+/* ===== CORE END ===== */
+
+/* ==========================================================================
+ * ENGINE: motion-particles. A swarm whose every particle is a pure function of
+ * t: a drifting field, formations sampled from type and shapes, moves between
+ * them on per-particle springs, and motion streaks drawn analytically.
+ * ========================================================================== */
+const DEG = Math.PI / 180;
+const clamp01 = (v) => (v < 0 ? 0 : v > 1 ? 1 : v);
+const lerp = (a, b, k) => a + (b - a) * k;
+const SWARM = FILM.swarm || {};
+const NP = Math.max(1, Math.round(SWARM.n || 4000));
+const SEED = (SWARM.seed != null ? SWARM.seed : 1) | 0;
+const R0 = SWARM.size != null ? SWARM.size : 1.4;           // particle radius at size 1, px
+const STREAK = { min: 0.2, gamma: 0.55, max: 480 * U, ...(SWARM.streak || {}) };
+const GLOW = SWARM.glow === false ? null : { gain: 0.5, radius: 12, size: 1, floor: 0.04, ...(SWARM.glow || {}) };
+const NAL = 24;                                              // alpha levels a draw batch quantises to
+const WSTEP = 0.25;                                          // stroke widths quantised to 0.25 px
+const NWL = 96;                                              // width levels (up to 24 px)
+const FORMS = [], FORM = {}, MOVES = [], TYPE = [];
+const CROLE = [], CHEX = [];                                 // particle colour roles and their hex
+let FIELD = null, CAM = null, GLOWP = null;
+let HX, HY, DEP, GRAIN, FCOL, PRIO, NPH;                     // per particle: home, depth, size grain, field colour, priority, noise phases
+const ENG = { name: 'particles' };
+
+/* ---------------- small helpers ---------------- */
+function colIdx(r) { let k = CROLE.indexOf(r); if (k < 0) { k = CROLE.length; CROLE.push(r); CHEX.push(role(r)); } return k; }
+function pickWeighted(weights, u) {
+  const ks = Object.keys(weights), tot = ks.reduce((s, k) => s + weights[k], 0);
+  let acc = 0;
+  for (const k of ks) { acc += weights[k] / tot; if (u < acc) return k; }
+  return ks[ks.length - 1];
+}
+function hilbert(x, y) {                                     // Hilbert index on a 1024 x 1024 grid: nearby points, nearby indices
+  const n = 1024; let d = 0;
+  for (let s = n >> 1; s > 0; s >>= 1) {
+    const rx = (x & s) > 0 ? 1 : 0, ry = (y & s) > 0 ? 1 : 0;
+    d += s * s * ((3 * rx) ^ ry);
+    if (ry === 0) { if (rx === 1) { x = n - 1 - x; y = n - 1 - y; } const tmp = x; x = y; y = tmp; }
+  }
+  return d;
+}
+const hq = (v, lo, span) => Math.max(0, Math.min(1023, Math.floor((v - lo) / span * 1024)));
+function shufflePairs(a, seed) {                            // Fisher-Yates over (x, y) pairs, seeded
+  const r = mulberry32(seed), n = a.length >> 1;
+  for (let i = n - 1; i > 0; i--) {
+    const j = Math.floor(r() * (i + 1)), x = a[2 * i], y = a[2 * i + 1];
+    a[2 * i] = a[2 * j]; a[2 * i + 1] = a[2 * j + 1]; a[2 * j] = x; a[2 * j + 1] = y;
+  }
+  return a;
+}
+// the time after which a spring stays within eps of its target
+function within(sp, eps) {
+  sp = spring(sp);
+  const end = settle(sp), step = 1 / 600;
+  for (let tau = end; tau > 0; tau -= step) if (Math.abs(S(tau, sp) - 1) > eps) return Math.min(end, tau + step);
+  return 0;
+}
+
+/* ---------------- blue-noise sampling ---------------- */
+// Random sequential adsorption: candidates in a seeded random order, each kept when no kept point is
+// closer than r. A saturated set is blue noise: even, no clumps, no grid.
+function rsa(cands, r) {
+  const n = cands.length >> 1;
+  if (!n) return [];
+  let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+  for (let k = 0; k < n; k++) { const x = cands[2 * k], y = cands[2 * k + 1]; if (x < x0) x0 = x; if (x > x1) x1 = x; if (y < y0) y0 = y; if (y > y1) y1 = y; }
+  const cs = r / Math.SQRT2, gw = Math.floor((x1 - x0) / cs) + 1, gh = Math.floor((y1 - y0) / cs) + 1, r2 = r * r;
+  const grid = new Int32Array(gw * gh).fill(-1), out = [];
+  for (let k = 0; k < n; k++) {
+    const x = cands[2 * k], y = cands[2 * k + 1], gx = Math.floor((x - x0) / cs), gy = Math.floor((y - y0) / cs);
+    let ok = true;
+    for (let j = Math.max(0, gy - 2); ok && j <= Math.min(gh - 1, gy + 2); j++) for (let i = Math.max(0, gx - 2); i <= Math.min(gw - 1, gx + 2); i++) {
+      const p = grid[j * gw + i];
+      if (p < 0) continue;
+      const dx = out[p] - x, dy = out[p + 1] - y;
+      if (dx * dx + dy * dy < r2) { ok = false; break; }
+    }
+    if (ok) { grid[gy * gw + gx] = out.length; out.push(x, y); }
+  }
+  return out;
+}
+// candidates on a jittered sub-grid inside a mask ({ a: alpha bytes, w, h, ox, oy }), or a box when no mask
+function candidates(m, r, seed) {
+  const st = r / 2.6, out = [];
+  let k = 0;
+  for (let y = 0; y < m.h; y += st) for (let x = 0; x < m.w; x += st) {
+    const px = x + st * hash(seed, k, 1), py = y + st * hash(seed, k, 2); k++;
+    if (px >= m.w || py >= m.h) continue;
+    if (m.a && m.a[(Math.floor(py) * m.w + Math.floor(px)) * 4 + 3] < 128) continue;
+    out.push(px + m.ox, py + m.oy);
+  }
+  return shufflePairs(out, seed ^ 0x5bd1e995);
+}
+
+/* ---------------- geometry: shapes as SVG path data, then masks ---------------- */
+function geomD(s) {                                          // centred on 0,0; closed shapes start at 12 o'clock, clockwise
+  const f = (v) => +(+v).toFixed(3);
+  switch (s.shape) {
+    case 'circle': { const r = s.r; return `M0 ${f(-r)}A${f(r)} ${f(r)} 0 1 1 0 ${f(r)}A${f(r)} ${f(r)} 0 1 1 0 ${f(-r)}Z`; }
+    case 'ellipse': { const a = s.rx, b = s.ry; return `M0 ${f(-b)}A${f(a)} ${f(b)} 0 1 1 0 ${f(b)}A${f(a)} ${f(b)} 0 1 1 0 ${f(-b)}Z`; }
+    case 'rect': {
+      const w = s.w / 2, h = s.h / 2, r = Math.min(s.radius || 0, w, h);
+      return `M0 ${f(-h)}H${f(w - r)}A${f(r)} ${f(r)} 0 0 1 ${f(w)} ${f(-h + r)}V${f(h - r)}A${f(r)} ${f(r)} 0 0 1 ${f(w - r)} ${f(h)}H${f(-w + r)}A${f(r)} ${f(r)} 0 0 1 ${f(-w)} ${f(h - r)}V${f(-h + r)}A${f(r)} ${f(r)} 0 0 1 ${f(-w + r)} ${f(-h)}Z`;
+    }
+    case 'poly': case 'star': {
+      const n = s.shape === 'star' ? (s.points || 5) * 2 : (s.sides || 3), pts = [];
+      for (let k = 0; k < n; k++) { const a = -Math.PI / 2 + TAU * k / n, r = s.shape === 'star' && k % 2 ? s.r * (s.inner || 0.45) : s.r; pts.push([r * Math.cos(a), r * Math.sin(a)]); }
+      return 'M' + pts.map((p) => `${f(p[0])} ${f(p[1])}`).join('L') + 'Z';
+    }
+    case 'arc': {                                            // degrees clockwise from 12 o'clock
+      const r = s.r, a0 = (s.from || 0) * DEG - Math.PI / 2, a1 = (s.to != null ? s.to : 360) * DEG - Math.PI / 2;
+      if (a1 - a0 >= TAU - 1e-6) return geomD({ shape: 'circle', r });
+      const p = (a) => `${f(r * Math.cos(a))} ${f(r * Math.sin(a))}`, mid = (a0 + a1) / 2;
+      return `M${p(a0)}A${f(r)} ${f(r)} 0 0 1 ${p(mid)}A${f(r)} ${f(r)} 0 0 1 ${p(a1)}`;
+    }
+    case 'line': { const pts = s.points || [[s.x1, s.y1], [s.x2, s.y2]]; return 'M' + pts.map((p) => `${f(p[0])} ${f(p[1])}`).join('L') + (s.closed ? 'Z' : ''); }
+    case 'path': return s.d;
+    default: throw new Error(`unknown shape "${s.shape}"`);
+  }
+}
+// a part's outline in canvas coordinates: Path2D, its length, points along it
+function partPath(s) {
+  const P = svgPath(geomD(s));
+  let k = 1, ox = s.x != null ? s.x : CX, oy = s.y != null ? s.y : CY, cx = 0, cy = 0;
+  if (s.shape === 'path') { const [x0, y0, x1, y1] = P.box; k = s.size ? s.size / Math.max(x1 - x0, y1 - y0) : (s.unit || 1); cx = (x0 + x1) / 2; cy = (y0 + y1) / 2; }
+  const m = new DOMMatrix([k, 0, 0, k, ox - cx * k, oy - cy * k]), p2d = new Path2D();
+  p2d.addPath(P.p2d, m);
+  return { p2d, len: P.len * k, points: (n) => P.points(n).map(([x, y]) => [ox + (x - cx) * k, oy + (y - cy) * k]),
+    box: [ox + (P.box[0] - cx) * k, oy + (P.box[1] - cy) * k, ox + (P.box[2] - cx) * k, oy + (P.box[3] - cy) * k] };
+}
+function rasterise(box, pad, paint) {                        // an alpha mask of whatever paint() draws inside box
+  const x0 = Math.floor(box[0]) - pad, y0 = Math.floor(box[1]) - pad;
+  const w = Math.max(1, Math.ceil(box[2]) + pad - x0), h = Math.max(1, Math.ceil(box[3]) + pad - y0);
+  const [, x] = mk2d(w, h);
+  x.setTransform(1, 0, 0, 1, -x0, -y0); x.fillStyle = '#fff'; x.strokeStyle = '#fff';
+  paint(x);
+  const a = x.getImageData(0, 0, w, h).data;
+  let area = 0;
+  for (let i = 3; i < a.length; i += 4) area += a[i] / 255;
+  return { a, w, h, ox: x0, oy: y0, area };
+}
+
+/* ---------------- formations ---------------- */
+// Targets are sampled at build time; every particle a formation does not use stays in the field as dust.
+function sampleParts(F) {
+  const s = F.spec, sp0 = s.spacing || 4.5 * U;
+  const pts = [];                                            // { x, y, col, part, sz }
+  const addMask = (m, col, part, seed, sp, sz) => { const got = rsa(candidates(m, sp, seed), sp); for (let k = 0; k < got.length; k += 2) pts.push({ x: got[k], y: got[k + 1], col, part, sz }); return got.length >> 1; };
+  F.glyphs = [];
+  if (s.text != null) {                                      // a line of type, one mask per glyph
+    const L = layoutText({ id: s.id, text: s.text, font: s.font || 'display', size: s.size, cap: s.cap, fit: s.fit, justify: s.justify, track: s.track, pairs: s.pairs, anchor: s.anchor || 'C', x: s.x, baseline: s.y });
+    F.line = L;
+    L.glyphs.forEach((g) => {
+      if (g.space) return;
+      const o = (s.glyphs && s.glyphs[g.ch]) || {}, fill = o.fill || s.fill || 'paper', sp = o.spacing || sp0, sz = o.dot || 1;
+      const m = rasterise([g.inkL, L.baseline - g.asc, g.inkR, L.baseline + g.desc], 3, (x) => { setFont(x, L.font); x.fillStyle = '#fff'; x.fillText(g.ch, g.x, L.baseline); });
+      const gi = F.glyphs.length;
+      const n = addMask(m, colIdx(fill), gi, hash(SEED, F.idx, 1000 + gi) * 4294967296 | 0, sp, sz);
+      F.glyphs.push({ ch: g.ch, n, area: m.area, fill, sz, spacing: sp, box: [g.inkL, L.baseline - g.asc, g.inkR, L.baseline + g.desc] });
+    });
+    F.words = s.text.split(/\s+/).filter((w) => /[A-Za-z0-9€$£]/.test(w)).length;
+    F.capH = L.capH;
+  }
+  (s.parts || []).forEach((p, pi) => {
+    const col = colIdx(p.fill || s.fill || 'paper'), gi = F.glyphs.length, seed = hash(SEED, F.idx, 2000 + pi) * 4294967296 | 0, sp = p.spacing || sp0, sz = p.dot || 1;
+    let n = 0, area = 0;
+    const ox = p.x != null ? p.x : (s.center ? s.center[0] : CX), oy = p.y != null ? p.y : (s.center ? s.center[1] : CY);
+    if (p.shape === 'grid') {                                // a lattice: no sampling
+      const [cols, rows] = p.grid || [8, 8], [gx, gy] = p.gap || [40, 40];
+      for (let j = 0; j < rows; j++) for (let i = 0; i < cols; i++) { pts.push({ x: ox + (i - (cols - 1) / 2) * gx, y: oy + (j - (rows - 1) / 2) * gy, col, part: gi, sz }); n++; }
+    } else if (p.shape === 'sphere' || p.shape === 'cloud') {   // 3D points, projected while drawing (sphere), or a gaussian blob
+      const cnt = p.n || 800;
+      for (let k = 0; k < cnt; k++) {
+        if (p.shape === 'sphere') {                          // Fibonacci sphere: even over the surface
+          const yv = 1 - 2 * (k + 0.5) / cnt, rr = Math.sqrt(1 - yv * yv), th = k * Math.PI * (3 - Math.sqrt(5));
+          pts.push({ x: ox + p.r * rr * Math.cos(th), y: oy + p.r * yv, z: p.r * rr * Math.sin(th), col, part: gi, sz, sphere: p });
+        } else {
+          const u = Math.max(1e-9, hash(seed, k, 1)), v = hash(seed, k, 2), rad = (p.r || 120) * Math.sqrt(-2 * Math.log(u)) / 2;
+          pts.push({ x: ox + rad * Math.cos(TAU * v), y: oy + rad * Math.sin(TAU * v), col, part: gi, sz });
+        }
+        n++;
+      }
+    } else {
+      const P = partPath({ ...p, x: ox, y: oy });
+      if (p.dots) {                                          // single file along the outline, evenly spaced
+        const cnt = Math.max(1, Math.round(P.len / p.dots));
+        for (const [x, y] of P.points(cnt)) { pts.push({ x, y, col, part: gi, sz }); n++; }
+        area = 0;                                            // a string of dots is decoration, not ink: no legibility row
+      } else {
+        const ow = p.outline || 0, pad = Math.ceil(ow / 2) + 3;
+        const m = rasterise([P.box[0] - ow / 2, P.box[1] - ow / 2, P.box[2] + ow / 2, P.box[3] + ow / 2], pad, (x) => {
+          if (ow) { x.lineWidth = ow; x.lineCap = p.cap || 'round'; x.lineJoin = 'round'; x.stroke(P.p2d); } else x.fill(P.p2d);
+        });
+        n = addMask(m, col, gi, seed, sp, sz); area = m.area;
+      }
+      F.glyphs.push({ ch: `part ${pi + 1} (${p.shape}${p.outline ? ' outline' : p.dots ? ' dots' : ''})`, n, area, fill: p.fill || s.fill || 'paper', sz, spacing: p.dots || sp, box: P.box, shape: true });
+      return;
+    }
+    F.glyphs.push({ ch: `part ${pi + 1} (${p.shape})`, n, area, fill: p.fill || s.fill || 'paper', sz, spacing: sp, shape: true });
+  });
+  return pts;
+}
+function buildForm(s, idx) {
+  if (FORM[s.id]) throw new Error(`duplicate formation id ${s.id}`);
+  const F = { spec: s, id: s.id, idx, kind: s.field ? 'field' : s.from ? 'derived' : 'shape',
+    alpha: s.alpha != null ? s.alpha : 1, size: s.dot != null ? s.dot : 1, drift: s.drift != null ? s.drift : 0.6 * U,
+    dust: s.dust != null ? s.dust : 1, spin: s.spin || 0, tRef: 0, used: new Uint8Array(NP), n: 0, assigned: false };
+  FORM[s.id] = F; FORMS.push(F);
+  return F;
+}
+// the field: homes as blue noise over its box, depth, colour, wave phases and drift phases per particle
+function buildField(F) {
+  const s = F.spec, box = s.box || [-48 * U, -48 * U, W + 48 * U, H + 48 * U];
+  const area = (box[2] - box[0]) * (box[3] - box[1]);
+  let r = Math.sqrt(0.62 * area / NP), got = [];
+  for (let it = 0; it < 12; it++) {
+    got = rsa(candidates({ a: null, w: box[2] - box[0], h: box[3] - box[1], ox: box[0], oy: box[1] }, r, SEED ^ 0xF1E1D), r);
+    if ((got.length >> 1) >= NP) break;
+    r *= 0.96;
+  }
+  const keep = shuffled(Array.from({ length: got.length >> 1 }, (_, k) => k), SEED ^ 0xD05).slice(0, NP);
+  const cw = s.colors || { paper: 1 };
+  for (let i = 0; i < NP; i++) {
+    const k = keep[i % keep.length];
+    HX[i] = got[2 * k]; HY[i] = got[2 * k + 1];
+    DEP[i] = Math.pow(hash(SEED, i, 11), (s.depth && s.depth.bias) || 1);
+    GRAIN[i] = 0.82 + 0.36 * hash(SEED, i, 12);
+    FCOL[i] = colIdx(pickWeighted(cw, hash(SEED, i, 13)));
+    for (let a = 0; a < 6; a++) NPH[6 * i + a] = hash(SEED * 7919 + i, a + 1, 17);   // loopNoise-style seeded phases, x then y
+  }
+  const d = s.depth || {};
+  F.sizeR = d.size || [0.7, 1.1]; F.alphaR = d.alpha || [0.5, 0.9];
+  // vignette: dust dims toward the corners; twinkle: a loop-exact shimmer, 2 to 5 cycles per loop each
+  const vg = s.vignette || 0, dmax = Math.hypot(CX, CY);
+  F.vig = new Float32Array(NP); F.tw = s.twinkle || 0; F.twN = new Uint8Array(NP); F.twP = new Float32Array(NP);
+  for (let i = 0; i < NP; i++) {
+    const dd = Math.min(1, Math.hypot(HX[i] - CX, HY[i] - CY) / dmax);
+    F.vig[i] = 1 - vg * dd * dd;
+    F.twN[i] = 2 + Math.floor(4 * hash(SEED, i, 14)); F.twP[i] = hash(SEED, i, 15);
+  }
+  F.drift = s.drift != null ? s.drift : 6 * U;
+  F.driftN = s.driftN || 1;
+  F.waves = (s.waves || []).map((w, j) => {
+    const a = (w.dir || 0) * DEG;
+    return { amp: w.amp || 0, k: TAU / (w.length || 600), ux: Math.cos(a), uy: Math.sin(a), n: w.n || 1, roll: w.roll != null ? w.roll : 1, ph: hash(SEED, 300 + j) * TAU };
+  });
+  F.wph = F.waves.map((w) => { const ph = new Float64Array(NP); for (let i = 0; i < NP; i++) ph[i] = (HX[i] * w.ux + HY[i] * w.uy) * w.k + w.ph; return ph; });
+  F.box = box;
+  F.n = NP; F.used.fill(1);
+  FIELD = F;
+}
+function fieldPos(i, t, o) {
+  let x = HX[i], y = HY[i];
+  const F = FIELD, par = 0.55 + 0.9 * DEP[i];                // near particles move further: parallax
+  for (let j = 0; j < F.waves.length; j++) {
+    const w = F.waves[j], ph = F.wph[j][i] - TAU * w.n * t / DUR, a = w.amp * par, c = Math.cos(ph), s = Math.sin(ph);
+    x += a * (w.roll * c * w.ux - s * w.uy);
+    y += a * (w.roll * c * w.uy + s * w.ux);
+  }
+  o.x = x; o.y = y;
+}
+
+/* ---------------- a particle at time t ---------------- */
+// Position = sum over formations of weight x position. A move adds its spring's progress to the weight of
+// the formation it goes to and takes it from the one it leaves, so springs superpose like the core's Props:
+// a move that starts before the last one has landed bends the path instead of restarting it.
+function sigma(M, i, t) {
+  const s0 = M.start[i];
+  let v = 0;
+  const tau = t - s0;
+  if (tau > 0) v = tau >= M.set ? 1 : S(tau, M.sp);
+  if (M.carry[i]) { const tc = t + DUR - s0; if (tc > 0 && tc < M.set) v += S(tc, M.sp) - 1; }
+  return v;
+}
+const PT = { x: 0, y: 0 };
+function formPos(F, i, t, o) {
+  if (F.kind === 'derived' && !F.used[i]) { fieldPos(i, t, o); o.x += F.ex[i]; o.y += F.ey[i]; return; }   // dust: home, pushed
+  if (F.kind === 'field' || !F.used[i]) { fieldPos(i, t, o); return; }
+  if (F.kind === 'derived') {
+    formPos(F.src, i, t, o);
+    const cx = F.cx, cy = F.cy;
+    let x = o.x - cx, y = o.y - cy;
+    if (F.scale !== 1 || F.rot) { const c = Math.cos(F.rot) * F.scale, s = Math.sin(F.rot) * F.scale, xx = x * c - y * s; y = x * s + y * c; x = xx; }
+    o.x = cx + x + F.ex[i] + F.dx; o.y = cy + y + F.ey[i] + F.dy;
+    return;
+  }
+  let x = F.tx[i], y = F.ty[i];
+  if (F.tz) {                                                // sphere: spin about the vertical axis, tilt towards the viewer, perspective
+    const z0 = F.tz[i], a = F.spin * DEG * (t - F.tRef), c = Math.cos(a), s = Math.sin(a);
+    const xr = x * c + z0 * s, zr = -x * s + z0 * c, yt = y * F.tiltC - zr * F.tiltS, zt = y * F.tiltS + zr * F.tiltC, k = F.persp / (F.persp + zt);
+    o.x = F.cx + xr * k; o.y = F.cy + yt * k; o.z = zt;
+    return;
+  }
+  if (F.spin) { const a = F.spin * DEG * (t - F.tRef), c = Math.cos(a), s = Math.sin(a), xx = x * c - y * s; y = x * s + y * c; x = xx; }
+  o.x = F.cx + x; o.y = F.cy + y;
+}
+// what a particle looks like in a formation: alpha, radius, colour, drift amplitude
+function dustA(i, t) {
+  const f = FIELD, a = lerp(f.alphaR[0], f.alphaR[1], DEP[i]) * f.vig[i];
+  return f.tw ? a * (1 - f.tw * (0.5 + 0.5 * Math.sin(TAU * (f.twN[i] * t / DUR + f.twP[i])))) : a;
+}
+function dustMean(i) { const f = FIELD; return lerp(f.alphaR[0], f.alphaR[1], DEP[i]) * f.vig[i] * (1 - f.tw / 2); }
+function lookA(F, i, t) { if (F.kind === 'field') return dustA(i, t); if (!F.used[i]) return dustA(i, t) * F.dust; return F.alpha; }
+function glintK(F, i, t) {                                   // 1, or more inside the sweeping band
+  const g = F.glint;
+  if (!g || !(t > g.at && t < g.at + g.dur)) return 1;
+  const p = (t - g.at) / g.dur, c = lerp(g.d0 - 2.5 * g.width, g.d1 + 2.5 * g.width, p), z = (F.tx[i] * g.ux + F.ty[i] * g.uy - c) / g.width;
+  return 1 + (g.dot - 1) * Math.exp(-z * z) * Math.sin(Math.PI * p);
+}
+function lookR(F, i, t) { if (F.kind === 'field' || !F.used[i]) return R0 * lerp(FIELD.sizeR[0], FIELD.sizeR[1], DEP[i]); return R0 * F.size * F.sz[i] * GRAIN[i] * (F.glint ? glintK(F, i, t) : 1); }
+function lookC(F, i) { return F.kind === 'field' || !F.used[i] ? FCOL[i] : F.col[i]; }
+function lookD(F, i) { return F.kind === 'field' || !F.used[i] ? FIELD.drift : F.drift; }
+
+const WT = new Float64Array(64), FXS = new Float64Array(64), FYS = new Float64Array(64), FOK = new Uint8Array(64);
+let SG = new Float64Array(0);                                // each move's progress for the particle being evaluated
+// world position (no camera) and look of particle i at t; st gets x, y, a, r, c
+function particle(i, t, st, look) {
+  const nf = FORMS.length;
+  for (let f = 0; f < nf; f++) WT[f] = 0;
+  WT[0] = 1;
+  for (let k = 0; k < MOVES.length; k++) {
+    const M = MOVES[k];
+    if (t >= M.allDone && !M.anyCarry) { WT[M.to.idx] += 1; WT[M.from.idx] -= 1; SG[k] = 1; continue; }
+    if (t < M.first && !M.anyCarry) { SG[k] = 0; continue; }
+    const v = sigma(M, i, t);
+    SG[k] = v;
+    if (v !== 0) { WT[M.to.idx] += v; WT[M.from.idx] -= v; }
+  }
+  let x = 0, y = 0, amp = 0, a = 0, r = 0, best = -Infinity, c = 0;
+  for (let f = 0; f < nf; f++) {
+    FOK[f] = 0;
+    const w = WT[f];
+    if (w < 1e-9 && w > -1e-9) continue;
+    const F = FORMS[f];
+    PT.z = 0;
+    formPos(F, i, t, PT);
+    FXS[f] = PT.x; FYS[f] = PT.y; FOK[f] = 1;
+    x += w * PT.x; y += w * PT.y;
+    amp += w * lookD(F, i);
+    if (look) {
+      a += w * lookA(F, i, t) * (PT.z ? F.sphereAlpha(PT.z) : 1); r += w * lookR(F, i, t);
+      if (w > best) { best = w; c = lookC(F, i); }
+    }
+  }
+  for (let k = 0; k < MOVES.length; k++) {                   // swirl: the path bows to one side, straight at both ends
+    const M = MOVES[k];
+    if (!M.swirl) continue;
+    // progress along this move (a particle still settling from the last pass reads the wrapped spring)
+    const u = M.carry[i] && t < M.start[i] ? 1 + SG[k] : SG[k];
+    if (!(u > 0 && u < 1)) continue;
+    const fa = M.from.idx, fb = M.to.idx;
+    if (!FOK[fa]) { formPos(M.from, i, t, PT); FXS[fa] = PT.x; FYS[fa] = PT.y; FOK[fa] = 1; }
+    if (!FOK[fb]) { formPos(M.to, i, t, PT); FXS[fb] = PT.x; FYS[fb] = PT.y; FOK[fb] = 1; }
+    const ph = M.swirl[i] * 4 * u * (1 - u), cs = Math.cos(ph) - 1, sn = Math.sin(ph), dx = FXS[fa] - FXS[fb], dy = FYS[fa] - FYS[fb];
+    x += (1 - u) * (cs * dx - sn * dy); y += (1 - u) * (sn * dx + cs * dy);
+  }
+  if (amp > 1e-6) {                                          // loop-exact drift: loopNoise's three harmonics, phases cached per particle
+    const n = FIELD.driftN, p = 6 * i, u = TAU * t / DUR;
+    x += amp * (Math.sin(u * n + TAU * NPH[p]) + 0.5 * Math.sin(u * (2 * n + 1) + TAU * NPH[p + 1]) + 0.25 * Math.sin(u * (4 * n + 3) + TAU * NPH[p + 2])) / 1.75;
+    y += amp * (Math.sin(u * n + TAU * NPH[p + 3]) + 0.5 * Math.sin(u * (2 * n + 1) + TAU * NPH[p + 4]) + 0.25 * Math.sin(u * (4 * n + 3) + TAU * NPH[p + 5])) / 1.75;
+  }
+  st.x = x; st.y = y;
+  if (look) { st.a = a < 0 ? 0 : a > 1 ? 1 : a; st.r = r < 0.2 * U ? 0.2 * U : r; st.c = c; }
+}
+
+/* ---------------- moves: assignment and per-particle timing ---------------- */
+function keyOf(how, x, y, F) {
+  switch (how) {
+    case 'x': return x;
+    case 'y': return y;
+    case 'angle': { let a = Math.atan2(x - F.cx, -(y - F.cy)); if (a < 0) a += TAU; return a; }
+    case 'radius': return Math.hypot(x - F.cx, y - F.cy);
+    default: return hilbert(hq(x, -W, 3 * W), hq(y, -H, 3 * H));
+  }
+}
+// match the particles a formation uses to its targets: sort both by the same key and pair them by rank
+function assign(F, how, at, targets) {
+  const ids = [];
+  for (let i = 0; i < NP; i++) if (F.used[i]) ids.push(i);
+  const st = { x: 0, y: 0 };
+  let pk, tk;
+  if (how === 'random') { pk = shuffled(ids, SEED ^ (F.idx * 7331)); tk = targets.map((_, k) => k); }
+  else if (how === 'index') { pk = ids.slice().sort((a, b) => PRIO[a] - PRIO[b]); tk = targets.map((_, k) => k); }
+  else {
+    const pv = ids.map((i) => { particle(i, at, st, false); return [keyOf(how, st.x, st.y, F), i]; }).sort((a, b) => a[0] - b[0]);
+    pk = pv.map((e) => e[1]);
+    tk = targets.map((p, k) => [keyOf(how, p.x, p.y, F), k]).sort((a, b) => a[0] - b[0]).map((e) => e[1]);
+  }
+  pk.forEach((i, j) => {
+    const p = targets[tk[j]];
+    F.tx[i] = p.x - F.cx; F.ty[i] = p.y - F.cy; F.col[i] = p.col; F.part[i] = p.part; F.sz[i] = p.sz || 1;
+    if (F.tz) F.tz[i] = p.z || 0;
+  });
+  F.assigned = true;
+}
+function rankOf(how, keys) {                                 // keys: [value]; returns 0..1 per entry
+  const n = keys.length;
+  const idx = keys.map((v, k) => [v, k]).sort((a, b) => a[0] - b[0]);
+  const out = new Float64Array(n);
+  idx.forEach(([, k], j) => { out[k] = n > 1 ? j / (n - 1) : 0; });
+  return out;
+}
+function buildMoves() {
+  let from = FORMS[0], last = -Infinity;
+  const st = { x: 0, y: 0 };
+  if (from.kind === 'derived') throw new Error('formations[0] is what frame 0 shows: make it the field, a text or a shape formation');
+  if (from.kind === 'shape') { from.tRef = 0; assign(from, from.spec.assign || 'index', 0, from.targets); }
+  (FILM.moves || []).forEach((m, k) => {
+    const to = FORM[m.to];
+    if (!to) throw new Error(`move ${k + 1}: no formation "${m.to}"`);
+    if (m.at < last - 1e-9) throw new Error(`move ${k + 1} at ${m.at} comes before the one at ${last}`);
+    last = m.at;
+    const sp = spring(m.spring || 'GATHER');
+    if (to.kind === 'shape' && !to.assigned) { to.tRef = m.at; assign(to, m.assign || 'near', m.at, to.targets); }
+    if (to.kind === 'derived' && !to.derived) deriveOffsets(to);
+    // the order ranks each particle by where it is going (into a shape) or where it is (anything else)
+    const key = [], how = m.order || 'random';
+    const refF = [to, from].find((F) => F.kind !== 'field' && F.cx != null), cx = refF ? refF.cx : CX, cy = refF ? refF.cy : CY;
+    for (let i = 0; i < NP; i++) {
+      if (how === 'random') { key.push(hash(SEED, k, i)); continue; }
+      if (how === 'index') { key.push(PRIO[i]); continue; }
+      formPos(to.kind === 'shape' && to.used[i] ? to : from, i, m.at, st);
+      const x = st.x, y = st.y;
+      key.push(how === 'x' ? x : how === '-x' ? -x : how === 'y' ? y : how === '-y' ? -y : how === 'center' ? Math.hypot(x - cx, y - cy)
+        : how === 'edge' ? -Math.hypot(x - cx, y - cy) : how === 'angle' ? ((Math.atan2(x - cx, -(y - cy)) + TAU) % TAU) : hash(SEED, k, i));
+    }
+    const rank = rankOf(how, key), jit = m.jitter != null ? m.jitter : how === 'random' ? 1 : 0.25, spread = m.spread || 0;
+    const M = { k, spec: m, id: `${from.id}>${to.id}`, at: m.at, from, to, sp, set: settle(sp), start: new Float64Array(NP), carry: new Uint8Array(NP) };
+    let first = Infinity, end = -Infinity, anyCarry = false;
+    for (let i = 0; i < NP; i++) {
+      const u = how === 'random' ? rank[i] : rank[i] * (1 - jit) + jit * hash(SEED, k, i + 7);
+      const s0 = m.at + spread * u;
+      M.start[i] = s0;
+      first = Math.min(first, s0); end = Math.max(end, s0 + M.set);
+      if (LOOP === 'cycle' && s0 + M.set > DUR) { M.carry[i] = 1; anyCarry = true; }
+    }
+    Object.assign(M, { first, allDone: end, anyCarry, land: landT(sp) });
+    if (m.swirl) { M.swirl = new Float32Array(NP); for (let i = 0; i < NP; i++) M.swirl[i] = m.swirl * DEG * (0.6 + 0.8 * hash(SEED, k, i + 91)); }
+    MOVES.push(M);
+    SG = new Float64Array(MOVES.length);
+    from = to;
+  });
+}
+
+/* ---------------- build ---------------- */
+function buildFormations() {
+  (FILM.formations || []).forEach((s, idx) => buildForm(s, idx));
+  if (FORMS.length > 64) throw new Error('at most 64 formations');
+  const fields = FORMS.filter((F) => F.kind === 'field');
+  if (fields.length !== 1) throw new Error(`the swarm needs exactly one field formation (field: true); found ${fields.length}`);
+  buildField(fields[0]);
+  PRIO = new Float64Array(NP);
+  shuffled(Array.from({ length: NP }, (_, i) => i), SEED ^ 0x9E37).forEach((i, k) => { PRIO[i] = k; });
+  const byPrio = Array.from({ length: NP }, (_, i) => i).sort((a, b) => PRIO[a] - PRIO[b]);
+  for (const F of FORMS) {
+    if (F.kind !== 'shape') continue;
+    const s = F.spec;
+    F.targets = sampleParts(F);
+    if (s.n && F.targets.length > s.n) F.targets = shuffled(F.targets, SEED ^ (F.idx * 131)).slice(0, s.n);
+    F.want = F.targets.length;
+    if (F.targets.length > NP) F.targets = F.targets.slice(0, NP);
+    F.n = F.targets.length;
+    let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+    for (const p of F.targets) { x0 = Math.min(x0, p.x); y0 = Math.min(y0, p.y); x1 = Math.max(x1, p.x); y1 = Math.max(y1, p.y); }
+    F.tbox = [x0, y0, x1, y1];
+    if (F.line) { F.cx = (F.line.inkL + F.line.inkR) / 2; F.cy = F.line.baseline - F.line.capH / 2; }
+    else if (s.center) { F.cx = s.center[0]; F.cy = s.center[1]; }
+    else { F.cx = (x0 + x1) / 2; F.cy = (y0 + y1) / 2; }
+    F.tx = new Float32Array(NP); F.ty = new Float32Array(NP); F.col = new Uint8Array(NP); F.part = new Int16Array(NP).fill(-1); F.sz = new Float32Array(NP).fill(1);
+    const sph = F.targets.find((p) => p.sphere);
+    if (sph) {
+      F.tz = new Float32Array(NP); F.persp = (sph.sphere.persp || 4) * sph.sphere.r;
+      F.tiltC = Math.cos((sph.sphere.tilt || 0) * DEG); F.tiltS = Math.sin((sph.sphere.tilt || 0) * DEG);
+      const back = sph.sphere.back != null ? sph.sphere.back : 0.3;
+      F.sphereAlpha = (z) => lerp(1, back, clamp01((z / sph.sphere.r + 1) / 2));
+    } else F.sphereAlpha = () => 1;
+    for (let k = 0; k < F.n; k++) F.used[byPrio[k]] = 1;
+    if (s.glint) {                                           // the sweep runs across the targets along `angle`
+      const g = s.glint, a = (g.angle || 0) * DEG, ux = Math.cos(a), uy = Math.sin(a);
+      const ds = F.targets.map((p) => (p.x - F.cx) * ux + (p.y - F.cy) * uy);
+      F.glint = { at: g.at, dur: g.dur || 1, width: g.width || 80 * U, dot: g.dot || 1.5, ux, uy, d0: Math.min(...ds), d1: Math.max(...ds) };
+      activeIn(g.at, g.at + F.glint.dur);
+    }
+  }
+  for (const F of FORMS) {                                   // derived formations: another formation, moved, scaled, exploded
+    if (F.kind !== 'derived') continue;
+    const s = F.spec, src = FORM[s.from];
+    if (!src || src.kind === 'derived') throw new Error(`${F.id}: from must name a field, text or shape formation`);
+    F.src = src; F.used = src.used; F.n = src.n; F.col = src.col; F.part = src.part; F.tx = src.tx; F.ty = src.ty; F.sz = src.sz;
+    F.alpha = s.alpha != null ? s.alpha : src.alpha; F.size = s.dot != null ? s.dot : src.size;
+    F.drift = s.drift != null ? s.drift : src.drift; F.dust = s.dust != null ? s.dust : src.dust;
+    F.cx = s.center ? s.center[0] : src.cx != null ? src.cx : CX; F.cy = s.center ? s.center[1] : src.cy != null ? src.cy : CY;
+    F.scale = s.scale != null ? s.scale : 1; F.rot = (s.rot || 0) * DEG; F.dx = s.dx || 0; F.dy = s.dy || 0;
+    F.ex = new Float32Array(NP); F.ey = new Float32Array(NP);
+    F.sphereAlpha = src.sphereAlpha || (() => 1);
+  }
+  // text that must read: every fill of a text or shape formation against the ground
+  for (const F of FORMS) if (F.kind === 'shape' && F.glyphs.some((g) => g.area)) for (const f of [...new Set(F.glyphs.map((g) => g.fill))]) needContrast(`${F.id} (${f})`, f, 'bg', 3);
+}
+// explode and push: outward from the centre through where each particle sits in the source formation
+// (dust: through its home), with a seeded spread of angles and distances. Needs the source assigned.
+function deriveOffsets(F) {
+  const s = F.spec, src = F.src, ex = s.explode, push = s.push, jit = (s.jitter != null ? s.jitter : 14) * DEG, st = s.stretch || [1, 1];
+  if (src.kind === 'shape' && !src.assigned) throw new Error(`${F.id}: move into ${src.id} before moving into ${F.id}`);
+  if (ex || push) for (let i = 0; i < NP; i++) {
+    const inSrc = src.kind === 'field' || src.used[i], range = inSrc ? ex : push;
+    if (!range) continue;
+    const dx = inSrc && src.kind === 'shape' ? src.cx + src.tx[i] - F.cx : HX[i] - F.cx;
+    const dy = inSrc && src.kind === 'shape' ? src.cy + src.ty[i] - F.cy : HY[i] - F.cy;
+    const a = Math.atan2(dy, dx) + jit * (2 * hash(SEED, i, 41) - 1), u = hash(SEED, i, 42);
+    const dist = lerp(range[0], range[1], u * u);            // most go a short way, a few a long way
+    F.ex[i] = dist * Math.cos(a) * st[0]; F.ey[i] = dist * Math.sin(a) * st[1];
+  }
+  F.derived = true;
+}
+function buildCamera() {
+  CAM = { z: new Prop(1, 'camera.z'), rot: new Prop(0, 'camera.rot'), x: new Prop(0, 'camera.x'), y: new Prop(0, 'camera.y') };
+  const keys = (FILM.camera || []).slice().sort((a, b) => a.at - b.at);
+  for (const k of keys) {
+    const sp = k.spring || 'DOLLY';
+    if (k.z != null) CAM.z.to(k.at, k.z, sp);
+    if (k.rot != null) CAM.rot.to(k.at, k.rot, sp);
+    if (k.x != null) CAM.x.to(k.at, k.x, sp);
+    if (k.y != null) CAM.y.to(k.at, k.y, sp);
+  }
+  const pv = FILM.cameraPivot || [CX, CY];
+  CAM.px = pv[0]; CAM.py = pv[1];
+  GLOWP = new Prop(GLOW ? GLOW.gain : 0, 'glow.gain');
+  if (GLOW) for (const k of (GLOW.keys || []).slice().sort((a, b) => a.at - b.at)) GLOWP.to(k.at, k.gain, k.spring || 'FADE');
+}
+function camAt(t) {
+  const z = CAM.z.at(t), r = CAM.rot.at(t) * DEG;
+  return { z, c: Math.cos(r) * z, s: Math.sin(r) * z, x: CAM.x.at(t), y: CAM.y.at(t) };
+}
+function buildType() {
+  for (const s of FILM.type || []) {
+    const line = layoutText({ id: s.id, text: s.text, font: s.font || 'mono', size: s.size, cap: s.cap, track: s.track, pairs: s.pairs, anchor: s.anchor || 'C', x: s.x, baseline: s.y });
+    const L = { spec: s, id: s.id, line, fill: role(s.fill || 'paper'), box: [line.inkL, line.top, line.inkR, line.bottom], n: line.glyphs.length };
+    needContrast(s.id, s.fill || 'paper', s.on || 'bg', (s.font || 'mono') === 'mono' || line.size < 40 * U ? 4.5 : 3);
+    TYPE.push(L);
+  }
+}
+function typeCount(L, q) {
+  const s = L.spec, n = L.n;
+  let k = s.at == null ? n : q < s.at - 1e-9 ? 0 : typed(q, s.at, n);
+  if (s.erase != null && q >= s.erase - 1e-9) k = Math.max(0, k - typed(q, s.erase, n));
+  return k;
+}
+function drawType(c, q) {                                   // typed small print, one character per frame, block cursor
+  for (const L of TYPE) {
+    const ln = L.line, s = L.spec, k = typeCount(L, q);
+    const typing = s.at != null && q >= s.at - 1e-9 && Math.ceil((q - s.at) * FPS - 1e-6) <= L.n + 2;
+    const erasing = s.erase != null && q >= s.erase - 1e-9 && Math.ceil((q - s.erase) * FPS - 1e-6) <= L.n + 2;
+    const cursor = s.cursor !== false && (typing || erasing);
+    if (!k && !cursor) continue;
+    setFont(c, ln.font);
+    for (let i = 0; i < k; i++) { const g = ln.glyphs[i]; if (!g.space) fillGlyph(c, g.ch, g.x, ln.baseline, L.fill, 1, 0); }
+    if (cursor) {
+      const g = ln.glyphs[Math.min(k, L.n - 1)], cx = k < L.n ? g.x : ln.inkR + ln.trackPx + 2 * U;
+      c.globalAlpha = 1; c.fillStyle = L.fill; c.fillRect(cx, ln.baseline + 0.156 * ln.size - 0.8125 * ln.size, 0.5625 * ln.size, 0.8125 * ln.size);
+    }
+  }
+  c.globalAlpha = 1;
+}
+
+/* ---------------- a frame: every particle at two times, one streak each ---------------- */
+// Particle state is a pure function of t, so the last two evaluations are kept by their exact time:
+// disp() and the frame that follows it share the work, and a hit gives the same numbers as a miss.
+const SLOTS = [];
+function stateAt(t) {
+  const hit = SLOTS.findIndex((x) => x.t === t);
+  if (hit >= 0) { const x = SLOTS.splice(hit, 1)[0]; SLOTS.push(x); return x; }
+  const s = SLOTS.length < 3 ? { t: NaN, x: new Float32Array(NP), y: new Float32Array(NP), a: new Float32Array(NP), r: new Float32Array(NP), c: new Uint8Array(NP) } : SLOTS.shift();
+  const st = { x: 0, y: 0, a: 0, r: 0, c: 0 }, cam = camAt(t);
+  for (let i = 0; i < NP; i++) {
+    particle(i, t, st, true);
+    const dx = st.x - CAM.px, dy = st.y - CAM.py;
+    s.x[i] = CAM.px + cam.c * dx - cam.s * dy + cam.x;
+    s.y[i] = CAM.py + cam.s * dx + cam.c * dy + cam.y;
+    s.a[i] = st.a; s.r[i] = st.r * cam.z; s.c[i] = st.c;
+  }
+  s.t = t;
+  SLOTS.push(s);
+  return s;
+}
+let KEY = null, ORD = null, CNT = null, JUMP = null, GL = null;
+function batches(A, B) {                                     // counting sort by colour, alpha level and width level
+  const nk = CROLE.length * NAL * NWL;
+  if (!CNT || CNT.length !== nk + 1) CNT = new Int32Array(nk + 1);
+  CNT.fill(0);
+  const pad = 40 * U;
+  for (let i = 0; i < NP; i++) {
+    const bx = B.x[i], by = B.y[i];
+    let ax = A.x[i], ay = A.y[i];
+    let len = Math.hypot(bx - ax, by - ay);
+    JUMP[i] = len > STREAK.max ? 1 : 0;
+    if (JUMP[i]) { ax = bx; ay = by; len = 0; }               // a jump, not a move: draw the dot
+    const d = 2 * B.r[i];
+    const vis = len > 0.35 ? Math.max(STREAK.min, Math.pow(d / (d + len), STREAK.gamma)) : 1;
+    const al = Math.round(B.a[i] * vis * NAL);
+    const off = (bx < -pad && ax < -pad) || (by < -pad && ay < -pad) || (bx > W + pad && ax > W + pad) || (by > H + pad && ay > H + pad);
+    if (al <= 0 || off) { KEY[i] = nk; continue; }
+    const wl = Math.min(NWL - 1, Math.max(1, Math.round(d / WSTEP)));
+    KEY[i] = (B.c[i] * NAL + (al > NAL ? NAL : al) - 1) * NWL + wl;
+    CNT[KEY[i]]++;
+  }
+  let acc = 0;
+  const startAt = new Int32Array(nk + 1);
+  for (let k = 0; k <= nk; k++) { startAt[k] = acc; acc += k < nk ? CNT[k] : 0; }
+  const pos = startAt.slice();
+  for (let i = 0; i < NP; i++) if (KEY[i] < nk) ORD[pos[KEY[i]]++] = i;
+  const out = [];
+  for (let k = 0; k < nk; k++) if (CNT[k]) {
+    const wl = k % NWL, al = (Math.floor(k / NWL) % NAL) + 1, ci = Math.floor(k / (NWL * NAL));
+    out.push({ ci, alpha: al / NAL, width: wl * WSTEP, from: startAt[k], to: startAt[k] + CNT[k] });
+  }
+  return out;
+}
+function strokeBatches(c, bs, A, B, widthK) {
+  c.lineCap = 'round';
+  for (const b of bs) {
+    c.strokeStyle = CHEX[b.ci]; c.globalAlpha = b.alpha; c.lineWidth = b.width * widthK;
+    c.beginPath();
+    for (let j = b.from; j < b.to; j++) {
+      const i = ORD[j], bx = B.x[i], by = B.y[i];
+      if (JUMP[i]) { c.moveTo(bx, by); c.lineTo(bx, by); } else { c.moveTo(A.x[i], A.y[i]); c.lineTo(bx, by); }
+    }
+    c.stroke();
+  }
+  c.globalAlpha = 1;
+}
+function paint(c, ta, tb, q) {
+  const B = stateAt(tb), A = ta === tb ? B : stateAt(ta);
+  const bs = batches(A, B);
+  const gain = GLOW ? GLOWP.at(tb) : 0;
+  if (GLOW && gain > 0.002) {                               // bloom: the same batches at quarter size, blurred, added
+    // on opaque black, so the blur measures light; contrast() then clips light under `floor` to zero:
+    // a sparse field adds no haze (a haze of 1 to 3 levels is what bloats a GIF), a formed word glows
+    const [g0, x0, g1, x1] = GL, k = 1 / (1 - 2 * GLOW.floor);
+    x0.setTransform(1, 0, 0, 1, 0, 0); x0.globalCompositeOperation = 'source-over'; x0.globalAlpha = 1; x0.fillStyle = '#000'; x0.fillRect(0, 0, g0.width, g0.height);
+    x0.setTransform(g0.width / W, 0, 0, g0.height / H, 0, 0);
+    strokeBatches(x0, bs, A, B, GLOW.size);
+    x1.setTransform(1, 0, 0, 1, 0, 0); x1.globalCompositeOperation = 'source-over'; x1.fillStyle = '#000'; x1.fillRect(0, 0, g1.width, g1.height);
+    x1.filter = `blur(${(GLOW.radius * g0.width / W).toFixed(3)}px) contrast(${k.toFixed(4)})`; x1.drawImage(g0, 0, 0); x1.filter = 'none';
+    c.save(); c.globalCompositeOperation = 'lighter'; c.globalAlpha = Math.min(1, gain); c.imageSmoothingEnabled = true; c.imageSmoothingQuality = 'low';
+    c.drawImage(g1, 0, 0, W, H);
+    if (gain > 1) { c.globalAlpha = gain - 1; c.drawImage(g1, 0, 0, W, H); }
+    c.restore();
+  }
+  strokeBatches(c, bs, A, B, 1);
+  drawType(c, q);
+}
+function drawFrame(c, t, q) { paint(c, t, t, q); }
+function accumulate(c, times) {                              // motion blur: one pass, a streak per particle across the shutter
+  const tb = wrapT(times[times.length - 1]), ta = wrapT(times[0]);
+  let nq = frameOf(tb); if (nq >= NFR) nq -= NFR;
+  c.setTransform(1, 0, 0, 1, 0, 0); c.globalCompositeOperation = 'source-over'; c.globalAlpha = 1; c.filter = 'none';
+  c.fillStyle = PAL.bg; c.fillRect(0, 0, W, H);
+  paint(c, ta, tb, nq / FPS);
+  c.setTransform(1, 0, 0, 1, 0, 0); c.globalCompositeOperation = 'source-over'; c.globalAlpha = 1; c.filter = 'none';
+}
+function disp(ta, tb) {                                      // the longest streak across the shutter, screen px
+  const A = stateAt(ta), B = stateAt(tb);
+  let m = 0;
+  for (let i = 0; i < NP; i++) { const d = Math.hypot(B.x[i] - A.x[i], B.y[i] - A.y[i]); if (d > m && d <= STREAK.max && B.a[i] > 0.02) m = d; }
+  return m;
+}
+
+/* ---------------- analysis ---------------- */
+function visible(t) {
+  const q = frameOf(t) / FPS;
+  if (TYPE.some((L) => typeCount(L, q) > 0)) return true;
+  const st = { x: 0, y: 0, a: 0, r: 0, c: 0 }, cam = camAt(t);
+  for (let i = 0; i < NP; i += 7) {
+    particle(i, t, st, true);
+    const dx = st.x - CAM.px, dy = st.y - CAM.py, x = CAM.px + cam.c * dx - cam.s * dy + cam.x, y = CAM.py + cam.s * dx + cam.c * dy + cam.y;
+    if (st.a > 0.15 && x > 0 && x < W && y > 0 && y < H) return true;
+  }
+  return false;
+}
+// the moves into each formation: when its last particle lands, and when its first particle leaves
+function stays() {
+  const out = [];
+  MOVES.forEach((M, k) => {
+    const F = M.to, next = MOVES[k + 1];
+    const w98 = within(M.sp, 0.02);
+    let formed = -Infinity, leaves = Infinity, landed = -Infinity;
+    for (let i = 0; i < NP; i++) {
+      if (F.kind !== 'field' && !F.used[i]) continue;
+      formed = Math.max(formed, M.start[i] + w98);
+      landed = Math.max(landed, M.start[i] + M.land);
+      if (next) leaves = Math.min(leaves, next.start[i]);
+    }
+    if (!next) leaves = DUR + (MOVES.length ? MOVES[0].first : 0);
+    out.push({ M, F, formed, landed, leaves });
+  });
+  return out;
+}
+function screenBox(b, t0, t1) {                              // a world box through the camera, over a window
+  let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+  for (let k = 0; k <= 8; k++) {
+    const t = wrapT(lerp(t0, t1, k / 8)), cam = camAt(t);
+    for (const [x, y] of [[b[0], b[1]], [b[2], b[1]], [b[2], b[3]], [b[0], b[3]]]) {
+      const dx = x - CAM.px, dy = y - CAM.py, sx = CAM.px + cam.c * dx - cam.s * dy + cam.x, sy = CAM.py + cam.s * dx + cam.c * dy + cam.y;
+      x0 = Math.min(x0, sx); y0 = Math.min(y0, sy); x1 = Math.max(x1, sx); y1 = Math.max(y1, sy);
+    }
+  }
+  return [x0, y0, x1, y1];
+}
+function checks(add) {
+  add('swarm', 'PASS', `${NP} particles, ${CROLE.length} colour roles (${CROLE.join(', ')}), ${FORMS.length} formations, ${MOVES.length} moves`);
+  if (LOOP === 'cycle') {
+    const back = MOVES.length ? MOVES[MOVES.length - 1].to : FORMS[0];
+    add('loop: the swarm returns', back === FORMS[0] ? 'PASS' : 'FAIL', back === FORMS[0] ? `the last move goes back to ${FORMS[0].id}, the formation frame 0 shows` : `the last move ends in ${back.id}, but frame 0 shows ${FORMS[0].id}: the loop jumps`);
+    // the swarm across the loop point: the same 0.1 ms step there and inside the loop should move it alike
+    const step = (ta, tb) => {
+      const A = { x: 0, y: 0, a: 0, r: 0, c: 0 }, B = { x: 0, y: 0, a: 0, r: 0, c: 0 };
+      let d = 0, da = 0;
+      for (let i = 0; i < NP; i += 2) { particle(i, ta, A, true); particle(i, tb, B, true); d = Math.max(d, Math.hypot(B.x - A.x, B.y - A.y)); da = Math.max(da, Math.abs(B.a - A.a)); }
+      return [d, da];
+    };
+    const e = 1e-4, seam = step(DUR - e, 0), ref = [step(1 / FPS - e, 1 / FPS), step(DUR - 1 / FPS - e, DUR - 1 / FPS), step(DUR / 2 - e, DUR / 2)];
+    const lim = 4 * Math.max(...ref.map((r) => r[0])) + 0.05, limA = 4 * Math.max(...ref.map((r) => r[1])) + 0.01;
+    add('loop: the swarm across the seam', seam[0] > lim || seam[1] > limA ? 'FAIL' : 'PASS', `a 0.1 ms step over the loop point moves a particle up to ${seam[0].toFixed(3)} px and changes its alpha by ${seam[1].toFixed(4)}; the same step inside the loop: ${ref.map((r) => r[0].toFixed(3)).join(', ')} px (limit ${lim.toFixed(3)} px, alpha ${limA.toFixed(4)})`);
+    for (const M of MOVES) if (M.anyCarry) {
+      const moving = [M.from, M.to].filter((F) => (F.spin && F.kind !== 'field') || (F.kind === 'derived' && F.src.spin));
+      add(`loop: ${M.id} over the seam`, moving.length ? 'FAIL' : 'PASS', moving.length ? `${moving.map((F) => F.id).join(', ')} spins, so its position at the loop point is not periodic` : `springs still settling at ${DUR} s carry over into the start (last settles at ${(M.allDone - DUR).toFixed(2)} s of the next pass)`);
+    }
+  }
+  const ST = stays();
+  for (const F of FORMS) {
+    if (F.kind !== 'shape') continue;
+    const s = F.spec;
+    add(`budget: ${F.id}`, F.want > NP ? 'FAIL' : 'PASS', F.want > NP ? `needs ${F.want} particles at spacing ${s.spacing || 4.5}, the swarm has ${NP}: widen the spacing or raise swarm.n` : `${F.n} of ${NP} particles (${(100 * F.n / NP).toFixed(0)} %), spacing ${(s.spacing || 4.5 * U).toFixed(1)} px; ${NP - F.n} stay as dust`);
+    if (F.words != null) add(`words: ${F.id}`, F.words > 4 ? 'FAIL' : 'PASS', `${F.words} words of display type (at most 4 a beat)`);
+    if (F.line && F.spec.y % UNIT) add(`grid: ${F.id}`, 'WARN', `baseline ${F.spec.y} is not on the ${UNIT} px grid`);
+    const w = ST.filter((x) => x.F === F);
+    // live area: the targets, their radius and drift, through the camera while formed
+    const pad = R0 * F.size * Math.max(1, ...F.glyphs.map((g) => g.sz || 1)) * 1.2 * (F.glint ? F.glint.dot : 1) + F.drift, b = [F.tbox[0] - pad, F.tbox[1] - pad, F.tbox[2] + pad, F.tbox[3] + pad];
+    let sb = b;
+    if (F.spin) { const R = Math.max(...F.targets.map((p) => Math.hypot(p.x - F.cx, p.y - F.cy))) + pad; sb = [F.cx - R, F.cy - R, F.cx + R, F.cy + R]; }
+    for (const x of w) sb = screenBox(sb, x.landed, Math.min(x.leaves, x.landed + DUR));
+    if (s.bleed) add(`live area: ${F.id}`, 'PASS', 'bleed: exempt');
+    else checkLiveArea(add, F.id, sb);
+    // legibility, read at feed size: a word needs particles across every stroke (density per cap height
+    // squared of ink), and the light it averages to, bloom included, must still clear 3:1 on bg
+    if (F.glyphs.length) {
+      const capH = F.capH, spc = s.spacing || 4.5 * U, rows = [];
+      const gain = GLOW && w.length ? Math.min(...w.map((x) => GLOWP.at(Math.min(x.leaves, x.formed + 0.5)))) : 0;
+      for (const g of F.glyphs) {
+        if (!g.area) continue;
+        const r = R0 * F.size * g.sz, cover = clamp01((1 - Math.exp(-g.n * Math.PI * r * r * F.alpha / g.area)) * (1 + gain));
+        rows.push({ g, dens: capH ? g.n * capH * capH / g.area : 0, cover, cr: contrast(mix(PAL.bg, col(g.fill), cover), PAL.bg) });
+      }
+      const low = rows.reduce((m, x) => (x.cr < m.cr ? x : m), rows[0]);
+      if (!rows.length) add(`legibility: ${F.id}`, 'PASS', 'points, not ink (grid, sphere, cloud): nothing to fill');
+      else if (F.line) {
+        const thin = rows.reduce((m, x) => (x.dens < m.dens ? x : m), rows[0]), across = Math.sqrt(thin.dens);
+        const st = across < 12 || low.cr < 3 ? 'FAIL' : across < 16 ? 'WARN' : 'PASS';
+        add(`legibility: ${F.id}`, st, `cap ${capH.toFixed(0)} px; sparsest glyph "${thin.g.ch}": ${thin.g.n} particles, ${Math.round(thin.dens)} per cap² of ink, ${across.toFixed(1)} across the cap height (needs 12, 16 to pass cleanly); dimmest "${low.g.ch}" averages to ${low.cr.toFixed(2)}:1 on bg at feed size (${(100 * low.cover).toFixed(0)} % lit with bloom ${gain.toFixed(2)}; needs 3:1)`);
+      } else add(`legibility: ${F.id}`, low.cr < 3 ? 'FAIL' : 'PASS', `dimmest part, ${low.g.ch}: ${low.g.n} particles, averages to ${low.cr.toFixed(2)}:1 on bg at feed size (${(100 * low.cover).toFixed(0)} % lit with bloom ${gain.toFixed(2)}; needs 3:1)`);
+      add(`crisp: ${F.id}`, F.drift > spc / 2 ? 'WARN' : 'PASS', `drift ${F.drift} px while formed, spacing ${spc} px${F.drift > spc / 2 ? ': edges soften; keep drift under half the spacing' : ''}`);
+    }
+    // time to read it: fully formed (every particle within 2 % of its move) until the first one leaves
+    for (const x of w) {
+      const hold = x.leaves - x.formed;
+      add(`formed: ${F.id}`, hold < 0.5 ? 'FAIL' : hold < 1 ? 'WARN' : 'PASS', `${hold.toFixed(2)} s fully formed (${x.formed.toFixed(2)} to ${x.leaves.toFixed(2)} s)${hold < 1 ? ': give it a second; start the gather sooner or the next move later' : ''}`);
+    }
+    // dust behind a word: the light the dust spreads over any area, next to the light the word puts in its box
+    if (F.line) {
+      const fb = FIELD.box, fa = (fb[2] - fb[0]) * (fb[3] - fb[1]), bx = F.tbox, boxA = (bx[2] - bx[0]) * (bx[3] - bx[1]);
+      let dust = 0, word = 0;
+      for (let i = 0; i < NP; i++) { const rr = lookR(F, i, -1), l = Math.PI * rr * rr * (F.used[i] ? F.alpha : dustMean(i) * F.dust); if (F.used[i]) word += l; else dust += l; }
+      const ratio = (dust / fa) / (word / boxA);
+      add(`clutter: ${F.id}`, ratio > 0.25 ? 'WARN' : 'PASS', `the dust lights ${(100 * dust / fa).toFixed(2)} % of the frame, the word ${(100 * word / boxA).toFixed(1)} % of its box: the dust is ${(100 * ratio).toFixed(1)} % of the word (keep it under 25 %; dust: 0.2 to 0.5 dims it)`);
+    }
+  }
+  for (const L of TYPE) {
+    checkLiveArea(add, L.id, L.box);
+    if (L.spec.y % UNIT) add(`grid: ${L.id}`, 'WARN', `baseline ${L.spec.y} is not on the ${UNIT} px grid`);
+    if (L.line.size < 24 * U) add(`small print: ${L.id}`, 'WARN', `${L.line.size} px is hard to read in a feed (24 px or more at 1080)`);
+    if (LOOP === 'cycle' && L.spec.at != null && L.spec.at > 0 && L.spec.erase == null) add(`typed: ${L.id}`, 'FAIL', 'typed in but never erased: in a cycle loop it jumps from full to empty at the seam; add erase, or show it from frame 0 (no at)');
+    if (L.spec.erase != null && L.spec.erase + (L.n + 3) / FPS > DUR) add(`typed: ${L.id}`, 'FAIL', 'still erasing at the loop point');
+  }
+  if (LOOP === 'hold') {
+    const still = [];
+    if (FIELD.waves.some((w) => w.amp) || FIELD.drift || FIELD.tw) still.push('the field moves (waves, drift or twinkle): dust never holds still; set them to 0, or make the film a cycle loop');
+    const endF = MOVES.length ? MOVES[MOVES.length - 1].to : FORMS[0];
+    if (endF.drift) still.push(`${endF.id} drifts ${endF.drift} px`);
+    if (endF.spin) still.push(`${endF.id} spins`);
+    add('hold: the last formation is still', still.length ? 'FAIL' : 'PASS', still.join('; ') || `${endF.id} holds still`);
+  }
+}
+function cycles() {
+  const out = [];
+  for (const w of FIELD.waves) if (w.amp) out.push({ what: `field wave (${w.n} per loop)`, period: DUR / w.n });
+  if (FIELD.tw) for (const n of [...new Set(FIELD.twN)].sort()) out.push({ what: `twinkle (${n} per loop)`, period: DUR / n });
+  if (FIELD.drift || FORMS.some((F) => F.drift)) { const n = FIELD.driftN; out.push({ what: 'drift noise', period: DUR / n }, { what: 'drift noise, 2nd harmonic', period: DUR / (2 * n + 1) }, { what: 'drift noise, 3rd harmonic', period: DUR / (4 * n + 3) }); }
+  return out;
+}
+function lastChange(see) {
+  for (const M of MOVES) see(M.allDone, `the move ${M.id} settles`);
+  for (const L of TYPE) {
+    if (L.spec.at != null) see(L.spec.at + (L.n + 3) / FPS, `${L.id} finishes typing`);
+    if (L.spec.erase != null) see(L.spec.erase + (L.n + 3) / FPS, `${L.id} finishes erasing`);
+  }
+}
+function stills(push) {
+  for (const x of stays()) {
+    const M = x.M, mid = M.at + (M.spec.spread || 0) * 0.5 + M.land * 0.6;
+    push(mid * FPS, `${x.F.id}-in`, `moving into ${x.F.id}`);
+    if (x.F.kind === 'shape') push(Math.min(x.leaves - 2 / FPS, Math.max(x.formed, x.landed + 0.3)) * FPS, `${x.F.id}-formed`, `${x.F.id} formed`);
+  }
+}
+function layout() {
+  const r1 = (v) => Math.round(v * 10) / 10;
+  return {
+    swarm: { n: NP, size: R0, colours: CROLE, glow: GLOW ? { gain: GLOW.gain, radius: GLOW.radius } : false },
+    formations: FORMS.map((F) => ({ id: F.id, kind: F.kind, particles: F.n,
+      ...(F.kind === 'shape' ? { spacing: F.spec.spacing || 4.5 * U, centre: [r1(F.cx), r1(F.cy)], box: F.tbox.map(r1),
+        parts: F.glyphs.map((g) => ({ what: g.ch, particles: g.n, inkArea: Math.round(g.area), fill: g.fill })),
+        ...(F.line ? { text: F.spec.text, size: r1(F.line.size), capH: r1(F.line.capH), capTop: r1(F.line.capTop), baseline: F.line.baseline, trackEm: r1(F.line.trackEm) } : {}) } : {}),
+      ...(F.kind === 'derived' ? { from: F.src.id } : {}) })),
+    moves: stays().map((x) => ({ into: x.F.id, at: x.M.at, spring: x.M.spec.spring || 'GATHER', lastStart: r1(Math.max(...x.M.start) * 100) / 100, landed: Math.round(x.landed * 1000) / 1000, formed: Math.round(x.formed * 1000) / 1000, leaves: Math.round(x.leaves * 1000) / 1000 })),
+    type: TYPE.map((L) => ({ id: L.id, size: r1(L.line.size), capH: r1(L.line.capH), baseline: L.line.baseline, box: L.box.map(r1) })),
+  };
+}
+
+function build() {
+  HX = new Float32Array(NP); HY = new Float32Array(NP); DEP = new Float32Array(NP); GRAIN = new Float32Array(NP); FCOL = new Uint8Array(NP); NPH = new Float64Array(6 * NP);
+  KEY = new Int32Array(NP); ORD = new Int32Array(NP); JUMP = new Uint8Array(NP);
+  role('bg');
+  buildFormations();
+  buildMoves();
+  buildCamera();
+  buildType();
+  if (GLOW) { const gw = Math.ceil(W / 4), gh = Math.ceil(H / 4), [g0, x0] = mk2d(gw, gh), [g1, x1] = mk2d(gw, gh); GL = [g0, x0, g1, x1]; }
+  // something moves on every frame when the field does; otherwise only inside the moves
+  ENG.always = FIELD.waves.some((w) => w.amp) || FIELD.drift > 0 || FIELD.tw > 0 || FORMS.some((F) => F.drift > 0 || F.spin);
+  if (!ENG.always) for (const M of MOVES) activeIn(M.first, M.allDone);
+  for (const x of stays()) {
+    const a = x.M.spec.accent;
+    if (a === 'land') accentAt(x.landed, x.F.id); else if (typeof a === 'number') accentAt(a, x.F.id);
+  }
+}
+
+Object.assign(ENG, {
+  springs: { GATHER: [0.78, 7.2], BURST: [1, 16], REFORM: [0.62, 10], DISSOLVE: [1, 4.5], QUICK: [1, 24], DOLLY: [1, 3] },
+  build, draw: (c, t, q) => drawFrame(c, t, q), accumulate, disp, checks, cycles, lastChange, stills, layout, visible,
+  gif: { fps: 12, colors: 16, dither: 'none' },
+});
+boot(ENG);
+})();
+</script>
+</body>
+</html>
