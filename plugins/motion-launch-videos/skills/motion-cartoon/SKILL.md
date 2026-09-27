@@ -1,6 +1,6 @@
 ---
 name: motion-cartoon
-description: Make a looping cartoon of an original mascot or character, 6 to 20 seconds, from a short brief. A bean-shaped rig with a face, rubber-hose arms, legs and an antenna hops, blinks, waves, reacts, talks in a speech bubble and pulls out a sign with the product's name, drawn in outlined flat colour with cel shading, on twos with a boiling hand-drawn line, squash and stretch, anticipation, follow-through, dust puffs and a sunburst stage. Claude writes the film as one self-contained HTML canvas file driven by a pure seek(t), checks it with an automated critique, and renders it to MP4, GIF and poster with a verified seamless loop. Use it for a mascot intro, a brand character saying hi, a cartoon reaction loop or sticker, a playful launch teaser or a social loop with a character. Not for existing or trademarked characters, real people, lip-sync to audio, flat shape animation (motion-shapes), kinetic type (motion-launch-videos), 3D (motion-3d) or pixel art (motion-pixel).
+description: Make a looping cartoon of an original mascot or character, 6 to 20 seconds, from a short brief. A bean-shaped rig with a face, rubber-hose arms, legs and an antenna walks, hops, blinks, waves, reacts, talks in a speech bubble and pulls out a sign with the product's name, drawn in outlined flat colour with cel shading, on twos with a boiling hand-drawn line, squash and stretch, anticipation, follow-through, dust puffs and a sunburst stage. Claude writes the film as one self-contained HTML canvas file driven by a pure seek(t), checks it with an automated critique, and renders it to MP4, GIF and poster with a verified seamless loop. Use it for a mascot intro, a brand character saying hi, a cartoon reaction loop or sticker, a playful launch teaser or a social loop with a character. Not for existing or trademarked characters, real people, lip-sync to audio, flat shape animation (motion-shapes), kinetic type (motion-launch-videos), 3D (motion-3d) or pixel art (motion-pixel).
 ---
 
 # Motion cartoon
@@ -57,7 +57,7 @@ A film lives in the user's project at `videos/<film>/` (`BRIEF.md`, `DESIGN.md`,
 
 ## Known pitfalls
 
-- An act that moves a value must bring it back before the loop ends, or `loop closes` fails. A spring still settling at the end carries over the seam; a hop's arc does not, so land every hop before the end.
+- An act that moves a value must bring it back before the loop ends, or `loop closes` fails: a character that walks 300 px right walks 300 px back. A spring still settling at the end carries over the seam; a hop's arc and a walk's stride do not, so finish them before the end.
 - The face at the end must be the face at the start (`start` and the last `face` act), or it snaps at the loop point.
 - A hop taller than about 220 px lifts the antenna out of a 1080 frame; the critique warns when the head leaves it.
 - BOUNCY settles 3.1 s after it starts: fine in a cycle loop, where it carries over the seam, but it keeps the character wobbling if you meant it to hold still.

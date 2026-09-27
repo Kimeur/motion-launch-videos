@@ -41,11 +41,12 @@ Every height is px above the character's feet; x is px from its centre line.
 
 ## Acts
 
-Each act is `{ at, act, ... }`. They may be listed in any order; the engine sorts them and gives every value its springs in time order. A value an act moves must be moved back by a later act (a cycle loop), except the one-shot acts that return by themselves (blink, hop, wave, emote, say, sign).
+Each act is `{ at, act, ... }`. They may be listed in any order; the engine sorts them and gives every value its springs in time order. A value an act moves must be moved back by a later act (a cycle loop), except the one-shot acts that return by themselves (blink, hop without `dx`, wave, emote, say, sign). A walk or a hop with `dx` moves the character: walk it back.
 
 | Act | Fields | What happens |
 |---|---|---|
 | `hop` | `h` px, `air` s, `dx` px, `antic` s, `dust`, `shake` | squash `antic` before `at` (default 0.16 s), stretch at take-off, a ballistic arc `h` high for `air` seconds, arms flung up, an impact squash, a bouncy settle, dust puffs and (for a big hop) a camera shake on landing. `dx` moves it sideways |
+| `walk` | `dx` px, `steps`, `every`, `bob`, `lean` | `steps` steps, one per `every` (a note value: 8 is an eighth), `dx` px in all: each step surges forward, dips `bob` px (default 7) and squashes on contact while the stepping foot swings forward and lifts, the planted one slides back, and the arms swing against the legs; the body leans into the walk. A walk the other way brings it back |
 | `blink` | `dur` | the eyes close and open (default 0.14 s) |
 | `look` | `x`, `y` | pupils turn to a direction, -1 to 1 |
 | `face` | `mouth`, `eyes`, `brow`, `open`, `pop` | switch the mouth (`smile`, `grin`, `open`, `o`, `flat`, `frown`) or the eyes (`round`, `happy`), raise the brows (px), open the mouth (0 to 1), or pop the body (a quick stretch, 1.05 to 1.1) |
