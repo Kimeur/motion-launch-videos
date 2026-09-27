@@ -1,6 +1,6 @@
 ---
 name: motion-launch-videos
-description: Make a kinetic-typography launch bumper or brand identity sting, a 6 to 20 second looping video of big animated type, from a short brief (product, message beats, palette, format, duration). Claude writes the film as one self-contained HTML canvas file driven by a pure seek(t), then renders it to MP4 with real subframe motion blur, a verified seamless loop, a preview GIF and a poster. Use it for a launch video, product bumper, promo loop, animated type teaser, logo or identity sting, or a social video announcing a product, made in code rather than edited footage. Not for screen recordings, narrated explainers, talking heads or long product demos.
+description: Make a kinetic-typography launch bumper or brand identity sting, a 6 to 20 second looping video of big animated type, from a short brief (product, message beats, palette, format, duration). Claude writes the film as one self-contained HTML canvas file driven by a pure seek(t), then renders it to MP4 with real subframe motion blur, a verified seamless loop, a preview GIF and a poster. Use it for a launch video, product bumper, promo loop, animated type teaser, logo or identity sting, or a social video announcing a product, made in code rather than edited footage. Not for screen recordings, narrated explainers, talking heads or long product demos. For shape animation, cartoons, 3D, data charts, pixel art, particles or app UI demos, use the sibling motion-* skills.
 ---
 
 # Motion launch videos
