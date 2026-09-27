@@ -29,6 +29,13 @@ The floor is a shadow catcher: drawn in the background colour and darkened only 
 - **Move slowly and continuously.** A sway of 8 to 12 degrees once per loop and a dolly of 5 to 10 % on DOLLY make the scene breathe. Fast camera moves read as a mistake unless they are the point.
 - **Frame for the whole loop.** Check stills across the loop: orbiting things leave the frame at the sides (fine), the hero never does.
 
+## Formats
+
+The field of view is vertical, so a format change keeps the height of the view and changes its width.
+
+- **9:16 (1080 x 1920).** The frame is narrow: move the camera back (about 1.8 times the 1:1 distance) or make the type smaller, and move the flat labels to y 1400 to 1560. The critique fails 3D type that leaves the live area at any sampled moment, which is how a too-close camera shows up.
+- **16:9 (1920 x 1080).** The frame is wide: bring the camera closer or add supporting objects to the sides; place labels under the hero as at 1:1.
+
 ## Motion with weight
 
 - **Letters one at a time.** A stagger of a 16th across the glyphs turns a move into a wave: a flip (`rx: -360` on FLIP), a hop (`dy` up on HOP, down on LAND), a turn (`ry: 360`).

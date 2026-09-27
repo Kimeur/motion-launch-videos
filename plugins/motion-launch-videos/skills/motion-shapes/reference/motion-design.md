@@ -25,6 +25,14 @@ Each beat has one idea and one picture that says it without words: a checkbox th
 - **A wipe's colour becomes the next background.** A circle wipe in sun yellow opens onto a sun yellow scene: the transition and the scene are one move.
 - **Contrast.** Display type at least 3:1, small print at least 4.5:1, against whatever it sits on (`on`).
 
+## Formats
+
+Positions are canvas pixels, so a layout is made for one format. The template is 1:1 (1080 x 1080).
+
+- **9:16 (1080 x 1920, stories and reels).** The live area is 104 to 976 across and 104 to 1816 down, but platform buttons and captions cover about 250 px at the top and the bottom: keep type between y 360 and 1560. Centre the composition near y 900, stack the picture above the words with more air than at 1:1, and let background shapes use the full height.
+- **16:9 (1920 x 1080).** Put the picture and the words side by side (picture left of centre, words right, or the reverse) instead of stacking them; the live area is 104 to 1816 across.
+- Change `W` and `H`, move every layer, then read the stills: the critique catches type outside the live area, not a composition that sits too high.
+
 ## Timing on the beat grid
 
 - **Every time is `beat(n)` or `bar(n)`.** At 120 BPM: beat 0.5 s, 16th 0.125 s, bar 2 s. Entrances start on 16ths.
