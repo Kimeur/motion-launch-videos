@@ -1,0 +1,2093 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Acme Trips app preview</title>
+<style>
+@font-face{font-family:"Inter";font-style:normal;font-weight:600;font-display:block;src:url(data:font/woff2;base64,__FONT:inter-latin-600-normal.woff2__) format("woff2")}
+@font-face{font-family:"Inter Tight";font-style:normal;font-weight:800;font-display:block;src:url(data:font/woff2;base64,__FONT:inter-tight-latin-800-normal.woff2__) format("woff2")}
+@font-face{font-family:"IBM Plex Mono";font-style:normal;font-weight:500;font-display:block;src:url(data:font/woff2;base64,__FONT:ibm-plex-mono-latin-500-normal.woff2__) format("woff2")}
+*,*::before,*::after{transition:none!important;animation:none!important}
+html,body{margin:0;height:100%;background:#EEF1F6}
+body{display:grid;place-items:center;overflow:hidden}
+canvas{display:block;max-width:100vw;max-height:100vh;width:auto;height:auto}
+</style>
+</head>
+<body>
+<canvas id="c" width="1080" height="1080"></canvas>
+<script>
+(() => {
+'use strict';
+
+/* ==========================================================================
+ * FILM: the part you edit. Everything below CORE BEGIN stays as it is.
+ *
+ * Times are seconds; beat(n) and bar(n) put them on the tempo grid.
+ * The device sits on the canvas at (x, y), its centre, in canvas pixels.
+ * Screen content is in the screen's own units (the screenshot's points):
+ * a box's x, y is its top-left inside its parent, a text's x is its anchor
+ * and y its baseline. The device's scale maps screen units to pixels.
+ * Colours are palette role names.
+ * The script is the demo, in time order: the pointer moves and taps, the
+ * screens scroll, push and expand, buttons change state, toasts and sheets
+ * open, the camera focuses. Callouts sit beside the device, in canvas
+ * pixels, with a leader line to the element they name.
+ * A 'hold' loop ends on a still copy of frame 0: the lockup is on screen at
+ * rest at t = 0, leaves at wrap.exit, and is rebuilt at the end.
+ * Helpers you add here must not reuse a core or engine name.
+ * ========================================================================== */
+const BPM = 120;
+const beat = (n) => n * 60 / BPM;            // quarter notes
+const bar = (n) => beat(4 * n);              // 4/4 bars
+
+// One picture per trip, drawn in the 360 x 288 units of the top of a trip screen. The list card
+// shows the same picture at 8/9 (320 x 256), so the Lisbon card can expand into its screen with no jump.
+const tripArt = (name, sky, sunX, hills) => [
+  { type: 'rect', x: 0, y: 0, w: 360, h: 288, fill: sky },
+  { type: 'rect', x: sunX, y: 44, w: 72, h: 72, radius: 'pill', fill: 'sun' },
+  ...hills,
+  { type: 'rect', x: 0, y: 208, w: 360, h: 80, fill: 'deep' },
+  { type: 'text', text: name, font: 'display', size: 36, x: 24, y: 262, color: 'paper' },
+];
+const roofs = (xs, base) => xs.flatMap(([x, w, h]) => [
+  { type: 'rect', x, y: base - h, w, h, fill: 'paper' },
+  { type: 'path', d: `M${x - 4} ${base - h}L${x + w / 2} ${base - h - w * 0.55}L${x + w + 4} ${base - h}Z`, fill: 'roof' },
+]);
+const LISBON_ART = tripArt('Lisbon', 'sky', 246, [
+  { type: 'path', d: 'M0 176C70 132 150 124 220 150C270 168 316 150 360 134V208H0Z', fill: 'haze' },
+  ...roofs([[30, 34, 30], [76, 28, 44], [116, 38, 26], [170, 30, 40], [214, 36, 30], [262, 28, 22], [302, 34, 34]], 208),
+]);
+const KYOTO_ART = tripArt('Kyoto', 'sand', 54, [
+  { type: 'path', d: 'M-10 208L96 106L180 176L244 124L370 208Z', fill: 'roof' },
+  { type: 'path', d: 'M120 208L210 150L300 208Z', fill: 'deep' },
+]);
+const OSLO_ART = tripArt('Oslo', 'sky', 226, [
+  { type: 'path', d: 'M0 150L64 112L128 160L196 118L262 156L360 104V208H0Z', fill: 'deep' },
+  { type: 'rect', x: 0, y: 176, w: 360, h: 32, fill: 'haze' },
+  { type: 'path', d: 'M150 172L150 128L178 168Z', fill: 'paper' },
+]);
+const tripCard = (id, y, art) => ({ id, type: 'card', x: 20, y, w: 320, h: 256, radius: 24,
+  children: [{ type: 'group', w: 360, h: 288, scale: 8 / 9, origin: [0, 0], children: art }] });
+
+const FILM = {
+  title: 'Acme Trips app preview',
+  alt: 'A phone rises in, showing the Acme Trips list of trips. A finger scrolls it: Plan it. It taps the Lisbon card, which grows into the Lisbon trip: See it. It taps Save; the button turns to Saved and a toast drops in: Save it. Acme Trips, example.com. Demo copy, fictional product.',
+  W: 1080, H: 1080, FPS: 60, DUR: bar(6), BPM,
+  loop: 'hold',
+  palette: {
+    bg: '#EEF1F6', ink: '#0E1116', paper: '#FFFFFF', line: '#DCE1E8', muted: '#5A6272',
+    brand: '#2356F0', tint: '#E2EAFE', sky: '#BCD7FF', haze: '#8DB3EE', deep: '#15326B',
+    sun: '#FFC247', roof: '#E1623A', sand: '#F6E4C4', shade: '#C3CCD8', edge: '#39404C',
+  },
+  fonts: {
+    ui: { family: 'Inter', weight: 600 },
+    display: { family: 'Inter Tight', weight: 800 },
+    mono: { family: 'IBM Plex Mono', weight: 500 },
+  },
+  grid: { margin: 104, unit: 8 },
+  poster: 4.25,
+
+  // The phone. Its screen is 360 x 760 units at scale 1, so a unit is a pixel at rest.
+  device: {
+    kind: 'phone', x: 392, y: 540, screen: [360, 760], scale: 1, radius: 46, bezel: 12,
+    body: 'ink', edge: 'edge', shadow: { color: 'shade', blur: 40, dy: 30, op: 1 },
+    enter: { at: beat(0.25), from: { dy: 1160 }, spring: 'LIFT' },
+    exit: { at: beat(17.5), to: { dy: 1160 }, spring: 'DROP' },
+  },
+
+  screens: [
+    { id: 'trips', bg: 'paper', status: 'ink',
+      layers: [
+        { id: 'TRIPS', type: 'text', text: 'Trips', font: 'display', size: 40, x: 24, y: 112, color: 'ink' },
+        { id: 'ME', type: 'avatar', initials: 'AK', size: 56, x: 280, y: 68, fill: 'tint', color: 'brand' },
+        tripCard('KYOTO', 140, KYOTO_ART),
+        tripCard('LISBON', 416, LISBON_ART),
+        tripCard('OSLO', 692, OSLO_ART),
+        { type: 'rect', fixed: true, x: 0, y: 0, w: 360, h: 50, fill: 'paper' },
+      ] },
+    { id: 'lisbon', bg: 'paper', status: 'ink',
+      layers: [
+        { id: 'HERO', type: 'image', x: 0, y: 0, w: 360, h: 288, children: LISBON_ART },
+        { id: 'BACK', type: 'button', x: 16, y: 54, w: 48, h: 48, fill: 'paper', icon: 'back', iconSize: 26, color: 'ink' },
+        { type: 'icon', name: 'calendar', size: 26, x: 24, y: 314, color: 'brand' },
+        { type: 'bars', x: 60, y: 322, w: 96, h: 10, color: 'line' },
+        { type: 'icon', name: 'pin', size: 26, x: 184, y: 314, color: 'brand' },
+        { type: 'bars', x: 220, y: 322, w: 84, h: 10, color: 'line' },
+        { type: 'bars', x: 24, y: 376, w: 312, h: 12, n: 3, gap: 28, last: 0.62, color: 'line' },
+        { type: 'rect', x: 24, y: 480, w: 64, h: 64, radius: 16, fill: 'sand' },
+        { type: 'bars', x: 104, y: 494, w: 170, h: 12, n: 2, gap: 24, last: 0.6, color: 'line' },
+        { type: 'rect', x: 24, y: 564, w: 64, h: 64, radius: 16, fill: 'sky' },
+        { type: 'bars', x: 104, y: 578, w: 150, h: 12, n: 2, gap: 24, last: 0.7, color: 'line' },
+        { id: 'SAVE', type: 'button', x: 24, y: 660, w: 312, h: 64, fill: 'brand', color: 'paper', label: 'Save', icon: 'bookmark', size: 26,
+          states: { saved: { fill: 'tint', color: 'brand', label: 'Saved', icon: 'check' } } },
+        { id: 'TOAST', type: 'toast', w: 196, h: 60, y: 60, fill: 'ink', color: 'paper', text: 'Saved', icon: 'check', iconColor: 'sun',
+          shadow: { color: 'ink', blur: 18, dy: 8, op: 0.18 } },
+      ] },
+  ],
+
+  pointer: { kind: 'finger', size: 60, fill: 'paper', ring: 'ink' },
+
+  script: [
+    { at: beat(1), pointer: 'in', to: [214, 628], from: [420, 980] },
+    { at: beat(2), scroll: 184 },
+    { at: beat(4.5), move: 'LISBON', point: [0.55, 0.42] },
+    { at: beat(5.25), tap: 'LISBON' },
+    { at: beat(5.75), expand: 'lisbon', from: 'LISBON' },
+    { at: beat(6.25), pointer: 'out' },
+    { at: beat(9.5), pointer: 'in', to: 'SAVE', point: [0.6, 0.5] },
+    { at: beat(10.25), focus: 'SAVE', z: 1.36, place: [0.5, 0.72] },
+    { at: beat(11.5), tap: 'SAVE' },
+    { at: beat(11.75), state: 'SAVE', to: 'saved' },
+    { at: beat(12.25), pointer: 'out' },
+    { at: beat(13.25), focus: false },
+    { at: beat(13.5), open: 'TOAST' },
+    { at: beat(17), close: 'TOAST' },
+  ],
+
+  // At most 4 words each, beside the device, with a leader to the element they name.
+  callouts: [
+    { id: 'PLAN', text: 'PLAN IT.', x: 656, y: 528, cap: 52, space: 80, pairs: { 'T.': -30 }, color: 'ink', to: 'LISBON', point: [0.9, 0.42], in: beat(3), out: beat(5.5) },
+    { id: 'SEE', text: 'SEE IT.', x: 656, y: 424, cap: 52, space: 80, pairs: { 'T.': -30 }, color: 'ink', to: 'HERO', point: [0.9, 0.82], in: beat(7), out: beat(9.5) },
+    { id: 'KEEP', text: 'SAVE IT.', x: 656, y: 280, cap: 52, space: 80, pairs: { 'T.': -30 }, color: 'ink', to: 'TOAST', point: [0.88, 0.5], in: beat(14.25), out: beat(17) },
+  ],
+
+  // Frame 0: the icon, the name and the domain at rest. They leave at 0 as the phone rises, and come back at the end.
+  lockup: {
+    wrap: { exit: 0, to: { op: 0, dy: -56 }, spring: 'EXIT', stagger: 32 },
+    layers: [
+      { id: 'ICON', type: 'rect', x: 448, y: 348, w: 184, h: 184, radius: 44, fill: 'brand',
+        enter: { at: beat(17.75), from: { scale: 0 }, spring: 'POP' },
+        children: [
+          { type: 'path', d: 'M26 88L154 34L80 106Z', fill: 'paper' },
+          { type: 'path', d: 'M80 106L154 34L104 154Z', fill: 'tint' },
+          { type: 'path', d: 'M80 106L75 136L96 121Z', fill: 'haze' },
+        ] },
+      { id: 'NAME', type: 'text', text: 'ACME TRIPS', font: 'display', cap: 72, track: -10, anchor: 'C', x: 540, y: 656, color: 'ink',
+        enter: { at: beat(18.25), from: { dy: 48, op: 0, blur: 10 }, spring: 'LAND', stagger: 32 } },
+      { id: 'URL', type: 'text', text: 'EXAMPLE.COM', font: 'mono', size: 34, track: 60, anchor: 'C', x: 540, y: 736, color: 'brand',
+        enter: { at: beat(19), typed: true } },
+      { id: 'DEMO', type: 'text', text: 'DEMO COPY, FICTIONAL PRODUCT', font: 'mono', size: 24, track: 20, anchor: 'C', x: 540, y: 880, color: 'muted',
+        enter: { at: beat(19.5), typed: true } },
+    ],
+  },
+};
+
+/* ===== CORE BEGIN: shared/core.js, synced by tools/sync.mjs. Do not edit it here. ===== */
+/* ==========================================================================
+ * CORE: the deterministic runtime every motion-* engine shares.
+ * Source: shared/core.js in the motion-launch-videos repo, copied into each
+ * template by tools/sync.mjs. Do not edit it inside a film.
+ *
+ * seek(t) is a pure function of (t mod DUR): same t, same pixels, whatever was
+ * drawn before. No timers, no Date, no Math.random, no state between calls.
+ *   - Springs are closed-form step responses, one per target change, snapped
+ *     to exactly 1 once settled. A Prop is a base value plus its springs.
+ *     Springs still settling when the loop ends carry over the seam.
+ *   - Periodic motion runs a whole number of cycles per loop (cyc, wave,
+ *     loopNoise), so it is exact at the seam by construction.
+ *   - Randomness is seeded (mulberry32, hash).
+ *   - Continuous motion reads the exact t; discrete state (typing, drawings
+ *     held on twos, sprite frames, line boil) reads the quantised q, so every
+ *     subframe of one output frame agrees on it.
+ *   - Motion blur averages 1 to 64 subframes on a trailing 270-degree
+ *     shutter, one per 5 px of movement, never across a hard cut.
+ * The engine below describes its vertical through hooks (build, draw, disp,
+ * checks, stills, layout, visible, lastChange) and calls boot(ENGINE) last.
+ * The core keeps its internals to itself and exports the helpers listed at
+ * its end, so an engine can name its own functions freely.
+ * ========================================================================== */
+const CORE = (() => {
+const { W, H, FPS, DUR } = FILM;
+const NFR = Math.round(DUR * FPS);                 // output frames in the loop
+const CX = W / 2, CY = H / 2;
+const U = Math.min(W, H) / 1080;                   // scale for built-in pixel constants
+const PAL = FILM.palette;
+const USED = new Set();                            // palette roles the film draws with
+const col = (k) => PAL[k] || k;                    // look a role up (while drawing)
+const role = (k) => { USED.add(k); return PAL[k] || k; };   // resolve and register a role (at build time)
+const GRID = FILM.grid || {};
+const MARGIN = GRID.margin != null ? GRID.margin : Math.round(104 * U);
+const UNIT = GRID.unit || 8;
+const MEASURE = W - 2 * MARGIN;
+const LOOP = FILM.loop || 'hold';                  // 'hold': ends on a still copy of frame 0; 'cycle': periodic, continuous over the seam; 'none'
+const BLUR = FILM.blur !== false;                  // false: one sample per frame (cartoon, pixel art)
+const SHUTTER = 0.75;                              // 270 degrees, trailing
+const MIN_SAMPLES = 4, MAX_SAMPLES = 64, PX_PER_SAMPLE = 5;   // Uint16 sums hold up to 257 x 255
+const TAU = Math.PI * 2;
+
+const canvas = document.getElementById('c');
+canvas.width = W; canvas.height = H;
+canvas.setAttribute('role', 'img');
+canvas.setAttribute('aria-label', FILM.alt || FILM.title || '');
+if (FILM.title) document.title = FILM.title;
+document.documentElement.style.background = PAL.bg;
+document.body.style.background = PAL.bg;
+// CPU raster everywhere: Chrome moves a canvas from GPU to CPU after repeated getImageData
+// reads, which changes antialiasing mid-render. Pin every 2D context from its first call.
+// An alpha channel, though every frame fills it opaque: on an opaque canvas Chromium draws text with
+// LCD subpixel antialiasing (red and blue fringes on every glyph), whatever the command line says.
+const ctx = canvas.getContext('2d', { willReadFrequently: true, alpha: true });
+const mkCanvas = (w = W, h = H) => { const c = document.createElement('canvas'); c.width = w; c.height = h; return c; };
+const mk2d = (w, h) => { const c = mkCanvas(w, h); return [c, c.getContext('2d', { willReadFrequently: true })]; };
+const mctx = mkCanvas().getContext('2d', { willReadFrequently: true });   // measuring only
+
+/* ---------------- springs: closed-form step responses ---------------- */
+// [zeta, omega]. Underdamped (zeta < 1) overshoots and lands; zeta = 1 glides in without overshoot.
+// Engines add their own (boot merges ENGINE.springs, then FILM.springs).
+const SP = {
+  SLAM: [0.60, 30.0], LAND: [0.72, 28.0], PUNCH: [0.65, 31.0], FADE: [1, 32.4],
+  FOCUS: [1, 19.5], EXIT: [1, 32.4], PAN: [1, 32.4], DRAW: [1, 32.4],
+  LINE: [0.80, 15.6], MASK: [1, 19.5], TICK: [1, 32.4],
+};
+const spring = (sp) => { const s = typeof sp === 'string' ? SP[sp] : sp; if (!s) throw new Error(`unknown spring ${sp}`); return s; };
+const settle = (sp) => 16 / (sp[0] * sp[1]);       // after this the response snaps to exactly 1
+function S(tau, sp) {
+  const z = sp[0], w = sp[1];
+  if (tau <= 0) return 0;
+  if (tau >= settle(sp)) return 1;                 // residual < 2e-6 of the move: snap, so loops are bit-exact
+  if (z < 1) {
+    const wd = w * Math.sqrt(1 - z * z);
+    return 1 - Math.exp(-z * w * tau) * (Math.cos(wd * tau) + (z * w / wd) * Math.sin(wd * tau));
+  }
+  return 1 - (1 + w * tau) * Math.exp(-w * tau);
+}
+function dS(tau, sp) {                             // d S / d tau, per second
+  const z = sp[0], w = sp[1];
+  if (tau <= 0 || tau >= settle(sp)) return 0;
+  if (z < 1) { const wd = w * Math.sqrt(1 - z * z); return (w * w / wd) * Math.exp(-z * w * tau) * Math.sin(wd * tau); }
+  return w * w * tau * Math.exp(-w * tau);
+}
+// the visible landing: the first crossing of the target when underdamped, 95 % when critically damped
+function landT(sp) {
+  sp = spring(sp);
+  const z = sp[0], w = sp[1];
+  if (z < 1) { const wd = w * Math.sqrt(1 - z * z); return (Math.PI - Math.atan(wd / (z * w))) / wd; }
+  let a = 0, b = settle(sp);
+  for (let i = 0; i < 40; i++) { const m = (a + b) / 2; if (S(m, sp) < 0.95) a = m; else b = m; }
+  return b;
+}
+
+// A property = base value + one spring per target change (superposed). set() is an instant jump
+// that cancels earlier springs; use it only while the element is invisible, at a hard cut, or hidden
+// inside fast motion blur. Events are added in time order. In a looping film, springs still settling
+// at the end of the loop carry over the seam into its start (only while no set() has happened yet),
+// so the film is continuous there; the value a Prop ends on must equal the value it starts from.
+const PROPS = [];
+class Prop {
+  constructor(v0, name) { this.v0 = v0; this.last = v0; this.ev = []; this.tLast = -Infinity; this.name = name || '?'; this.tail = null; this.firstSet = Infinity; PROPS.push(this); }
+  order(t) { if (t < this.tLast - 1e-9) throw new Error(`${this.name}: event at ${t} added after one at ${this.tLast}`); this.tLast = t; this.tail = null; }
+  to(t, v, sp) { this.order(t); this.ev.push({ t, d: v - this.last, sp: spring(sp), set: false }); this.last = v; return this; }
+  set(t, v) { this.order(t); this.ev.push({ t, v, set: true }); this.last = v; return this; }
+  seam() {                                         // the springs that carry over the seam
+    if (this.tail) return this.tail;
+    let k = -1;
+    this.firstSet = Infinity;
+    for (let i = 0; i < this.ev.length; i++) if (this.ev[i].set) { k = i; if (this.firstSet === Infinity) this.firstSet = this.ev[i].t; }
+    this.tail = LOOP === 'none' ? [] : this.ev.slice(k + 1).filter((e) => e.d !== 0 && e.t + settle(e.sp) > DUR);
+    return this.tail;
+  }
+  at(t) {
+    let v = this.v0, i0 = 0;
+    const ev = this.ev;
+    for (let i = 0; i < ev.length; i++) if (ev[i].set && ev[i].t <= t) { v = ev[i].v; i0 = i + 1; }
+    for (let i = i0; i < ev.length; i++) { const e = ev[i]; if (!e.set) v += e.d * S(t - e.t, e.sp); }
+    const tail = this.seam();
+    if (tail.length && t < this.firstSet) for (const e of tail) v += e.d * (S(t + DUR - e.t, e.sp) - 1);
+    return v;
+  }
+  vel(t) {                                         // per second
+    let v = 0, i0 = 0;
+    const ev = this.ev;
+    for (let i = 0; i < ev.length; i++) if (ev[i].set && ev[i].t <= t) i0 = i + 1;
+    for (let i = i0; i < ev.length; i++) { const e = ev[i]; if (!e.set) v += e.d * dS(t - e.t, e.sp); }
+    const tail = this.seam();
+    if (tail.length && t < this.firstSet) for (const e of tail) v += e.d * dS(t + DUR - e.t, e.sp);
+    return v;
+  }
+  active(a, b) {                                   // does the value change anywhere in (a, b]?
+    for (const e of this.ev) {
+      if (e.set) { if (e.t > a && e.t <= b) return true; }
+      else if (e.d !== 0 && e.t < b && e.t + settle(e.sp) > a) return true;
+    }
+    if (a < this.firstSet) for (const e of this.seam()) if (e.t - DUR < b && e.t - DUR + settle(e.sp) > a) return true;
+    return false;
+  }
+  settleEnd() { let m = -Infinity; for (const e of this.ev) m = Math.max(m, e.set ? e.t : e.t + settle(e.sp)); return m; }
+  lastSet(a, b) { let m = -Infinity; for (const e of this.ev) if (e.set && e.t > a && e.t <= b && e.t > m) m = e.t; return m; }
+}
+
+/* ---------------- periodic motion and seeded randomness ---------------- */
+// n whole cycles per loop: exact at the seam by construction. Use these for anything that never stops
+// (an idle bob, a spin, a drifting field) and set ENGINE.always, or declare its windows with activeIn.
+const cyc = (t, n, phase = 0) => TAU * (n * t / DUR + phase);
+const wave = (t, n, phase = 0) => Math.sin(cyc(t, n, phase));
+function mulberry32(a) {
+  return function () {
+    a |= 0; a = (a + 0x6D2B79F5) | 0;
+    let t = Math.imul(a ^ (a >>> 15), 1 | a);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+// three integers to [0, 1), well mixed: a pure replacement for Math.random keyed by what it decides
+function hash(a, b = 0, c = 0) {
+  let h = Math.imul((a | 0) ^ 0x3C6EF372, 0x85EBCA6B);
+  h = Math.imul(h ^ (h >>> 13) ^ (b | 0), 0xC2B2AE35);
+  h = Math.imul(h ^ (h >>> 16) ^ (c | 0), 0x27D4EB2F);
+  h ^= h >>> 15; h = Math.imul(h, 0x85EBCA6B); h ^= h >>> 13; h = Math.imul(h, 0xC2B2AE35); h ^= h >>> 16;
+  return (h >>> 0) / 4294967296;
+}
+// smooth noise in [-1, 1] that loops exactly: three whole harmonics (n, 2n+1, 4n+3 cycles per loop) with seeded phases
+function loopNoise(t, n, seed) {
+  return (Math.sin(cyc(t, n, hash(seed, 1))) + 0.5 * Math.sin(cyc(t, 2 * n + 1, hash(seed, 2))) + 0.25 * Math.sin(cyc(t, 4 * n + 3, hash(seed, 3)))) / 1.75;
+}
+function shuffled(arr, seed) {                     // Fisher-Yates on a copy, seeded
+  const r = mulberry32(seed), a = arr.slice();
+  for (let i = a.length - 1; i > 0; i--) { const j = Math.floor(r() * (i + 1)); const x = a[i]; a[i] = a[j]; a[j] = x; }
+  return a;
+}
+
+/* ---------------- time ---------------- */
+const wrapT = (t) => ((t % DUR) + DUR) % DUR;
+const frameOf = (t) => Math.ceil(t * FPS - 1e-9);  // all subframes of output frame n map to n
+const typed = (q, ts, n) => Math.max(0, Math.min(n, Math.ceil((q - ts) * FPS - 1e-6)));   // one character per frame
+const noteSec = (v) => (typeof v === 'number' && v >= 1 ? 4 * 60 / FILM.BPM / v : v);     // 16 -> a 16th note
+const drawing = (q, fps) => Math.floor(q * fps + 1e-6);    // index of the held drawing (12 fps = on twos at 24, fives at 60)
+
+/* ---------------- colour ---------------- */
+function rgbOf(hex) { const h = String(hex).replace('#', ''); const n = parseInt(h.length === 3 ? h.replace(/./g, '$&$&') : h.slice(0, 6), 16); return [(n >> 16) & 255, (n >> 8) & 255, n & 255]; }
+const hexOf = (r, g, b) => '#' + [r, g, b].map((v) => Math.max(0, Math.min(255, Math.round(v))).toString(16).padStart(2, '0')).join('').toUpperCase();
+function mix(a, b, k) { const x = rgbOf(a), y = rgbOf(b); return hexOf(x[0] + (y[0] - x[0]) * k, x[1] + (y[1] - x[1]) * k, x[2] + (y[2] - x[2]) * k); }
+function hueChroma(r, g, b) {
+  const mx = Math.max(r, g, b), mn = Math.min(r, g, b), C = mx - mn;
+  if (C === 0) return [0, 0];
+  let h;
+  if (mx === r) h = 60 * (((g - b) / C) % 6); else if (mx === g) h = 60 * ((b - r) / C + 2); else h = 60 * ((r - g) / C + 4);
+  return [h < 0 ? h + 360 : h, C];
+}
+const hueDist = (a, b) => { const d = Math.abs(a - b) % 360; return d > 180 ? 360 - d : d; };
+function lum(hex) { const c = rgbOf(hex).map((v) => { v /= 255; return v <= 0.04045 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4); }); return 0.2126 * c[0] + 0.7152 * c[1] + 0.0722 * c[2]; }
+const contrast = (a, b) => { const x = lum(a), y = lum(b); return (Math.max(x, y) + 0.05) / (Math.min(x, y) + 0.05); };
+function inksClash(a, b) {                         // two inks may share a pixel only when that cannot make a new hue
+  const [ha, ca] = hueChroma(...rgbOf(a)), [hb, cb] = hueChroma(...rgbOf(b));
+  return ca >= 40 && cb >= 40 && hueDist(ha, hb) > 13;
+}
+
+/* ---------------- fonts and type ---------------- */
+const face = (r) => { const f = FILM.fonts && FILM.fonts[r]; if (!f) throw new Error(`no font role "${r}"`); return f; };
+const fontStr = (r, size) => { const f = face(r); return `${f.style === 'italic' ? 'italic ' : ''}${f.weight} ${size}px "${f.family}"`; };
+function setFont(c, f) { c.font = f; c.fontKerning = 'normal'; c.letterSpacing = '0px'; c.textBaseline = 'alphabetic'; c.textAlign = 'left'; }
+function capRatio(r) { setFont(mctx, fontStr(r, 1000)); return mctx.measureText('H').actualBoundingBoxAscent / 1000; }
+const TEXT = {};                                   // font role -> every character it draws (checked against the font's cmap)
+const useText = (r, s) => { face(r); TEXT[r] = (TEXT[r] || '') + s; return s; };
+function textByFace() {
+  const out = {};
+  for (const [r, s] of Object.entries(TEXT)) { const f = face(r), k = `${f.family}|${f.weight}`; out[k] = (out[k] || '') + s; }
+  return out;
+}
+
+// One line of type, one glyph at a time: the font's kerning recovered from pair widths, optical
+// pairs on top (1/1000 em), then a fixed tracking, a tracking solved to span `justify` px, or a
+// size solved (`fit`) so the ink spans the measure (or `fit: <px>`). `cap: <px>` sizes from a cap
+// height. x and anchor ('L', 'R', 'C') place the ink edge or centre. Measured once, after the fonts load.
+function measureRun(o, size) {
+  const font = fontStr(o.font || 'display', size);
+  setFont(mctx, font);
+  const ch = Array.from(o.text), n = ch.length;
+  const met = ch.map((c) => mctx.measureText(c));
+  const adv = met.map((m) => m.width);
+  const gap = [];
+  for (let i = 0; i < n - 1; i++) {
+    const kern = mctx.measureText(ch[i] + ch[i + 1]).width - adv[i] - adv[i + 1];
+    gap.push(adv[i] + kern + ((o.pairs || {})[ch[i] + ch[i + 1]] || 0) / 1000 * size);
+  }
+  const pens = (T) => { const x = [0]; for (let i = 0; i < n - 1; i++) x.push(x[i] + gap[i] + T); return x; };
+  const inkW = (x) => (x[n - 1] + met[n - 1].actualBoundingBoxRight) - (x[0] - met[0].actualBoundingBoxLeft);
+  return { font, ch, n, met, pens, inkW };
+}
+function layoutText(o) {
+  const r = o.font || 'display';
+  useText(r, o.text);
+  let size = o.size != null ? o.size : o.cap != null ? o.cap / capRatio(r) : 100;
+  const width = o.fit ? (o.fit === true ? MEASURE : o.fit) : null;
+  if (width) for (let k = 0; k < 3; k++) {         // ink width is linear in size; converge
+    const m = measureRun(o, size);
+    size *= width / m.inkW(m.pens((o.track || 0) / 1000 * size));
+  }
+  const m = measureRun(o, size), { ch, n, met } = m;
+  const T = o.justify != null && n > 1 ? (o.justify - m.inkW(m.pens(0))) / (n - 1) : (o.track || 0) / 1000 * size;
+  const x = m.pens(T);
+  const inkL0 = x[0] - met[0].actualBoundingBoxLeft, inkR0 = x[n - 1] + met[n - 1].actualBoundingBoxRight;
+  const anchor = o.anchor || 'L';
+  const ax = o.x != null ? o.x : anchor === 'R' ? W - MARGIN : anchor === 'C' ? CX : MARGIN;
+  const shift = anchor === 'R' ? ax - inkR0 : anchor === 'C' ? ax - (inkL0 + inkR0) / 2 : ax - inkL0;
+  let slot = 0;
+  const glyphs = ch.map((c, i) => {
+    const sp = /\s/.test(c);
+    const g = { ch: c, i, x: x[i] + shift, space: sp, slot: sp ? -1 : slot,
+      inkL: x[i] + shift - met[i].actualBoundingBoxLeft, inkR: x[i] + shift + met[i].actualBoundingBoxRight,
+      asc: met[i].actualBoundingBoxAscent, desc: met[i].actualBoundingBoxDescent };
+    if (!sp) slot++;
+    return g;
+  });
+  setFont(mctx, m.font);
+  const capH = mctx.measureText('H').actualBoundingBoxAscent;
+  const ink = glyphs.filter((g) => !g.space);
+  const base = o.baseline != null ? o.baseline : 0;
+  return { id: o.id, text: o.text, role: r, font: m.font, size, baseline: base, glyphs, slots: slot,
+    trackPx: T, trackEm: T / size * 1000, inkL: inkL0 + shift, inkR: inkR0 + shift, capH, capTop: base - capH,
+    top: base - Math.max(...ink.map((g) => g.asc)), bottom: base + Math.max(...ink.map((g) => g.desc)) };
+}
+
+// A canvas filter blurs a layer the size of the whole canvas (about 25 ms at 1080 px). Blurred
+// glyphs are instead drawn once into small sprites, blur quantised to steps nobody can see, in a
+// bounded cache. A sprite is a pure function of (font, glyph, colour, blur): a hit and a miss give
+// the same pixels, so seek() stays pure.
+const SPRITES = new Map();
+let spritePx = 0;
+const SPRITE_BUDGET = 24e6;
+const blurQ = (b) => (b < 4 ? Math.round(b * 4) / 4 : b < 10 ? Math.round(b * 2) / 2 : Math.round(b));
+function glyphSprite(font, ch, color, b) {
+  const key = font + '|' + ch + '|' + color + '|' + b;
+  let s = SPRITES.get(key);
+  if (s) { SPRITES.delete(key); SPRITES.set(key, s); return s; }
+  setFont(mctx, font);
+  const m = mctx.measureText(ch), pad = Math.ceil(3 * b) + 2;
+  const c = mkCanvas(Math.max(1, Math.ceil(m.actualBoundingBoxLeft + m.actualBoundingBoxRight) + 2 * pad), Math.max(1, Math.ceil(m.actualBoundingBoxAscent + m.actualBoundingBoxDescent) + 2 * pad));
+  const x = c.getContext('2d', { willReadFrequently: true });
+  setFont(x, font);
+  x.fillStyle = color; x.filter = `blur(${b}px)`;
+  const ox = pad + m.actualBoundingBoxLeft, oy = pad + m.actualBoundingBoxAscent;
+  x.fillText(ch, ox, oy);
+  s = { c, ox, oy, px: c.width * c.height };
+  SPRITES.set(key, s); spritePx += s.px;
+  for (const [k, v] of SPRITES) { if (spritePx <= SPRITE_BUDGET) break; SPRITES.delete(k); spritePx -= v.px; }
+  return s;
+}
+function fillGlyph(c, ch, x, y, color, a, blur) {
+  if (!(a > 0.002)) return;
+  c.globalAlpha = a > 1 ? 1 : a;
+  c.filter = 'none';
+  const bq = blur > 0.05 ? blurQ(blur) : 0;
+  if (bq > 0) { const s = glyphSprite(c.font, ch, color, bq); c.drawImage(s.c, x - s.ox, y - s.oy); return; }
+  c.fillStyle = color;
+  c.fillText(ch, x, y);
+}
+// Draw a laid-out line. fx(g) may return { dx, dy, op, blur, sx, sy, rot, color, ch, pivot } per glyph
+// ('base' scales and turns about the glyph's foot on the baseline, 'mid' about its centre), or null to hide it.
+function drawText(c, L, color, fx) {
+  setFont(c, L.font);
+  for (const g of L.glyphs) {
+    if (g.space) continue;
+    const e = fx ? fx(g) : {};
+    if (!e) continue;
+    const op = e.op != null ? e.op : 1;
+    if (!(op > 0.002)) continue;
+    const dx = e.dx || 0, dy = e.dy || 0, x = g.x + dx, y = L.baseline + dy;
+    const sx = e.sx != null ? e.sx : 1, sy = e.sy != null ? e.sy : 1, rot = e.rot || 0;
+    const cc = e.color || color, ch = e.ch || g.ch;
+    if (rot || sx !== 1 || sy !== 1) {
+      const px = (g.inkL + g.inkR) / 2 + dx, py = e.pivot === 'base' ? y : y - L.capH / 2;
+      c.save(); c.translate(px, py); c.rotate(rot); c.scale(sx, sy); c.translate(-px, -py);
+      fillGlyph(c, ch, x, y, cc, op, e.blur || 0);
+      c.restore();
+    } else fillGlyph(c, ch, x, y, cc, op, e.blur || 0);
+  }
+  c.globalAlpha = 1; c.filter = 'none';
+}
+
+/* ---------------- SVG paths ---------------- */
+// A path from SVG path data: Path2D to draw it, its length and points for trims and morphs.
+// Measured once through a hidden SVG element (the only DOM the core touches besides the canvas).
+let svgRoot = null;
+function svgPath(d) {
+  if (!svgRoot) {
+    svgRoot = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+    svgRoot.setAttribute('style', 'position:absolute;left:0;top:0;width:0;height:0;overflow:hidden');
+    document.body.appendChild(svgRoot);
+  }
+  const el = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+  el.setAttribute('d', d);
+  svgRoot.appendChild(el);
+  const len = el.getTotalLength(), bb = el.getBBox();
+  return { d, p2d: new Path2D(d), len, box: [bb.x, bb.y, bb.x + bb.width, bb.y + bb.height],
+    points: (n) => { const out = []; for (let i = 0; i < n; i++) { const p = el.getPointAtLength(len * i / n); out.push([p.x, p.y]); } return out; } };
+}
+
+/* ---------------- registries the engine fills while it builds ---------------- */
+const CUTS = [];                                   // hard cuts: motion blur never averages across them
+const ACTIVE = [];                                 // [a, b] windows where something moves outside the Props
+const ACCENTS = [];                                // { t, what }: accent frames (stills and the palette gate)
+const WARN = [];                                   // timeline warnings for the critique
+const CONTRAST = [];                               // { id, fg, bg, min }: text that must read
+let ENGINE = null;
+const cutAt = (t) => { if (t > 1e-9 && t < DUR && !CUTS.includes(t)) CUTS.push(t); };
+const activeIn = (a, b) => { ACTIVE.push([a, b]); };
+const accentAt = (t, what) => { ACCENTS.push({ t, what }); };
+const needContrast = (id, fg, bg, min) => { CONTRAST.push({ id, fg, bg: bg || 'bg', min }); };
+
+/* ---------------- frame ---------------- */
+function draw(c, tIn) {
+  const t = wrapT(tIn);
+  let nq = frameOf(t);
+  if (nq >= NFR) nq -= NFR;                        // the last subframes of the loop belong to frame 0
+  const q = nq / FPS;
+  c.setTransform(1, 0, 0, 1, 0, 0);
+  c.globalCompositeOperation = 'source-over'; c.globalAlpha = 1; c.filter = 'none';
+  c.fillStyle = PAL.bg; c.fillRect(0, 0, W, H);
+  ENGINE.draw(c, t, q, nq);
+  c.setTransform(1, 0, 0, 1, 0, 0);
+  c.globalCompositeOperation = 'source-over'; c.globalAlpha = 1; c.filter = 'none';
+}
+let isReady = false;
+function seek(t) { if (!isReady) return false; draw(ctx, Number(t)); return true; }
+
+/* ---------------- motion blur ---------------- */
+// Subframes on a trailing shutter, clamped to a hard cut so the first frame after it is not a
+// double exposure. How many: 1 when nothing changes (exact: the mean of identical samples is the
+// sample), else one per 5 px of the engine's measured displacement, 4 to 64.
+function shutterTimes(n, k) {
+  const tn = n / FPS, out = [];
+  for (let i = k - 1; i >= 0; i--) {
+    let t = k === 1 ? tn : tn - i * SHUTTER / (FPS * (k - 1));
+    for (const cut of CUTS) if (tn >= cut && t < cut) t = cut;
+    if (ENGINE.seamCut && tn === 0 && t < 0) t = 0;   // a cut at the loop point itself
+    out.push(t);
+  }
+  return out;
+}
+function motionAt(n) {
+  if (!BLUR) return { samples: 1, disp: 0 };
+  const ta = wrapT(shutterTimes(n, 2)[0]), tb = wrapT(n / FPS);
+  const spans = ta === tb ? [] : ta < tb ? [[ta, tb]] : [[ta, DUR], [0, tb]];   // a shutter clamped flat against a cut cannot move
+  let moving = false;
+  for (const [a, b] of spans) if (ENGINE.always || ACTIVE.some(([x, y]) => x < b && y > a) || PROPS.some((p) => p.active(a, b))) { moving = true; break; }
+  if (!moving) return { samples: 1, disp: 0 };
+  const minS = ENGINE.minSamples || MIN_SAMPLES;    // an engine whose every sample is costly (WebGL) may allow 2
+  const disp = ENGINE.disp ? ENGINE.disp(ta, tb) : PX_PER_SAMPLE * minS;
+  return { samples: Math.max(minS, Math.min(MAX_SAMPLES, Math.ceil(disp / PX_PER_SAMPLE))), disp };
+}
+let SUM = null;
+function renderFrame(n) {
+  if (!isReady) return 0;
+  const { samples } = motionAt(n);
+  const times = shutterTimes(n, samples);
+  if (samples === 1) { draw(ctx, times[0]); return 1; }
+  if (ENGINE.accumulate) { ENGINE.accumulate(ctx, times); return samples; }
+  if (!SUM) SUM = new Uint16Array(W * H * 4); else SUM.fill(0);
+  for (const t of times) {
+    draw(ctx, t);
+    const px = ctx.getImageData(0, 0, W, H).data;
+    for (let i = 0; i < px.length; i++) SUM[i] += px[i];
+  }
+  const out = ctx.createImageData(W, H), o = out.data, half = samples >> 1;
+  for (let i = 0; i < o.length; i++) o[i] = ((SUM[i] + half) / samples) | 0;
+  ctx.putImageData(out, 0, 0);
+  return samples;
+}
+
+/* ---------------- analysis (never called by seek) ---------------- */
+function accentFrames() { return ACCENTS.map((m) => ({ what: m.what, t: Math.round(m.t * 1000) / 1000, frame: Math.round(m.t * FPS) % NFR })); }
+
+// Off-palette scan. Default: pixels with chroma >= 40 whose hue is more than 13 degrees from every
+// chromatic palette colour (two inks mixed into a new one), counted as `area` only where the 4
+// neighbours are off too (patches 3+ px across, not the 1-px antialiasing fringe). strict: any pixel
+// that is not exactly a palette colour (pixel art).
+function offPalette(frames, mode, strict) {
+  const cols = Object.values(PAL).map(rgbOf);
+  const hues = cols.map((c) => hueChroma(...c)).filter(([, c]) => c >= 40).map(([h]) => h);
+  const exact = new Set(cols.map(([r, g, b]) => (r << 16) | (g << 8) | b));
+  const out = [];
+  for (const n of frames) {
+    if (mode === 'seek') seek(n / FPS); else renderFrame(n);
+    const px = ctx.getImageData(0, 0, W, H).data, off = new Uint8Array(W * H);
+    let count = 0; const seen = {};
+    for (let p = 0, i = 0; p < W * H; p++, i += 4) {
+      let bad;
+      if (strict) bad = !exact.has((px[i] << 16) | (px[i + 1] << 8) | px[i + 2]);
+      else { const [h, C] = hueChroma(px[i], px[i + 1], px[i + 2]); bad = C >= 40 && !hues.some((hp) => hueDist(h, hp) <= 13); }
+      if (bad) { off[p] = 1; count++; const k = `${px[i]},${px[i + 1]},${px[i + 2]}`; seen[k] = (seen[k] || 0) + 1; }
+    }
+    let area = strict ? count : 0;
+    if (!strict) for (let y = 1; y < H - 1; y++) for (let x = 1; x < W - 1; x++) { const p = y * W + x; if (off[p] && off[p - 1] && off[p + 1] && off[p - W] && off[p + W]) area++; }
+    const top = Object.entries(seen).sort((a, b) => b[1] - a[1]).slice(0, 3).map(([k, v]) => `(${k})x${v}`).join(' ');
+    out.push({ frame: n, count, area, top });
+  }
+  return out;
+}
+
+// the last moment anything on screen can change: spring settles, active windows, accents, and the
+// engine's own discrete state (typing, blinking, snaps)
+function lastChange() {
+  let t = -Infinity, what = 'nothing moves';
+  const see = (v, w) => { if (v > t) { t = v; what = w; } };
+  for (const p of PROPS) see(p.settleEnd(), `${p.name} settles`);
+  for (const w of ACTIVE) see(w[1], 'an active window ends');
+  for (const m of ACCENTS) see(m.t + 3 / FPS, `the accent on ${m.what} ends`);
+  if (ENGINE.lastChange) ENGINE.lastChange(see);
+  return { t, what };
+}
+function loopChecks(add) {
+  for (const p of PROPS) for (const e of p.ev) if (e.t >= DUR - 1e-9 || e.t < 0) { add('timeline', 'WARN', `${p.name}: an event at ${e.t.toFixed(3)} s is outside the loop (0 to ${DUR})`); break; }
+  if (LOOP === 'hold') {
+    const last = lastChange(), need = DUR - (1 + SHUTTER) / FPS, hold = Math.floor((DUR - last.t) * FPS + 1e-6);
+    add('loop tail', last.t <= need ? 'PASS' : 'FAIL', `last change at ${last.t.toFixed(3)} s (${last.what}); still hold at least ${hold} frames (needs >= 2; loopcheck counts identical pixels)`);
+  } else if (LOOP === 'cycle') {
+    const open = PROPS.filter((p) => Math.abs(p.last - p.v0) > 1e-6);
+    add('loop closes', open.length ? 'FAIL' : 'PASS', open.length
+      ? `${open.slice(0, 6).map((p) => `${p.name} ends at ${+p.last.toFixed(3)} but starts at ${+p.v0.toFixed(3)}`).join('; ')}${open.length > 6 ? ` and ${open.length - 6} more` : ''}: the loop jumps`
+      : `${PROPS.length} props return to where they start; springs still settling at the end carry over the seam`);
+    if (ENGINE.cycles) for (const c of ENGINE.cycles()) {
+      const k = DUR / c.period;
+      add(`cycle: ${c.what}`, Math.abs(k - Math.round(k)) < 1e-6 ? 'PASS' : 'FAIL', `${+k.toFixed(4)} cycles per loop (period ${+c.period.toFixed(4)} s); must be whole`);
+    }
+  }
+}
+// frames where nothing is on screen (a blank flash between scenes), from the engine's visible(t)
+function emptyRuns() {
+  const runs = [];
+  let start = -1;
+  for (let n = 0; n <= NFR; n++) {
+    const empty = n < NFR && !ENGINE.visible(n / FPS);
+    if (empty && start < 0) start = n;
+    if (!empty && start >= 0) { runs.push([start, n - 1]); start = -1; }
+  }
+  return runs;
+}
+// Collision and live-area helpers for engines' checks. Boxes are [x0, y0, x1, y1] in canvas px.
+function checkLiveArea(add, id, b, bleed) {
+  if (bleed) return;
+  const out = [];
+  if (b[0] < MARGIN - 1) out.push(`left ${b[0].toFixed(1)} < ${MARGIN}`);
+  if (b[2] > W - MARGIN + 1) out.push(`right ${b[2].toFixed(1)} > ${W - MARGIN}`);
+  if (b[1] < MARGIN - 1) out.push(`top ${b[1].toFixed(1)} < ${MARGIN}`);
+  if (b[3] > H - MARGIN + 1) out.push(`bottom ${b[3].toFixed(1)} > ${H - MARGIN}`);
+  add(`live area: ${id}`, out.length ? 'FAIL' : 'PASS', out.join(', ') || `${b.map((v) => v.toFixed(0)).join(', ')}`);
+}
+function checkSpacing(add, items, tight = 16 * U) {  // items: [{ id, b }] on screen together at rest
+  for (let i = 0; i < items.length; i++) for (let j = i + 1; j < items.length; j++) {
+    const a = items[i].b, b = items[j].b;
+    const dx = Math.max(0, a[0] - b[2], b[0] - a[2]), dy = Math.max(0, a[1] - b[3], b[1] - a[3]);
+    const gap = dx === 0 && dy === 0 ? -1 : Math.hypot(dx, dy);
+    if (gap < 0) add(`collision: ${items[i].id} / ${items[j].id}`, 'FAIL', 'boxes overlap at rest');
+    else if (gap < tight) add(`cramped: ${items[i].id} / ${items[j].id}`, 'WARN', `${gap.toFixed(1)} px apart (< ${tight.toFixed(0)} px)`);
+  }
+}
+function critique() {
+  const checks = [];
+  const add = (name, status, detail) => checks.push({ name, status, detail });
+  if (ENGINE.checks) ENGINE.checks(add);
+  for (const c of CONTRAST) {
+    const r = contrast(col(c.fg), col(c.bg));
+    add(`contrast: ${c.id}`, r < c.min ? 'FAIL' : 'PASS', `${r.toFixed(2)}:1 on ${c.bg} (needs ${c.min}:1)`);
+  }
+  const stray = [...USED].filter((k) => !(k in PAL));
+  add('palette roles', stray.length ? 'FAIL' : 'PASS', stray.length ? `not in the palette: ${stray.join(', ')}` : `${USED.size} roles used, all in the palette`);
+  loopChecks(add);
+  if (ENGINE.visible) {
+    const minRun = Math.max(2, Math.round(FPS / 15));
+    for (const [a, b] of emptyRuns()) if (b - a + 1 >= minRun)
+      add('blank frames', 'WARN', `frames ${a}-${b} (t ${(a / FPS).toFixed(3)}-${(b / FPS).toFixed(3)}) show nothing: start the next entrance sooner, or pop it in at the cut`);
+  }
+  for (const w of WARN) add('timeline', 'WARN', w);
+  return checks;
+}
+// review stills: the engine's plan (each scene in and at rest, each transition) plus every accent frame
+function stillsPlan() {
+  const plan = [], seen = new Set();
+  const push = (frame, name, what) => { frame = Math.max(0, Math.min(NFR - 1, Math.round(frame))); if (seen.has(frame)) return; seen.add(frame); plan.push({ frame, name, what }); };
+  if (ENGINE.stills) ENGINE.stills(push);
+  for (const m of accentFrames()) push(m.frame, `accent-${m.what}`, `accent on ${m.what}`);
+  return plan.sort((a, b) => a.frame - b.frame);
+}
+function layoutTable() {
+  return { film: { W, H, FPS, DUR, frames: NFR, bpm: FILM.BPM, loop: LOOP, blur: BLUR, margin: MARGIN, measure: MEASURE, engine: ENGINE.name },
+    ...(ENGINE.layout ? ENGINE.layout() : {}), cuts: CUTS, accents: accentFrames(), warnings: WARN };
+}
+
+/* ---------------- boot ---------------- */
+function filmChars() {                              // every character any string in FILM holds, to load the fonts with
+  const s = new Set('H0');
+  const walk = (v, d) => { if (typeof v === 'string') { for (const c of v) s.add(c); } else if (v && typeof v === 'object' && d < 12) for (const k in v) walk(v[k], d + 1); };
+  walk(FILM, 0);
+  return [...s].join('');
+}
+function boot(E) {
+  ENGINE = E;
+  Object.assign(SP, E.springs || {}, FILM.springs || {});
+  for (const [k, v] of Object.entries(SP)) if (!(v[0] > 0 && v[0] <= 1 && v[1] > 0)) throw new Error(`spring ${k}: zeta must be in (0, 1] and omega > 0`);
+  window.DURATION = DUR; window.FPS = FPS; window.WIDTH = W; window.HEIGHT = H;
+  window.FILM_META = { title: FILM.title, poster: FILM.poster || 0, bg: PAL.bg, palette: PAL, loop: LOOP, blur: BLUR,
+    engine: E.name, strictPalette: !!E.strictPalette, seamCut: !!E.seamCut, gif: E.gif || null };
+  Object.assign(window, { seek, renderFrame, motionAt, layoutTable, critique, stillsPlan, textByFace, accentFrames, misFrames: accentFrames, offPalette });
+  const roles = Object.keys(FILM.fonts || {}), sample = filmChars();
+  window.ready = Promise.all(roles.map((r) => document.fonts.load(fontStr(r, 100), sample)))
+    .then((sets) => { if (sets.some((s) => !s.length)) throw new Error('a font face failed to load'); return E.build(); })
+    .then(() => {
+      for (const p of PROPS) p.seam();
+      CUTS.sort((a, b) => a - b);
+      isReady = true;
+      seek(0);
+      return true;
+    });
+  // Preview: requestAnimationFrame is the only time source and it only calls seek().
+  // Space pauses, the arrow keys step one frame, ?t=3.5 opens paused at a time.
+  if (!/[?&]capture\b/.test(location.search)) {
+    window.ready.then(() => {
+      const m = /[?&]t=([\d.]+)/.exec(location.search);
+      let paused = !!m, pos = m ? Number(m[1]) : 0, last = null;
+      const tick = (ts) => {
+        if (!paused && last !== null) pos = wrapT(pos + (ts - last) / 1000);
+        last = ts; seek(pos); requestAnimationFrame(tick);
+      };
+      addEventListener('keydown', (e) => {
+        if (e.key === ' ') { paused = !paused; e.preventDefault(); }
+        if (e.key === 'ArrowRight') { paused = true; pos = wrapT(Math.round(pos * FPS + 1) / FPS); }
+        if (e.key === 'ArrowLeft') { paused = true; pos = wrapT(Math.round(pos * FPS - 1) / FPS); }
+      });
+      requestAnimationFrame(tick);
+    });
+  }
+}
+
+  return { W, H, FPS, DUR, NFR, CX, CY, U, PAL, col, role, GRID, MARGIN, UNIT, MEASURE, LOOP, BLUR, SHUTTER, TAU,
+    canvas, ctx, mkCanvas, mk2d, mctx,
+    SP, spring, settle, S, dS, landT, Prop, PROPS,
+    cyc, wave, mulberry32, hash, loopNoise, shuffled,
+    wrapT, frameOf, typed, noteSec, drawing,
+    rgbOf, hexOf, mix, hueChroma, hueDist, lum, contrast, inksClash,
+    face, fontStr, setFont, capRatio, useText, measureRun, layoutText, blurQ, glyphSprite, fillGlyph, drawText,
+    svgPath, CUTS, ACTIVE, ACCENTS, WARN, CONTRAST, cutAt, activeIn, accentAt, needContrast,
+    checkLiveArea, checkSpacing, seek, boot };
+})();
+const { W, H, FPS, DUR, NFR, CX, CY, U, PAL, col, role, GRID, MARGIN, UNIT, MEASURE, LOOP, BLUR, SHUTTER, TAU,
+  canvas, ctx, mkCanvas, mk2d, mctx,
+  SP, spring, settle, S, dS, landT, Prop, PROPS,
+  cyc, wave, mulberry32, hash, loopNoise, shuffled,
+  wrapT, frameOf, typed, noteSec, drawing,
+  rgbOf, hexOf, mix, hueChroma, hueDist, lum, contrast, inksClash,
+  face, fontStr, setFont, capRatio, useText, measureRun, layoutText, blurQ, glyphSprite, fillGlyph, drawText,
+  svgPath, CUTS, ACTIVE, ACCENTS, WARN, CONTRAST, cutAt, activeIn, accentAt, needContrast,
+  checkLiveArea, checkSpacing, seek, boot } = CORE;
+/* ===== CORE END ===== */
+
+/* ==========================================================================
+ * ENGINE: motion-ui. App and product UI promos: one device (a phone, a tablet
+ * or a browser window) whose screens are rebuilt from primitives in their own
+ * units, a script of taps, drags, pushes, sheets and typing on springs, a
+ * camera that frames the device, callouts with leader lines, and a lockup.
+ * ========================================================================== */
+const DEG = Math.PI / 180;
+const clamp01 = (v) => (v < 0 ? 0 : v > 1 ? 1 : v);
+const lerp = (a, b, k) => a + (b - a) * k;
+const ALL = [], NODES = {}, SCREENS = [], SCREEN = {}, ENTRIES = [], HUD = [], CALLOUTS = [], TEXTS = [];
+const TAPS = [], TYPING = [], FOCUS = [], SHOTS = [], CROSS = [], RINGS = [], NOTES = [];
+let DEV = null, PTR = null, CAM = null, LOCK = null, PO = 0;
+
+/* ---------------- 2D affine matrices [a, b, c, d, e, f], the order canvas transform() takes ---------------- */
+const M1 = [1, 0, 0, 1, 0, 0];
+function mmul(m, n) {
+  return [m[0] * n[0] + m[2] * n[1], m[1] * n[0] + m[3] * n[1], m[0] * n[2] + m[2] * n[3], m[1] * n[2] + m[3] * n[3],
+    m[0] * n[4] + m[2] * n[5] + m[4], m[1] * n[4] + m[3] * n[5] + m[5]];
+}
+const mpt = (m, x, y) => [m[0] * x + m[2] * y + m[4], m[1] * x + m[3] * y + m[5]];
+const mT = (x, y) => [1, 0, 0, 1, x, y];
+function mAbout(px, py, rot, s) {                  // turn by rot (radians) and scale by s about (px, py)
+  const c = Math.cos(rot) * s, n = Math.sin(rot) * s;
+  return [c, n, -n, c, px - c * px + n * py, py - n * px - c * py];
+}
+function minv(m) {
+  const d = m[0] * m[3] - m[1] * m[2];
+  return [m[3] / d, -m[1] / d, -m[2] / d, m[0] / d, (m[2] * m[5] - m[3] * m[4]) / d, (m[1] * m[4] - m[0] * m[5]) / d];
+}
+const mScale = (m) => Math.sqrt(Math.abs(m[0] * m[3] - m[1] * m[2]));
+const corners = (b) => [[b[0], b[1]], [b[2], b[1]], [b[2], b[3]], [b[0], b[3]]];
+function mbox(m, b) {
+  const p = corners(b).map(([x, y]) => mpt(m, x, y));
+  return [Math.min(...p.map((v) => v[0])), Math.min(...p.map((v) => v[1])), Math.max(...p.map((v) => v[0])), Math.max(...p.map((v) => v[1]))];
+}
+function mdisp(ma, mb, b) {                        // how far the corners of box b move from matrix ma to mb
+  let d = 0;
+  for (const [x, y] of corners(b)) { const p = mpt(ma, x, y), q = mpt(mb, x, y); d = Math.max(d, Math.hypot(q[0] - p[0], q[1] - p[1])); }
+  return d;
+}
+const inside = (b, x, y, pad = 0) => x >= b[0] - pad && x <= b[2] + pad && y >= b[1] - pad && y <= b[3] + pad;
+const overlaps = (a, b) => a[0] < b[2] && b[0] < a[2] && a[1] < b[3] && b[1] < a[3];
+const gapOf = (a, b) => Math.hypot(Math.max(0, a[0] - b[2], b[0] - a[2]), Math.max(0, a[1] - b[3], b[1] - a[3]));
+function radii(r, w, h) {
+  const m = Math.max(0, Math.min(w, h) / 2);
+  if (r === 'pill') return m;
+  if (Array.isArray(r)) return r.map((v) => Math.max(0, Math.min(v, m)));
+  return Math.max(0, Math.min(r || 0, m));
+}
+function rrect(c, x, y, w, h, r) { c.beginPath(); c.roundRect(x, y, w, h, r); }
+
+/* ---------------- icons: 24-unit strokes, round caps; `fill` fills the closed ones ---------------- */
+const ICONS = {
+  back: 'M15 5L8 12L15 19', next: 'M9 5L16 12L9 19', down: 'M5 9L12 16L19 9', up: 'M5 15L12 8L19 15',
+  plus: 'M12 5V19M5 12H19', minus: 'M5 12H19', close: 'M6 6L18 18M18 6L6 18', check: 'M5 12.5L10 17.5L19 7',
+  search: 'M17 10.5A6.5 6.5 0 1 1 4 10.5A6.5 6.5 0 1 1 17 10.5ZM15.2 15.2L20 20',
+  heart: 'M12 20C12 20 4 14.6 4 9.3C4 6.7 5.9 4.8 8.3 4.8C9.9 4.8 11.2 5.7 12 7C12.8 5.7 14.1 4.8 15.7 4.8C18.1 4.8 20 6.7 20 9.3C20 14.6 12 20 12 20Z',
+  bookmark: 'M7 4H17V20L12 16L7 20Z',
+  star: 'M12 3.5L14.6 8.9L20.5 9.6L16.1 13.6L17.3 19.5L12 16.6L6.7 19.5L7.9 13.6L3.5 9.6L9.4 8.9Z',
+  pin: 'M12 21C12 21 5 14.6 5 9.6A7 7 0 0 1 19 9.6C19 14.6 12 21 12 21ZM14.4 9.6A2.4 2.4 0 1 1 9.6 9.6A2.4 2.4 0 1 1 14.4 9.6Z',
+  calendar: 'M5 6.5H19V19.5H5ZM5 10.5H19M9 4V8M15 4V8',
+  clock: 'M20 12A8 8 0 1 1 4 12A8 8 0 1 1 20 12ZM12 7.5V12L15 14',
+  user: 'M16 8A4 4 0 1 1 8 8A4 4 0 1 1 16 8ZM4.5 20C5.4 16.6 8.4 14.5 12 14.5C15.6 14.5 18.6 16.6 19.5 20',
+  home: 'M4 11L12 4.5L20 11V19.5H4ZM10 19.5V14H14V19.5',
+  bell: 'M6 16.5V11A6 6 0 0 1 18 11V16.5L19.5 18H4.5ZM10 21H14',
+  share: 'M12 4V15M7.5 8.5L12 4L16.5 8.5M5 12.5V19.5H19V12.5',
+  menu: 'M4 7H20M4 12H20M4 17H20', more: 'M6 12H6.01M12 12H12.01M18 12H18.01',
+  lock: 'M7.5 11V8.5A4.5 4.5 0 0 1 16.5 8.5V11M5.5 11H18.5V19.5H5.5Z',
+  send: 'M4 12L20 4.5L14.5 20L11.5 13Z', grid: 'M4 4H10V10H4ZM14 4H20V10H14ZM4 14H10V20H4ZM14 14H20V20H14Z',
+  map: 'M3.5 6.5L9 4.5L15 6.5L20.5 4.5V17.5L15 19.5L9 17.5L3.5 19.5ZM9 4.5V17.5M15 6.5V19.5',
+  chat: 'M4.5 5.5H19.5V16H10L6 19.5V16H4.5Z', trash: 'M5 7H19M10 7V4.5H14V7M7 7L8 20H16L17 7',
+  edit: 'M5 19L5.5 15.5L15.5 5.5L18.5 8.5L8.5 18.5ZM13.5 7.5L16.5 10.5',
+};
+const TICK = new Path2D(ICONS.check), TICK_LEN = Math.hypot(5, 5) + Math.hypot(9, 10.5);
+
+/* ---------------- values: a rest value plus springs, created on first use ---------------- */
+// Every animated value is a Prop. Events are queued with ev() while building and turned into Props in
+// time order by flushEvents(), so a node's entrance, its keys and the script's taps can share a value.
+const EVQ = [];
+function V(o, k, t) { const p = o.P[k]; return p ? p.at(t) : o.rest[k]; }
+function ev(o, k, t, v, sp, how) {
+  if (!(k in o.rest)) throw new Error(`${o.id}: no animated value "${k}"`);
+  EVQ.push({ o, k, t, v, sp: sp || null, how: how || 'to', seq: EVQ.length });
+}
+function initV(o, k, v) { (o.init = o.init || {})[k] = v; }   // the value before its first event: a node waiting to enter
+function flushEvents() {
+  const groups = new Map();
+  for (const e of EVQ) { let g = groups.get(e.o); if (!g) groups.set(e.o, g = {}); (g[e.k] = g[e.k] || []).push(e); }
+  for (const o of new Set([...groups.keys(), ...ALL.filter((n) => n.init), ...ALL.flatMap((n) => n.copies || []).filter((g) => g.init), ...CALLOUTS.flatMap((c) => c.copies)])) {
+    const g = groups.get(o) || {};
+    const keys = new Set([...Object.keys(g), ...Object.keys(o.init || {})]);
+    for (const k of keys) {
+      if (o.P[k]) { if (g[k]) throw new Error(`${o.id}.${k}: events added after its Prop was built`); continue; }
+      const list = (g[k] || []).sort((a, b) => a.t - b.t || (b.how === 'set') - (a.how === 'set') || a.seq - b.seq);
+      const v0 = o.init && k in o.init ? o.init[k] : o.rest[k];
+      const P = o.P[k] = new Prop(v0, `${o.id}.${k}`);
+      let cur = v0;
+      for (const e of list) {
+        const v = e.how === 'by' ? cur + e.v : e.v;
+        if (e.how === 'set') P.set(e.t, v); else P.to(e.t, v, e.sp || 'LAND');
+        cur = v;
+      }
+    }
+  }
+  EVQ.length = 0;
+}
+const moving = (o, a, b) => { for (const k in o.P) if (o.P[k].active(a, b)) return true; return false; };
+
+/* ---------------- states: enter / keys / exit ---------------- */
+const STATE_KEYS = { dx: 'dx', dy: 'dy', rot: 'rot', scale: 'sc', op: 'op', blur: 'bl', w: 'dw', h: 'dh' };
+function stateVals(s, N) {
+  const o = {};
+  if (!s) return o;
+  for (const [k, v] of Object.entries(s)) {
+    const key = STATE_KEYS[k];
+    if (!key) throw new Error(`${N.id}: unknown state key "${k}" (use ${Object.keys(STATE_KEYS).join(', ')})`);
+    o[key] = key === 'dw' ? v - (N.w || 0) : key === 'dh' ? v - (N.h || 0) : key === 'sc' ? v * N.rest.sc : v;
+  }
+  return o;
+}
+const springFor = (k, sp) => (k === 'op' ? 'FADE' : k === 'bl' ? 'FOCUS' : sp || 'LAND');
+
+/* ---------------- nodes ---------------- */
+// A node is a box, a line of text, skeleton bars, an icon, a path or a group, with children in its own
+// coordinates. Widgets (avatar, button, toggle, checkbox, input, tab bar, nav bar, row, toast, sheet,
+// modal) are boxes that build their own children or paint their own parts.
+const BASE = { dx: 0, dy: 0, sc: 1, op: 1, rot: 0, dw: 0, dh: 0, bl: 0 };
+const FIXED_TYPES = new Set(['nav', 'tabbar', 'toast', 'sheet', 'modal']);
+function mkNode(s, parent, ctx, auto) {
+  const type = s.type || (s.text != null ? 'text' : 'rect');
+  const N = { spec: s, type, parent, ctx, screen: ctx.screen || null, hud: !!ctx.hud, kids: [], P: {}, hidden: [], po: PO++,
+    rest: { ...BASE, sc: s.scale != null ? s.scale : 1, op: s.op != null ? s.op : 1, rot: s.rot || 0 } };
+  N.id = s.id || auto;
+  if (s.id) { if (NODES[s.id]) throw new Error(`duplicate id "${s.id}"`); NODES[s.id] = N; }
+  N.top = parent ? parent.top : N;
+  N.fixed = parent ? parent.fixed : !!s.fixed || FIXED_TYPES.has(type);
+  N.x = s.x || 0; N.y = s.y || 0;
+  const B = BUILD[type];
+  if (!B) throw new Error(`${N.id}: unknown type "${type}"`);
+  if (N.hud && ['nav', 'tabbar', 'row', 'toast', 'sheet', 'modal', 'input', 'toggle', 'checkbox'].includes(type)) throw new Error(`${N.id}: a ${type} belongs on a screen`);
+  B(N, s);
+  ALL.push(N);
+  (s.children || []).forEach((k, i) => N.kids.push(mkNode(k, N, ctx, `${N.id}.${i}`)));
+  if (!N.box) {
+    if (N.w || N.h) N.box = [0, 0, N.w || 0, N.h || 0];
+    else if (N.kids.length) { const bs = N.kids.map((K) => mbox(restLocal(K), K.box)); N.box = [Math.min(...bs.map((b) => b[0])), Math.min(...bs.map((b) => b[1])), Math.max(...bs.map((b) => b[2])), Math.max(...bs.map((b) => b[3]))]; }
+    else N.box = [0, 0, 0, 0];
+  }
+  N.pv = s.origin || [(N.box[0] + N.box[2]) / 2, (N.box[1] + N.box[3]) / 2];
+  return N;
+}
+function addKid(N, s, name) { const K = mkNode(s, N, N.ctx, `${N.id}.${name}`); N.kids.push(K); return K; }
+function boxOf(N, s, clipDefault) {
+  N.kind = 'box';
+  N.w = s.w; N.h = s.h;
+  if (!(N.w > 0 && N.h > 0)) throw new Error(`${N.id}: a ${N.type} needs w and h`);
+  N.r = s.radius != null ? s.radius : 0;
+  N.fillRole = s.fill || null; N.fill = s.fill ? role(s.fill) : null;
+  N.strokeRole = s.stroke || null; N.stroke = s.stroke ? role(s.stroke) : null; N.sw = s.width != null ? s.width : 2;
+  N.clip = s.clip != null ? !!s.clip : !!clipDefault;
+  N.box = [0, 0, N.w, N.h];
+  const sh = s.shadow;
+  N.shadow = sh ? { color: role(sh.color || sh), blur: sh.blur || 24, dy: sh.dy != null ? sh.dy : 8, op: sh.op != null ? sh.op : 0.5 } : null;
+}
+function textOf(N, s) {
+  N.kind = 'text';
+  N.font = s.font || 'ui';
+  N.line = layoutText(spaced({ id: N.id, text: String(s.text), font: N.font, size: s.size, cap: s.cap, fit: s.fit, track: s.track, pairs: s.pairs, space: s.space, anchor: s.anchor || 'L', x: 0, baseline: 0 }));
+  N.colorRole = s.color || s.fill || 'ink'; N.color = role(N.colorRole);
+  N.box = [N.line.inkL, N.line.top, N.line.inkR, N.line.bottom];
+  const en = s.enter, st = [en, ...(s.keys || []), s.exit].some((m) => m && m.stagger);
+  if (en && en.typed) N.hudTyped = true;
+  else if (st && N.hud) N.copies = N.line.glyphs.filter((g) => !g.space).map((g, i) => ({ id: `${N.id}#${i}`, g, P: {}, rest: { ...BASE } }));
+  TEXTS.push({ N, line: N.line, color: N.colorRole, box: N.box, on: s.on || null, chrome: !!s.chrome, font: N.font });
+}
+const cap = (font, size) => capRatio(font) * size;
+function spaced(o) {                               // space: extra width after every word, in 1/1000 em (tight display faces)
+  if (!o.space) return o;
+  const pairs = { ...(o.pairs || {}) }, ch = Array.from(String(o.text));
+  for (let i = 0; i < ch.length - 1; i++) if (/\s/.test(ch[i + 1]) && !/\s/.test(ch[i])) pairs[ch[i] + ch[i + 1]] = (pairs[ch[i] + ch[i + 1]] || 0) + o.space;
+  return { ...o, pairs };
+}
+function centredRow(N, L, w, h, name) {           // an icon and a label, centred as one row in a w x h box
+  const size = L.size || 24, isz = L.iconSize || Math.round(size * 1.05), gap = L.label && L.icon ? Math.round(size * 0.42) : 0;
+  const line = L.label ? layoutText({ text: L.label, font: L.font || 'ui', size, x: 0, baseline: 0 }) : null;
+  const total = (L.icon ? isz : 0) + gap + (line ? line.inkR - line.inkL : 0);
+  let x = (w - total) / 2;
+  const out = [];
+  if (L.icon) { out.push(addKid(N, { type: 'icon', name: L.icon, size: isz, x, y: (h - isz) / 2, color: L.iconColor || L.color, width: L.iconWidth, op: L.op }, `${name}icon`)); x += isz + gap; }
+  if (line) out.push(addKid(N, { type: 'text', text: L.label, font: L.font || 'ui', size, x, y: h / 2 + line.capH / 2, color: L.color, on: L.on, op: L.op }, `${name}label`));
+  return out;
+}
+
+const BUILD = {
+  rect: (N, s) => boxOf(N, s, false),
+  card: (N, s) => boxOf(N, s, true),
+  image: (N, s) => boxOf(N, { ...s, fill: s.fill || null }, true),
+  group: (N, s) => { N.kind = 'group'; N.w = s.w || 0; N.h = s.h || 0; N.clip = !!s.clip; },
+  text: textOf,
+  bars: (N, s) => {
+    N.kind = 'bars'; N.w = s.w || 200; N.bh = s.h || 12; N.n = s.n || 1; N.gap = s.gap || N.bh * 2.2; N.last = s.last != null ? s.last : 0.6;
+    N.colorRole = s.color || 'line'; N.color = role(N.colorRole); N.box = [0, 0, N.w, (N.n - 1) * N.gap + N.bh];
+  },
+  icon: (N, s) => {
+    N.kind = 'icon'; N.size = s.size || 24;
+    const d = s.d || ICONS[s.name || s.icon];
+    if (!d) throw new Error(`${N.id}: no icon "${s.name || s.icon}" (built in: ${Object.keys(ICONS).join(' ')}; or give d)`);
+    N.vb = s.d ? (s.vb || 24) : 24; N.p2d = new Path2D(d);
+    N.colorRole = s.color === undefined ? 'ink' : s.color; N.color = N.colorRole ? role(N.colorRole) : null;
+    N.fillRole = s.fill || null; N.fillC = s.fill ? role(s.fill) : null; N.lw = s.width || 2;
+    N.box = [0, 0, N.size, N.size];
+  },
+  path: (N, s) => {
+    N.kind = 'path'; const P = svgPath(s.d); N.p2d = P.p2d; N.box = P.box.slice();
+    N.fillRole = s.fill || null; N.fill = s.fill ? role(s.fill) : null;
+    N.strokeRole = s.stroke || null; N.stroke = s.stroke ? role(s.stroke) : null; N.sw = s.width || 2; N.cap = s.cap || 'round';
+  },
+  avatar: (N, s) => {
+    const z = s.size || 48, font = s.font || 'ui', size = s.textSize || Math.round(z * 0.42);
+    boxOf(N, { ...s, w: z, h: z, radius: 'pill', fill: s.fill || 'tint' }, false);
+    addKid(N, { type: 'text', text: s.initials || s.text || '', font, size, anchor: 'C', x: z / 2, y: z / 2 + cap(font, size) / 2, color: s.color || 'brand' }, 'initials');
+  },
+  button: (N, s) => {
+    boxOf(N, { ...s, fill: null, stroke: null }, false);
+    N.r = s.radius != null ? s.radius : 'pill';
+    const base = { fill: s.fill, stroke: s.stroke, width: s.width, label: s.label, color: s.color || 'ink', icon: s.icon, iconColor: s.iconColor, iconSize: s.iconSize, iconWidth: s.iconWidth, font: s.font || 'ui', size: s.size || 24 };
+    const looks = { default: base };
+    for (const [k, v] of Object.entries(s.states || {})) looks[k] = { ...base, ...v };
+    N.looks = {}; N.cur = 'default';
+    for (const [k, L] of Object.entries(looks)) {
+      N.looks[k] = { fill: L.fill || null, fg: [] };
+      if (L.fill || L.stroke) { N.looks[k].bg = addKid(N, { type: 'rect', w: N.w, h: N.h, radius: N.r, fill: L.fill, stroke: L.stroke, width: L.width, op: k === 'default' ? 1 : 0 }, `${k}.bg`); N.looks[k].bg.alt = k !== 'default'; N.looks[k].bg.isBg = true; }
+    }
+    for (const [k, L] of Object.entries(looks)) {
+      N.looks[k].fg = centredRow(N, { ...L, on: L.fill || null, op: k === 'default' ? 1 : 0 }, N.w, N.h, `${k}.`);
+      for (const K of N.looks[k].fg) K.alt = k !== 'default';
+    }
+    const fills = Object.values(N.looks).map((L) => L.fill).filter(Boolean);
+    for (let i = 1; i < fills.length; i++) CROSS.push([N.id, fills[0], fills[i]]);
+  },
+  toggle: (N, s) => {
+    boxOf(N, { ...s, w: s.w || 52, h: s.h || 32, radius: 'pill', fill: null }, false);
+    N.offRole = s.fill || 'line'; N.onRole = s.onFill || 'brand'; N.off = role(N.offRole); N.onC = role(N.onRole); N.knob = role(s.knob || 'paper');
+    N.rest.on = s.on ? 1 : 0; N.cur = N.rest.on; N.paint = paintToggle;
+    CROSS.push([N.id, N.offRole, N.onRole]);
+  },
+  checkbox: (N, s) => {
+    const z = s.size || 30;
+    boxOf(N, { ...s, w: z, h: z, radius: s.radius != null ? s.radius : 8, fill: null, stroke: null }, false);
+    N.boxC = role(s.stroke || 'line'); N.onRole = s.fill || 'brand'; N.onC = role(N.onRole); N.tickC = role(s.color || 'paper');
+    N.rest.on = s.on ? 1 : 0; N.cur = N.rest.on; N.paint = paintCheck;
+  },
+  input: (N, s) => {
+    boxOf(N, { ...s, radius: s.radius != null ? s.radius : 14, fill: s.fill || 'tint' }, false);
+    const size = s.size || 24, font = s.font || 'ui', pad = s.pad != null ? s.pad : 16;
+    let x = pad;
+    if (s.icon) { const iz = Math.round(size * 1.1); addKid(N, { type: 'icon', name: s.icon, size: iz, x, y: (N.h - iz) / 2, color: s.hint || 'muted' }, 'icon'); x += iz + 10; }
+    N.tx = x; N.base = N.h / 2 + cap(font, size) / 2; N.font = font; N.size = size; N.valColor = s.color || 'ink'; N.caret = role(s.caret || 'brand');
+    if (s.placeholder) N.ph = addKid(N, { type: 'text', text: s.placeholder, font, size, x, y: N.base, color: s.hint || 'muted' }, 'placeholder');
+    if (s.value) N.val = addKid(N, { type: 'text', text: s.value, font, size, x, y: N.base, color: N.valColor }, 'value');
+    N.after = paintCaret; N.typeEv = [];
+  },
+  tabbar: (N, s) => {
+    const h = s.h || 84, items = s.items || [];
+    boxOf(N, { ...s, w: DEV.sw, h, radius: 0, fill: s.fill || 'paper' }, false);
+    N.x = 0; N.y = DEV.sh - h;
+    N.offRole = s.color || 'muted'; N.onRole = s.accent || 'brand'; N.off = role(N.offRole); N.onC = role(N.onRole);
+    N.lineC = s.line === false ? null : role(s.line || 'line');
+    const font = s.font || 'ui', size = s.size || 24, isz = s.iconSize || 30;
+    N.items = items.map((it, i) => {
+      const cx = DEV.sw * (i + 0.5) / items.length, line = it.label ? layoutText({ id: `${N.id}.${i}`, text: it.label, font, size, anchor: 'C', x: 0, baseline: 0 }) : null;
+      const iy = line ? 12 : (h - isz) / 2 - 8, ly = iy + isz + 8 + (line ? line.capH : 0);
+      const o = { p2d: new Path2D(ICONS[it.icon] || it.d || ICONS.home), x: cx - isz / 2, y: iy, size: isz, line, lx: cx, ly };
+      if (line) for (const [c, r] of [[N.offRole, 0], [N.onRole, 1]]) TEXTS.push({ N, line, color: c, box: [cx + line.inkL, ly + line.top, cx + line.inkR, ly + line.bottom], on: s.fill || 'paper', font, alt: r === 1 });
+      return o;
+    });
+    N.rest.sel = s.active || 0; N.cur = N.rest.sel; N.paint = paintTabs;
+  },
+  nav: (N, s) => {
+    const h = s.h || 56, font = s.font || 'ui', size = s.size || 24, acc = s.accent || 'brand';
+    boxOf(N, { ...s, w: DEV.sw, h, radius: 0, fill: s.fill || null }, false);
+    N.x = 0; N.y = s.y != null ? s.y : DEV.statusH;
+    if (s.line) addKid(N, { type: 'rect', x: 0, y: h - 1, w: DEV.sw, h: 1, fill: s.line }, 'line');
+    if (s.back) {
+      addKid(N, { type: 'icon', name: 'back', size: 28, x: 8, y: (h - 28) / 2, color: acc }, 'back');
+      if (typeof s.back === 'string') addKid(N, { type: 'text', text: s.back, font, size, x: 36, y: h / 2 + cap(font, size) / 2, color: acc }, 'backLabel');
+    }
+    if (s.title) addKid(N, { type: 'text', text: s.title, font: s.titleFont || font, size, anchor: 'C', x: DEV.sw / 2, y: h / 2 + cap(s.titleFont || font, size) / 2, color: s.color || 'ink' }, 'title');
+    (s.right || []).forEach((r, i) => addKid(N, { type: 'icon', name: r.icon || r, size: 28, x: DEV.sw - 16 - 28 - i * 44, y: (h - 28) / 2, color: acc }, `right${i}`));
+  },
+  row: (N, s) => {
+    const w = s.w || DEV.sw - (s.x || 0), h = s.h || 76, inset = s.inset != null ? s.inset : 20, font = s.font || 'ui', size = s.size || 24;
+    boxOf(N, { ...s, w, h, radius: s.radius || 0, fill: s.fill || null }, false);
+    let x = inset;
+    if (s.avatar) { const z = s.avatarSize || 56; addKid(N, { type: 'avatar', initials: s.avatar, size: z, x, y: (h - z) / 2, fill: s.avatarFill, color: s.avatarColor }, 'avatar'); x += z + 14; }
+    else if (s.icon) { addKid(N, { type: 'icon', name: s.icon, size: 28, x, y: (h - 28) / 2, color: s.iconColor || 'brand' }, 'icon'); x += 44; }
+    else if (s.image) { addKid(N, { type: 'rect', x, y: (h - 52) / 2, w: 52, h: 52, radius: 12, fill: s.image }, 'image'); x += 66; }
+    const two = s.sub != null || s.bars;
+    const tb = two ? h / 2 - 4 : h / 2 + cap(font, size) / 2;
+    if (s.title != null) addKid(N, { type: 'text', text: s.title, font, size, x, y: tb, color: s.color || 'ink' }, 'title');
+    if (s.sub != null) addKid(N, { type: 'text', text: s.sub, font: s.subFont || font, size: s.subSize || size, x, y: tb + 30, color: s.hint || 'muted' }, 'sub');
+    else if (s.bars) addKid(N, { type: 'bars', x, y: tb + 12, w: s.bars === true ? 120 : s.bars, h: 10, color: s.barColor || 'line' }, 'bars');
+    const tr = s.trail;
+    if (tr === 'next') addKid(N, { type: 'icon', name: 'next', size: 24, x: w - inset - 24, y: (h - 24) / 2, color: s.hint || 'muted' }, 'next');
+    else if (tr && tr.toggle) addKid(N, { id: tr.id, type: 'toggle', x: w - inset - 52, y: (h - 32) / 2, on: tr.on, fill: tr.fill, onFill: tr.onFill }, 'toggle');
+    else if (tr && tr.text != null) addKid(N, { type: 'text', text: tr.text, font, size: tr.size || size, anchor: 'R', x: w - inset, y: h / 2 + cap(font, tr.size || size) / 2, color: tr.color || 'muted' }, 'trail');
+    if (s.divider) addKid(N, { type: 'rect', x, y: h - 1, w: w - x, h: 1, fill: s.divider }, 'divider');
+  },
+  toast: (N, s) => {
+    const w = s.w || 220, h = s.h || 56;
+    boxOf(N, { ...s, w, h, radius: s.radius != null ? s.radius : 'pill', fill: s.fill || 'ink' }, false);
+    N.x = s.x != null ? s.x : (DEV.sw - w) / 2; N.y = s.y != null ? s.y : DEV.statusH + 8;
+    N.over = 'toast'; N.rest.show = 0;
+    centredRow(N, { label: s.text, icon: s.icon, color: s.color || 'paper', iconColor: s.iconColor, size: s.size || 24, font: s.font, on: s.fill || 'ink' }, w, h, '');
+  },
+  sheet: (N, s) => {
+    const h = s.h || Math.round(DEV.sh * 0.5), r = s.radius != null ? s.radius : 28;
+    boxOf(N, { ...s, w: DEV.sw, h, radius: [r, r, 0, 0], fill: s.fill || 'paper' }, true);
+    N.x = 0; N.y = DEV.sh - h;
+    N.over = 'sheet'; N.rest.show = 0; N.scrim = role(s.scrim || 'ink'); N.scrimOp = s.scrimOp != null ? s.scrimOp : 0.32;
+    if (s.grabber !== false) addKid(N, { type: 'rect', x: (DEV.sw - 40) / 2, y: 8, w: 40, h: 5, radius: 'pill', fill: s.grabber || 'line' }, 'grabber');
+  },
+  modal: (N, s) => {
+    const w = s.w || DEV.sw - 48, h = s.h || 300;
+    boxOf(N, { ...s, w, h, radius: s.radius != null ? s.radius : 24, fill: s.fill || 'paper' }, true);
+    N.x = s.x != null ? s.x : (DEV.sw - w) / 2; N.y = s.y != null ? s.y : (DEV.sh - h) / 2;
+    N.over = 'modal'; N.rest.show = 0; N.scrim = role(s.scrim || 'ink'); N.scrimOp = s.scrimOp != null ? s.scrimOp : 0.32;
+  },
+};
+
+/* ---------------- matrices of a node ---------------- */
+function restLocal(N) {
+  let m = mT(N.x, N.y);
+  if (N.rest.sc !== 1 || N.rest.rot !== 0) m = mmul(m, mAbout(N.pv ? N.pv[0] : 0, N.pv ? N.pv[1] : 0, N.rest.rot * DEG, N.rest.sc));
+  return m;
+}
+function restChain(N) { let m = M1; const ch = []; for (let n = N; n; n = n.parent) ch.push(n); for (let i = ch.length - 1; i >= 0; i--) m = mmul(m, restLocal(ch[i])); return m; }
+function localM(N, t) {
+  let m = mT(N.x + V(N, 'dx', t), N.y + V(N, 'dy', t));
+  if (N.over) {
+    const k = V(N, 'show', t);
+    if (N.over === 'toast') m = mmul(m, mT(0, -(1 - k) * (N.y + N.h + 24)));
+    else if (N.over === 'sheet') m = mmul(m, mT(0, (1 - k) * (N.h + 24)));
+    else m = mmul(m, mAbout(N.w / 2, N.h / 2, 0, 0.92 + 0.08 * k));
+  }
+  const sc = V(N, 'sc', t), rot = V(N, 'rot', t);
+  if (sc !== 1 || rot !== 0) m = mmul(m, mAbout(N.pv[0], N.pv[1], rot * DEG, sc));
+  return m;
+}
+function chainM(N, t) { let m = M1; const ch = []; for (let n = N; n; n = n.parent) ch.push(n); for (let i = ch.length - 1; i >= 0; i--) m = mmul(m, localM(ch[i], t)); return m; }
+function devM(t, still) {                          // device-screen units -> canvas, before the camera
+  const D = DEV, s = D.scale * (still ? 1 : V(D, 'sc', t));
+  const m = mmul(mT(D.x + (still ? 0 : V(D, 'dx', t)), D.y + (still ? 0 : V(D, 'dy', t))), mAbout(0, 0, (still ? 0 : V(D, 'rot', t)) * DEG, s));
+  return mmul(m, mT(-D.cx, -D.cy));
+}
+const camM = (t) => { const z = V(CAM, 'z', t); return [z, 0, 0, z, CX - z * V(CAM, 'cx', t), CY - z * V(CAM, 'cy', t)]; };
+const stageM = (t) => mmul(camM(t), devM(t));
+function entryOf(Sc, t) {
+  let last = null;
+  for (const E of ENTRIES) if (E.Sc === Sc) { if (t >= E.a && t < E.b) return E; if (E.a <= t) last = E; }
+  return last || ENTRIES.find((E) => E.Sc === Sc) || null;
+}
+function expandBox(E, t) {                         // the container growing from the source's box to the whole screen
+  const k = V(E.Sc, 'k', t), b = E.expand.box0, sw = DEV.sw, sh = DEV.sh;
+  return [lerp(b[0], 0, k), lerp(b[1], 0, k), lerp(b[2] - b[0], sw, k), lerp(b[3] - b[1], sh, k), Math.max(0, lerp(E.expand.r0, DEV.r, k))];
+}
+function screenM(Sc, t, E) {                       // screen units -> device-screen units
+  let m = mT(V(Sc, 'x', t) * DEV.sw, 0);
+  if (E && E.expand) { const b = expandBox(E, t), k = b[2] / DEV.sw; m = mmul(m, [k, 0, 0, k, b[0], b[1]]); }
+  return m;
+}
+function screenOf(N, t) {                          // node-local units -> device-screen units, at t
+  const Sc = N.screen, E = entryOf(Sc, t);
+  let m = screenM(Sc, t, E);
+  if (!N.fixed) m = mmul(m, mT(0, -V(Sc, 'scroll', t)));
+  return mmul(m, chainM(N, t));
+}
+function worldM(N, t) { return N.hud ? chainM(N, t) : mmul(stageM(t), screenOf(N, t)); }
+const shownAt = (Sc, t) => ENTRIES.some((E) => E.Sc === Sc && t >= E.a && t < E.b);
+
+/* ---------------- building the film ---------------- */
+function buildDevice(d) {
+  const kind = d.kind || 'phone';
+  const def = { phone: { screen: [360, 760], radius: 46, bezel: 12, status: 44 }, tablet: { screen: [600, 820], radius: 26, bezel: 18, status: 32 }, browser: { screen: [880, 560], radius: 12, bezel: 0, status: 0 } }[kind];
+  if (!def) throw new Error(`device kind "${kind}": use phone, tablet or browser`);
+  const [sw, sh] = d.screen || def.screen;
+  const D = DEV = { id: 'device', kind, spec: d, sw, sh, x: d.x != null ? d.x : CX, y: d.y != null ? d.y : CY, scale: d.scale || 1,
+    r: d.radius != null ? d.radius : def.radius, bz: d.bezel != null ? d.bezel : def.bezel, bar: kind === 'browser' ? (d.bar || 56) : 0,
+    P: {}, rest: { dx: 0, dy: 0, sc: 1, op: 1, rot: 0 } };
+  D.body = role(d.body || (kind === 'browser' ? 'paper' : 'ink'));
+  D.edge = d.edge ? role(d.edge) : null;
+  D.shadow = d.shadow ? { color: role(d.shadow.color || d.shadow), blur: d.shadow.blur || 40, dy: d.shadow.dy != null ? d.shadow.dy : 24, op: d.shadow.op != null ? d.shadow.op : 0.8 } : null;
+  D.outer = [-D.bz, -D.bz - D.bar, sw + D.bz, sh + D.bz];
+  D.R = kind === 'browser' ? D.r : D.r + D.bz;
+  D.cx = (D.outer[0] + D.outer[2]) / 2; D.cy = (D.outer[1] + D.outer[3]) / 2;
+  D.clipR = kind === 'browser' ? [0, 0, Math.max(0, D.r - 1), Math.max(0, D.r - 1)] : D.r;
+  D.statusH = d.status === false || kind === 'browser' ? 0 : (d.statusH || def.status);
+  D.font = d.font || 'ui';
+  if (D.statusH) D.clock = layoutText({ id: 'device.clock', text: d.time || '9:41', font: D.font, size: d.timeSize || (kind === 'tablet' ? 14 : 16), anchor: 'L', x: 0, baseline: 0 });
+  D.notch = kind === 'phone' ? (d.notch === undefined ? 'dot' : d.notch) : null;
+  D.buttons = kind === 'phone' && d.buttons !== false;
+  if (kind === 'browser') {
+    D.dots = role(d.dots || 'line'); D.url = role(d.urlFill || 'bg'); D.urlColorRole = d.urlColor || 'muted'; D.urlColor = role(D.urlColorRole);
+    D.urlLine = layoutText({ id: 'device.url', text: d.url || 'example.com', font: D.font, size: d.urlSize || 16, anchor: 'C', x: 0, baseline: 0 });
+    D.barC = role(d.barFill || d.body || 'paper');
+  }
+  D.home = kind !== 'browser' && d.home !== false;
+}
+function buildScreen(s, i) {
+  if (SCREEN[s.id]) throw new Error(`duplicate screen "${s.id}"`);
+  const Sc = { id: s.id, spec: s, i, P: {}, rest: { x: 0, dim: 0, scroll: 0, k: 1 }, flow: [], fixed: [], overlays: [] };
+  Sc.bgRole = s.bg || 'paper'; Sc.bg = role(Sc.bgRole);
+  Sc.statusRole = s.status || 'ink'; Sc.status = role(Sc.statusRole); Sc.home = role(s.home || Sc.statusRole);
+  Sc.dimC = role(s.dim || 'ink');
+  SCREENS.push(Sc); SCREEN[s.id] = Sc;
+  (s.layers || []).forEach((ls, j) => {
+    const N = mkNode(ls, null, { screen: Sc }, `${s.id}.${j}`);
+    (N.over ? Sc.overlays : N.fixed ? Sc.fixed : Sc.flow).push(N);
+  });
+  Sc.content = Math.max(DEV.sh, ...Sc.flow.map((N) => mbox(restLocal(N), N.box)[3] + 24));
+}
+function buildPointer(p) {
+  PTR = { id: 'pointer', kind: p.kind || 'finger', spec: p, size: p.size || (p.kind === 'cursor' ? 30 : 56), moves: [], P: {}, rest: { px: DEV.sw * 0.82, py: DEV.sh + 180, sc: 1, op: 0 } };
+  PTR.fill = role(p.fill || 'paper'); PTR.ring = role(p.ring || 'ink');
+  PTR.fillOp = p.fillOp != null ? p.fillOp : 0.55; PTR.ringOp = p.ringOp != null ? p.ringOp : 0.3;
+  const sh = p.shadow === undefined ? (PTR.kind === 'finger' ? { color: p.ring || 'ink', blur: 8, dy: 5, op: 0.16 } : null) : p.shadow;
+  PTR.shadow = sh ? { color: role(sh.color || sh), blur: sh.blur || 8, dy: sh.dy != null ? sh.dy : 5, op: sh.op != null ? sh.op : 0.16 } : null;
+  PTR.arrow = new Path2D('M0 0L0 25.5L6.4 19.4L10.6 29.2L14.8 27.4L10.6 17.8L19 17.8Z');
+}
+function buildHud() {
+  const L = FILM.lockup;
+  if (L) {
+    LOCK = { wrap: { exit: 0, to: { op: 0 }, spring: 'EXIT', stagger: 32, ...(L.wrap || {}) }, nodes: [] };
+    (L.layers || []).forEach((s, i) => { const N = mkNode(s, null, { hud: true }, `lockup.${i}`); N.li = i; N.wrap = true; HUD.push(N); LOCK.nodes.push(N); });
+    const w = LOCK.wrap;
+    LOCK.end = Math.max(...LOCK.nodes.map((N) => w.exit + (w.stagger ? noteSec(w.stagger) * N.li : 0))) + settle(spring(w.spring || 'EXIT'));
+  }
+  (FILM.layers || []).forEach((s, i) => HUD.push(mkNode(s, null, { hud: true }, `layer.${i}`)));
+}
+function buildCallout(s, i) {
+  const C = { id: s.id || `callout${i}`, spec: s, P: {}, rest: { ln: 0, lo: 0, dot: 0 } };
+  C.line = layoutText(spaced({ id: C.id, text: s.text, font: s.font || 'display', size: s.size, cap: s.cap, track: s.track, pairs: s.pairs, space: s.space, anchor: s.anchor || 'L', x: s.x, baseline: s.y }));
+  C.colorRole = s.color || 'ink'; C.color = role(C.colorRole);
+  C.lineC = role(s.line || C.colorRole); C.dotC = role(s.dot || 'brand'); C.ringC = role(s.ring || 'paper');
+  C.lw = s.width || 4; C.gap = s.gap != null ? s.gap : 24;
+  C.box = [C.line.inkL, C.line.top, C.line.inkR, C.line.bottom];
+  C.words = s.text.split(/\s+/).filter((w) => /[A-Za-z0-9€$£]/.test(w)).length;
+  C.tin = s.in; C.tout = s.out != null ? s.out : Infinity;
+  if (C.tin == null) throw new Error(`${C.id}: a callout needs in (and usually out)`);
+  C.copies = C.line.glyphs.filter((g) => !g.space).map((g, k) => ({ id: `${C.id}#${k}`, g, P: {}, rest: { ...BASE } }));
+  const from = stateVals(s.from || { dy: 28, op: 0, blur: 6 }, C.copies[0] || { rest: BASE, id: C.id }), st = noteSec(s.stagger || 32);
+  C.copies.forEach((G, k) => {
+    for (const [key, v] of Object.entries(from)) { initV(G, key, v); ev(G, key, C.tin + k * st, G.rest[key], springFor(key, s.spring || 'LAND')); }
+    if (C.tout < DUR) {
+      const lv = stateVals(s.leave || { dy: -20, op: 0 }, G), te = C.tout + k * noteSec(64);
+      for (const [key, v] of Object.entries(lv)) ev(G, key, te, v, springFor(key, 'EXIT'));
+      if (LOOP === 'cycle') for (const key of new Set([...Object.keys(lv), ...Object.keys(from)])) ev(G, key, te + settle(SP.EXIT) + 1 / FPS, key in from ? from[key] : G.rest[key], null, 'set');
+    }
+  });
+  const tl = C.tin + (s.lead != null ? s.lead : 0.125);
+  ev(C, 'ln', tl, 1, 'LEAD'); ev(C, 'dot', tl + landT('LEAD'), 1, 'POP');
+  if (C.tout < DUR) {
+    ev(C, 'lo', C.tout, 1, 'EXIT'); ev(C, 'dot', C.tout, 0, 'EXIT');
+    if (LOOP === 'cycle') { const te = C.tout + settle(SP.EXIT) + 1 / FPS; ev(C, 'ln', te, 0, null, 'set'); ev(C, 'lo', te, 0, null, 'set'); }
+  }
+  needContrast(C.id, C.colorRole, s.on || 'bg', C.line.size >= 40 * U ? 3 : 4.5);
+  CALLOUTS.push(C);
+}
+
+// enter, keys and exit of a node (or of each glyph of a staggered line), and the lockup's wrap
+function motionOf(N) {
+  const s = N.spec, en = s.enter && !s.enter.typed ? s.enter : null, copies = N.copies || [N];
+  const rank = (m, seed) => (m && m.stagger ? orderOf(copies, m.order, seed) : null);
+  const enR = rank(en, 0x51A6 + N.po), keyR = (s.keys || []).map((k, j) => rank(k, 0x7E57 + j)), exR = rank(s.exit, 0xE417 + N.po);
+  const lag = (m, R, k) => (m && m.stagger ? noteSec(m.stagger) * R[k] : 0);
+  const sv = (st) => stateVals(st, N.copies ? { id: N.id, w: N.w, h: N.h, rest: BASE } : N);   // a glyph's scale is its own
+  if (N.wrap) {                                    // the lockup: at rest at 0, leaves, hidden once gone, back for its entrance
+    const w = LOCK.wrap, te = w.exit + (w.stagger ? noteSec(w.stagger) * N.li : 0);
+    for (const [k, v] of Object.entries(stateVals(w.to || { op: 0 }, N))) ev(N, k, te, v, springFor(k, w.spring || 'EXIT'));
+    const back = en ? en.at : s.enter && s.enter.typed ? s.enter.at : null;
+    if (back != null && back > LOCK.end) {
+      for (const k of Object.keys(stateVals(w.to || { op: 0 }, N))) ev(N, k, LOCK.end, N.rest[k], null, 'set');
+      ev(N, 'op', LOCK.end, 0, null, 'set');
+      ev(N, 'op', back, N.rest.op, null, 'set');
+    }
+  }
+  copies.forEach((G, k) => {
+    if (en) {
+      const from = sv(en.from), ts = en.at + lag(en, enR, k);
+      if (N.wrap) { if (ts > LOCK.end) for (const [key, v] of Object.entries(from)) ev(G, key, LOCK.end, v, null, 'set'); }
+      else for (const [key, v] of Object.entries(from)) initV(G, key, v);
+      for (const key of Object.keys(from)) ev(G, key, ts, G.rest[key], springFor(key, en.spring));
+      G.land = ts + landT(en.spring || 'LAND');
+    }
+    (s.keys || []).forEach((m, j) => { for (const [key, v] of Object.entries(sv(m.to))) ev(G, key, m.at + lag(m, keyR[j], k), v, springFor(key, m.spring)); });
+    if (s.exit) {
+      const xv = sv(s.exit.to), te = s.exit.at + lag(s.exit, exR, k);
+      for (const [key, v] of Object.entries(xv)) ev(G, key, te, v, springFor(key, s.exit.spring || 'EXIT'));
+      if (LOOP === 'cycle' && en && !N.wrap && (xv.op === 0 || xv.sc === 0)) {
+        const from = sv(en.from), tr = te + settle(spring(s.exit.spring || 'EXIT')) + 1 / FPS;
+        for (const key of new Set([...Object.keys(xv), ...Object.keys(from)])) ev(G, key, tr, key in from ? from[key] : G.rest[key], null, 'set');
+      }
+    }
+  });
+}
+function orderOf(cps, how, seed) {
+  const n = cps.length;
+  if (how === 'reverse') return cps.map((_, k) => n - 1 - k);
+  if (how === 'random') { const p = shuffled(cps.map((_, k) => k), seed); return cps.map((_, k) => p.indexOf(k)); }
+  if (how === 'center') return cps.map((_, k) => Math.abs(k - (n - 1) / 2));
+  return cps.map((_, k) => k);
+}
+function deviceMotion() {
+  const d = DEV.spec, fake = { id: 'device', rest: DEV.rest, w: 0, h: 0 };
+  if (d.enter) { const from = stateVals(d.enter.from, fake); for (const [k, v] of Object.entries(from)) { initV(DEV, k, v); ev(DEV, k, d.enter.at, DEV.rest[k], springFor(k, d.enter.spring || 'LIFT')); } }
+  for (const m of d.keys || []) for (const [k, v] of Object.entries(stateVals(m.to, fake))) ev(DEV, k, m.at, v, springFor(k, m.spring));
+  if (d.exit) for (const [k, v] of Object.entries(stateVals(d.exit.to, fake))) ev(DEV, k, d.exit.at, v, springFor(k, d.exit.spring || 'EXIT'));
+}
+
+/* ---------------- the script ---------------- */
+function backRole(N) {                            // the fill a press lights up: its own, its default look's, or what it sits on
+  for (let n = N; n; n = n.parent) { if (n.looks && n.looks.default.fill) return n.looks.default.fill; if (n.fillRole) return n.fillRole; }
+  return N.hud ? 'bg' : N.screen.bgRole;
+}
+function nodeOf(id, what) { const N = NODES[id]; if (!N) throw new Error(`${what}: no element with id "${id}"`); return N; }
+function openEntry(Sc, t, z, expand) { const E = { Sc, z, a: t, b: Infinity, expand }; ENTRIES.push(E); return E; }
+function closeEntry(Sc, t) { for (const E of ENTRIES) if (E.Sc === Sc && E.b === Infinity) E.b = t; }
+function runScript() {
+  const acts = (FILM.script || []).map((a, i) => ({ ...a, i })).sort((a, b) => a.at - b.at || a.i - b.i);
+  const stack = [SCREENS[0]], top = () => stack[stack.length - 1];
+  openEntry(SCREENS[0], 0, 0, null);
+  for (const Sc of SCREENS.slice(1)) Sc.rest.x = 1;
+  const scrollTo = new Map(SCREENS.map((Sc) => [Sc, 0]));
+  let ptr = null, ptrIn = false, moved = -Infinity, movedSp = 'MOVE';
+  const PS = () => (PTR && PTR.kind === 'cursor' ? 'CURSOR' : 'MOVE');
+  const needPtr = (a) => { if (!PTR) throw new Error(`script at ${a.at}: add FILM.pointer to move or tap`); };
+  // where a node is in device-screen units at t, from its rest geometry and the scroll the script has asked for
+  const boxAt = (N) => { const Sc = N.screen; let m = restChain(N); if (!N.fixed) m = mmul(mT(0, -scrollTo.get(Sc)), m); return mbox(m, N.box); };
+  const target = (spec, point, what) => {
+    if (Array.isArray(spec)) return spec.slice();
+    const N = nodeOf(spec, what), b = boxAt(N), p = point || [0.5, 0.5];
+    return [lerp(b[0], b[2], p[0]), lerp(b[1], b[3], p[1])];
+  };
+  const move = (t, to, sp, arc) => {
+    if (ptr && arc !== 0) {
+      const dx = to[0] - ptr[0], dy = to[1] - ptr[1], L = Math.hypot(dx, dy);
+      if (L > 1) { let nx = -dy / L, ny = dx / L; if (ny < 0 || (ny === 0 && nx < 0)) { nx = -nx; ny = -ny; } PTR.moves.push({ t, sp: spring(sp), nx, ny, a: (arc != null ? arc : 0.08) * L }); }
+    }
+    ev(PTR, 'px', t, to[0], sp); ev(PTR, 'py', t, to[1], sp);
+    ptr = to; moved = t; movedSp = sp;
+  };
+  const shot = (t, name, what) => SHOTS.push({ t, name, what });
+  for (const a of acts) {
+    const t = a.at, key = ['pointer', 'move', 'tap', 'click', 'scroll', 'push', 'pop', 'expand', 'collapse', 'cut', 'state', 'toggle', 'check', 'type', 'clear', 'blur', 'open', 'close', 'tab', 'focus', 'camera'].find((k) => a[k] !== undefined);
+    if (!key) throw new Error(`script at ${t}: unknown action ${JSON.stringify(a)}`);
+    if (!(t >= 0 && t < DUR)) throw new Error(`script at ${t}: outside the film (0 to ${DUR})`);
+    const what = `script at ${t.toFixed(3)} (${key})`;
+    if (key === 'pointer') {
+      needPtr(a);
+      const home = [PTR.rest.px, PTR.rest.py];
+      if (a.pointer === 'in') {
+        const from = a.from || home;
+        ev(PTR, 'px', t, from[0], null, 'set'); ev(PTR, 'py', t, from[1], null, 'set'); ptr = from.slice();
+        ev(PTR, 'op', t, 1, 'FADE'); ptrIn = true;
+        move(t, a.to != null ? target(a.to, a.point, what) : [DEV.sw / 2, DEV.sh / 2], a.spring || PS(), a.arc);
+      } else if (a.pointer === 'out') {
+        move(t, a.to ? target(a.to, a.point, what) : home, a.spring || PS(), a.arc);
+        ev(PTR, 'op', t + 0.15, 0, 'FADE'); ptrIn = false;
+        if (LOOP === 'cycle' && a.to) { const tr = t + 0.15 + settle(SP.FADE); ev(PTR, 'px', tr, home[0], null, 'set'); ev(PTR, 'py', tr, home[1], null, 'set'); ptr = home.slice(); }
+      } else throw new Error(`${what}: pointer is 'in' or 'out'`);
+    } else if (key === 'move') { needPtr(a); move(t, target(a.move, a.point, what), a.spring || PS(), a.arc); }
+    else if (key === 'tap' || key === 'click') {
+      needPtr(a);
+      const N = nodeOf(a[key], what), hold = a.hold != null ? a.hold : 0.125;
+      TAPS.push({ t, N, at: ptr ? ptr.slice() : null, landed: moved + landT(movedSp), top: top(), what });
+      ev(PTR, 'sc', t, a.pscale || 0.84, 'PRESS'); ev(PTR, 'sc', t + hold, 1, 'RELEASE');
+      if (a.press !== false) { ev(N, 'sc', t, N.rest.sc * (a.scale || 0.96), 'PRESS'); ev(N, 'sc', t + hold, N.rest.sc, 'RELEASE'); }
+      if (ptr && a.ripple !== false) {
+        if (PTR.kind === 'cursor') RINGS.push({ t, x: ptr[0], y: ptr[1] });
+        else {
+          let m = restChain(N); if (!N.fixed) m = mmul(mT(0, -scrollTo.get(N.screen)), m);
+          const [x, y] = mpt(minv(m), ptr[0], ptr[1]);
+          const r = Math.max(...corners(N.box).map(([cx, cy]) => Math.hypot(cx - x, cy - y)));
+          const f = a.ripple || (lum(col(backRole(N))) > 0.5 ? 'ink' : 'paper');
+          (N.ripples = N.ripples || []).push({ t, x, y, r, color: role(f), a: f === 'ink' || lum(col(f)) < 0.3 ? 0.1 : 0.3 });
+        }
+        activeIn(t, t + RIPPLE_T);
+      }
+      accentAt(t + 2 / FPS, `tap-${N.id}`);
+      shot(t + 0.1, `tap-${N.id}`, `${PTR.kind} presses ${N.id}`);
+    } else if (key === 'scroll') {
+      const Sc = a.screen ? SCREEN[a.screen] : top(), d = a.scroll;
+      ev(Sc, 'scroll', t, d, a.spring || 'SCROLL', 'by'); scrollTo.set(Sc, scrollTo.get(Sc) + d);
+      if (a.drag !== false && ptrIn) {
+        const hold = a.hold != null ? a.hold : 0.25;
+        ev(PTR, 'sc', t, 0.84, 'PRESS'); move(t, [ptr[0], ptr[1] - d * 0.85], 'DRAG', 0); ev(PTR, 'sc', t + hold, 1, 'RELEASE');
+      }
+      Sc.scrolls = (Sc.scrolls || []).concat([[t, scrollTo.get(Sc)]]);
+      shot(t + 0.3, `scroll-${Sc.id}`, `${Sc.id} scrolling`);
+    } else if (key === 'push' || key === 'cut') {
+      const B = SCREEN[a[key]], A = top();
+      if (!B) throw new Error(`${what}: no screen "${a[key]}"`);
+      if (key === 'push') {
+        const sp = a.spring || 'PUSH';
+        ev(B, 'x', t, 1, null, 'set'); ev(B, 'x', t, 0, sp); ev(B, 'k', t, 1, null, 'set');
+        ev(A, 'x', t, -0.3, sp); ev(A, 'dim', t, 0.1, sp);
+        openEntry(B, t, stack.length, null); closeEntry(A, t + settle(spring(sp)));
+        stack.push(B);
+        shot(t + 0.12, `push-${B.id}`, `${B.id} pushing in`); shot(t + landT(sp) + 0.3, `${B.id}-rest`, `${B.id} landed`);
+      } else {
+        ev(B, 'x', t, 0, null, 'set'); ev(B, 'k', t, 1, null, 'set'); ev(B, 'dim', t, 0, null, 'set');
+        closeEntry(A, t); stack.pop(); openEntry(B, t, stack.length, null); stack.push(B); cutAt(t);
+        shot(t + 3 / FPS, `cut-${B.id}`, `cut to ${B.id}`);
+      }
+    } else if (key === 'pop') {
+      if (stack.length < 2) throw new Error(`${what}: nothing to pop`);
+      const B = stack.pop(), A = top(), sp = a.spring || 'PUSH';
+      ev(B, 'x', t, 1, sp); ev(A, 'x', t, 0, sp); ev(A, 'dim', t, 0, sp);
+      closeEntry(B, t + settle(spring(sp))); openEntry(A, t, stack.length - 1, null);
+      shot(t + landT(sp) + 0.3, `${A.id}-back`, `back on ${A.id}`);
+    } else if (key === 'expand') {
+      const B = SCREEN[a.expand], A = top(), N = nodeOf(a.from, what), sp = a.spring || 'EXPAND';
+      if (!B) throw new Error(`${what}: no screen "${a.expand}"`);
+      if (N.screen !== A) throw new Error(`${what}: ${N.id} is not on the screen on top (${A.id})`);
+      const pm = mmul(mT(0, N.fixed ? 0 : -scrollTo.get(A)), N.parent ? restChain(N.parent) : M1), mN = mmul(pm, restLocal(N));
+      const box0 = mbox(mN, N.box), rr = N.kind === 'box' ? radii(N.r, N.w, N.h) : 0, r0 = (Array.isArray(rr) ? rr[0] : rr) * mScale(mN);
+      ev(B, 'k', t, 0, null, 'set'); ev(B, 'k', t, 1, sp); ev(B, 'x', t, 0, null, 'set');
+      ev(A, 'dim', t, 0.18, sp);
+      openEntry(B, t, stack.length, { src: N, from: A, box0, r0, pm, t0: t });
+      closeEntry(A, t + settle(spring(sp)));
+      N.hidden.push([t, Infinity]);
+      stack.push(B);
+      shot(t + 0.15, `expand-${B.id}`, `${N.id} growing into ${B.id}`); shot(t + landT(sp) + 0.35, `${B.id}-rest`, `${B.id} landed`);
+    } else if (key === 'collapse') {
+      if (stack.length < 2) throw new Error(`${what}: nothing to collapse`);
+      const B = stack.pop(), A = top(), sp = a.spring || 'EXPAND', E = ENTRIES.find((e) => e.Sc === B && e.b === Infinity && e.expand);
+      if (!E) throw new Error(`${what}: ${B.id} was not opened with expand`);
+      ev(B, 'k', t, 0, sp); ev(A, 'dim', t, 0, sp);
+      const end = t + settle(spring(sp));
+      closeEntry(B, end); openEntry(A, t, stack.length - 1, null);
+      for (const w of E.expand.src.hidden) if (w[1] === Infinity) w[1] = end;
+      shot(t + landT(sp) + 0.3, `${A.id}-back`, `back on ${A.id}`);
+    } else if (key === 'state') {
+      const N = nodeOf(a.state, what), to = a.to || 'default';
+      if (!N.looks || !N.looks[to]) throw new Error(`${what}: ${N.id} has no state "${to}"`);
+      const A = N.looks[N.cur], B = N.looks[to];
+      if (A !== B) {
+        if (A.bg && B.bg) {
+          if (B.bg.po < A.bg.po) { ev(B.bg, 'op', t, 1, null, 'set'); ev(A.bg, 'op', t, 0, 'FADE'); }
+          else { ev(B.bg, 'op', t, 1, 'FADE'); ev(A.bg, 'op', t + settle(SP.FADE), 0, null, 'set'); }
+        } else if (B.bg) ev(B.bg, 'op', t, 1, 'FADE'); else if (A.bg) ev(A.bg, 'op', t, 0, 'FADE');
+        for (const K of A.fg) ev(K, 'op', t, 0, 'FADE');
+        for (const K of B.fg) ev(K, 'op', t, 1, 'FADE');
+        N.cur = to;
+      }
+      accentAt(t + 6 / FPS, `state-${N.id}`);
+      shot(t + 0.4, `state-${N.id}`, `${N.id} is ${to}`);
+    } else if (key === 'toggle' || key === 'check') {
+      const N = nodeOf(a[key], what);
+      if (N.type !== (key === 'toggle' ? 'toggle' : 'checkbox')) throw new Error(`${what}: ${N.id} is a ${N.type}`);
+      const on = a.on != null ? (a.on ? 1 : 0) : 1 - N.cur;
+      ev(N, 'on', t, on, a.spring || (key === 'toggle' ? 'KNOB' : 'TICKS')); N.cur = on;
+      accentAt(t + 6 / FPS, `${key}-${N.id}`);
+      shot(t + 0.4, `${key}-${N.id}`, `${N.id} ${on ? 'on' : 'off'}`);
+    } else if (key === 'tab') {
+      const N = nodeOf(a.tab, what);
+      if (N.type !== 'tabbar') throw new Error(`${what}: ${N.id} is not a tabbar`);
+      ev(N, 'sel', t, a.to, a.spring || 'KNOB'); N.cur = a.to;
+      accentAt(t + 6 / FPS, `tab-${N.id}`);
+    } else if (key === 'type' || key === 'clear') {
+      const N = nodeOf(a[key], what);
+      if (N.type !== 'input') throw new Error(`${what}: ${N.id} is not an input`);
+      const every = a.every || 4;
+      if (key === 'type') {
+        if (N.val && N.typeEv.length) throw new Error(`${what}: ${N.id} is already typed into; clear it first or use another input`);
+        if (N.val) ev(N.val, 'op', t, 0, null, 'set');
+        N.val = addKid(N, { type: 'text', text: a.text, font: N.font, size: N.size, x: N.tx, y: N.base, color: N.valColor }, 'typed');
+        N.val.typeEv = N.typeEv; N.val.swap = N.ph;
+        if (N.ph) ev(N.ph, 'op', t, 0, null, 'set');
+        const n = N.val.line.glyphs.length;
+        N.typeEv.push({ t, every, dir: 1, n });
+        TYPING.push({ N: N.val, t, end: t + n * every / FPS });
+        if (!FOCUS.some((f) => f.N === N && f.b === Infinity)) FOCUS.push({ N, a: t, b: Infinity });
+        shot(t + (n * every + 4) / FPS, `type-${N.id}`, `${N.id} typed`);
+      } else {
+        if (!N.val || !N.typeEv.length) throw new Error(`${what}: nothing typed into ${N.id}`);
+        const n = N.val.line.glyphs.length;
+        N.typeEv.push({ t, every, dir: -1, n });
+        TYPING.push({ N: N.val, t, end: t + n * every / FPS });
+        if (N.ph) ev(N.ph, 'op', t + n * every / FPS, N.ph.rest.op, null, 'set');
+      }
+    } else if (key === 'blur') {
+      const N = nodeOf(a.blur, what);
+      for (const f of FOCUS) if (f.N === N && f.b === Infinity) f.b = t;
+    } else if (key === 'open' || key === 'close') {
+      const N = nodeOf(a[key], what);
+      if (!N.over) throw new Error(`${what}: ${N.id} is not a toast, sheet or modal`);
+      const sp = a.spring || (key === 'close' ? 'CLOSE' : N.over === 'toast' ? 'TOAST' : 'SHEET');
+      ev(N, 'show', t, key === 'open' ? 1 : 0, sp);
+      if (key === 'open') shot(t + landT(sp) + 0.3, `${N.id}-open`, `${N.id} open`);
+    } else if (key === 'focus' || key === 'camera') CAMQ.push(a);
+  }
+  // a caret stops blinking when its screen goes away
+  for (const f of FOCUS) if (f.b === Infinity) {
+    const E = ENTRIES.filter((e) => e.Sc === f.N.screen && e.a <= f.a).pop();
+    if (E && E.b < Infinity) f.b = E.b;
+  }
+  for (const Sc of SCREENS) for (const [t, v] of Sc.scrolls || []) if (v < -0.5 || v > Sc.content - DEV.sh + 0.5) NOTES.push(['WARN', `scroll: ${Sc.id}`, `at ${t.toFixed(2)} s the scroll heads for ${v}, outside 0 to ${Math.max(0, Sc.content - DEV.sh).toFixed(0)} (the content is ${Sc.content.toFixed(0)} units tall)`]);
+}
+const CAMQ = [];
+const RIPPLE_T = 1.3;
+function cameraMotion() {
+  for (const a of CAMQ) {
+    const t = a.at, sp = a.spring || 'ZOOM';
+    if (a.focus === false || a.focus === null || a.camera === 'rest') { ev(CAM, 'cx', t, CX, sp); ev(CAM, 'cy', t, CY, sp); ev(CAM, 'z', t, 1, sp); continue; }
+    let z = a.z || 1.4, T;
+    if (a.focus != null) {
+      const tt = t + 0.5;
+      if (Array.isArray(a.focus)) { const [x0, y0, x1, y1] = a.focus; T = mpt(devM(tt), (x0 + x1) / 2, (y0 + y1) / 2); }
+      else { const N = nodeOf(a.focus, `focus at ${t}`), m = N.hud ? chainM(N, tt) : mmul(devM(tt), screenOf(N, tt)); T = mpt(m, (N.box[0] + N.box[2]) / 2, (N.box[1] + N.box[3]) / 2); }
+    } else { const c = a.camera; T = [c.x != null ? c.x : CX, c.y != null ? c.y : CY]; z = c.z || 1; }
+    const pl = a.place || [0.5, 0.5];
+    ev(CAM, 'cx', t, T[0] - (pl[0] * W - CX) / z, sp); ev(CAM, 'cy', t, T[1] - (pl[1] * H - CY) / z, sp); ev(CAM, 'z', t, z, sp);
+    SHOTS.push({ t: t + landT(sp) + 0.2, name: `focus-${a.focus || 'camera'}`, what: `camera on ${a.focus || 'a point'} at ${z}` });
+  }
+}
+
+/* ---------------- drawing ---------------- */
+const SHADOWS = new Map();                         // blurred rounded rects: a pure function of their key
+function shadowSprite(w, h, r, blur, color) {
+  const key = `${w.toFixed(2)}|${h.toFixed(2)}|${JSON.stringify(r)}|${blur}|${color}`;
+  let s = SHADOWS.get(key);
+  if (s) return s;
+  const pad = Math.ceil(blur * 2.5), [c, x] = mk2d(Math.ceil(w + 2 * pad), Math.ceil(h + 2 * pad));
+  x.filter = `blur(${blur}px)`; x.fillStyle = color; x.beginPath(); x.roundRect(pad, pad, w, h, r); x.fill();
+  s = { c, pad };
+  if (SHADOWS.size > 64) SHADOWS.delete(SHADOWS.keys().next().value);
+  SHADOWS.set(key, s);
+  return s;
+}
+function paintShadow(c, sh, x, y, w, h, r, op) {
+  const s = shadowSprite(w, h, r, sh.blur, sh.color);
+  c.globalAlpha = op * sh.op; c.drawImage(s.c, x - s.pad, y - s.pad + sh.dy);
+}
+function drawNode(c, N, t, q, a, force) {
+  if (!force && N.hidden.length && N.hidden.some((w) => t >= w[0] && t < w[1])) return;
+  let op = a * V(N, 'op', t);
+  if (N.over) { const k = V(N, 'show', t); if (k < 0.001) return; if (N.over === 'modal') op *= clamp01(k * 1.4); }
+  if (op < 0.002 || Math.abs(V(N, 'sc', t)) < 1e-4) return;
+  const m = localM(N, t);
+  c.save(); c.transform(m[0], m[1], m[2], m[3], m[4], m[5]);
+  PAINT[N.kind](c, N, t, q, op);
+  c.restore();
+  c.globalAlpha = 1;
+}
+const PAINT = {
+  box(c, N, t, q, op) {
+    const w = N.w + V(N, 'dw', t), h = N.h + V(N, 'dh', t), r = radii(N.r, w, h);
+    const p = new Path2D(); p.roundRect(0, 0, w, h, r);
+    if (N.shadow) paintShadow(c, N.shadow, 0, 0, w, h, r, op);
+    if (N.fill) { c.globalAlpha = op; c.fillStyle = N.fill; c.fill(p); }
+    if (N.paint) N.paint(c, N, t, q, op, w, h);
+    if (N.kids.length) {                           // a button's ripple goes over its background, under its label
+      if (N.clip) { c.save(); c.clip(p); }
+      let rippled = !N.ripples;
+      for (const K of N.kids) {
+        if (!rippled && !K.isBg && N.looks) { paintRipples(c, N, t, p, op); rippled = true; }
+        drawNode(c, K, t, q, op);
+      }
+      if (N.clip) c.restore();
+      if (!rippled) paintRipples(c, N, t, p, op);
+    } else if (N.ripples) paintRipples(c, N, t, p, op);
+    if (N.after) N.after(c, N, t, q, op, w, h);
+    if (N.stroke) { c.globalAlpha = op; c.strokeStyle = N.stroke; c.lineWidth = N.sw; c.stroke(p); }
+  },
+  group(c, N, t, q, op) {
+    if (N.clip) { c.save(); c.beginPath(); c.rect(0, 0, N.w, N.h); c.clip(); }
+    for (const K of N.kids) drawNode(c, K, t, q, op);
+    if (N.clip) c.restore();
+  },
+  text(c, N, t, q, op) {
+    const L = N.line;
+    if (N.hudTyped) return paintTypedHud(c, N, t, q, op);
+    if (N.typeEv) { const n = typedCount(N, q); drawText(c, L, N.color, (g) => (g.i < n ? { op } : null)); return; }
+    if (N.copies) {
+      setFont(c, L.font);
+      for (const G of N.copies) {
+        const o = op * V(G, 'op', t);
+        if (o < 0.002) continue;
+        const g = G.g, dx = V(G, 'dx', t), dy = V(G, 'dy', t), s = V(G, 'sc', t), r = V(G, 'rot', t) * DEG, b = V(G, 'bl', t);
+        if (s !== 1 || r !== 0) {
+          const px = (g.inkL + g.inkR) / 2 + dx, py = -L.capH / 2 + dy;
+          c.save(); c.translate(px, py); c.rotate(r); c.scale(s, s); c.translate(-px, -py);
+          fillGlyph(c, g.ch, g.x + dx, dy, N.color, o, b); c.restore();
+        } else fillGlyph(c, g.ch, g.x + dx, dy, N.color, o, b);
+      }
+      return;
+    }
+    const b = V(N, 'bl', t);
+    drawText(c, L, N.color, () => ({ op, blur: b }));
+  },
+  bars(c, N, t, q, op) {
+    c.globalAlpha = op; c.fillStyle = N.color;
+    for (let i = 0; i < N.n; i++) { const w = N.n > 1 && i === N.n - 1 ? N.w * N.last : N.w; rrect(c, 0, i * N.gap, w, N.bh, N.bh / 2); c.fill(); }
+  },
+  icon(c, N, t, q, op) {
+    const k = N.size / N.vb;
+    c.save(); c.scale(k, k); c.globalAlpha = op;
+    if (N.fillC) { c.fillStyle = N.fillC; c.fill(N.p2d); }
+    if (N.color) { c.strokeStyle = N.color; c.lineWidth = N.lw; c.lineCap = 'round'; c.lineJoin = 'round'; c.stroke(N.p2d); }
+    c.restore();
+  },
+  path(c, N, t, q, op) {
+    c.globalAlpha = op;
+    if (N.fill) { c.fillStyle = N.fill; c.fill(N.p2d); }
+    if (N.stroke) { c.strokeStyle = N.stroke; c.lineWidth = N.sw; c.lineCap = N.cap; c.lineJoin = 'round'; c.stroke(N.p2d); }
+  },
+};
+function paintRipples(c, N, t, p, op) {
+  for (const R of N.ripples) {
+    const u = t - R.t;
+    if (u <= 0 || u >= RIPPLE_T) continue;
+    const r = R.r * S(u, SP.RIPPLE), a = R.a * (1 - S(u - 0.1, SP.RIPPLEFADE));
+    if (a < 0.003 || r < 0.5) continue;
+    const g = c.createRadialGradient(R.x, R.y, 0, R.x, R.y, r), [cr, cg, cb] = rgbOf(R.color);
+    g.addColorStop(0, `rgba(${cr},${cg},${cb},1)`); g.addColorStop(0.7, `rgba(${cr},${cg},${cb},1)`); g.addColorStop(1, `rgba(${cr},${cg},${cb},0)`);
+    c.save(); c.clip(p); c.globalAlpha = op * a; c.fillStyle = g; c.beginPath(); c.arc(R.x, R.y, r, 0, TAU); c.fill(); c.restore();
+  }
+}
+function paintToggle(c, N, t, q, op, w, h) {
+  const k = V(N, 'on', t), r = h / 2, a = clamp01(k);
+  c.globalAlpha = op; c.fillStyle = N.off; rrect(c, 0, 0, w, h, r); c.fill();
+  if (a > 0.002) { c.globalAlpha = op * a; c.fillStyle = N.onC; rrect(c, 0, 0, w, h, r); c.fill(); }
+  c.globalAlpha = op; c.fillStyle = N.knob; c.beginPath(); c.arc(r + k * (w - h), r, r - 3, 0, TAU); c.fill();
+}
+function paintCheck(c, N, t, q, op, w, h) {
+  const k = V(N, 'on', t), a = clamp01(k * 1.6), r = radii(N.r, w, h);
+  if (a < 0.998) { c.globalAlpha = op * (1 - a); c.strokeStyle = N.boxC; c.lineWidth = 2.5; rrect(c, 1.25, 1.25, w - 2.5, h - 2.5, Math.max(0, r - 1.25)); c.stroke(); }
+  if (a > 0.002) { c.globalAlpha = op * a; c.fillStyle = N.onC; rrect(c, 0, 0, w, h, r); c.fill(); }
+  const d = clamp01(k) * TICK_LEN;
+  if (d > 0.05) {
+    const s = w / 24;
+    c.save(); c.scale(s, s); c.globalAlpha = op; c.strokeStyle = N.tickC; c.lineWidth = 2.6; c.lineCap = 'round'; c.lineJoin = 'round';
+    c.setLineDash([d, TICK_LEN + 1]); c.stroke(TICK); c.setLineDash([]); c.restore();
+  }
+}
+function paintTabs(c, N, t, q, op, w) {
+  const sel = V(N, 'sel', t);
+  if (N.lineC) { c.globalAlpha = op; c.fillStyle = N.lineC; c.fillRect(0, 0, w, 1); }
+  N.items.forEach((it, i) => {
+    const e = clamp01(1 - Math.abs(sel - i));
+    for (const [color, a] of [[N.off, 1 - e], [N.onC, e]]) {
+      if (a < 0.002) continue;
+      c.save(); c.translate(it.x, it.y); c.scale(it.size / 24, it.size / 24); c.globalAlpha = op * a; c.strokeStyle = color; c.lineWidth = 2; c.lineCap = 'round'; c.lineJoin = 'round'; c.stroke(it.p2d); c.restore();
+      if (it.line) { c.save(); c.translate(it.lx, it.ly); drawText(c, it.line, color, () => ({ op: op * a })); c.restore(); }
+    }
+  });
+}
+function typedCount(N, q) {                        // characters shown by q: typing adds one every `every` frames, clearing takes them back
+  let n = 0;
+  for (const e of N.typeEv) {
+    if (q < e.t - 1e-9) break;
+    const k = Math.floor((q - e.t) * FPS / e.every + 1e-6) + 1;
+    n = e.dir > 0 ? Math.min(e.n, k) : Math.max(0, e.n - k);
+  }
+  return n;
+}
+function paintCaret(c, N, t, q, op) {
+  const f = FOCUS.find((x) => x.N === N && q >= x.a - 1e-9 && q < x.b - 1e-9);
+  if (!f) return;
+  const V2 = N.val, n = V2 && V2.typeEv ? typedCount(V2, q) : V2 ? V2.line.glyphs.length : 0;
+  let last = f.a;
+  for (const e of N.typeEv) if (e.t <= q) last = Math.max(last, Math.min(q, e.t + e.n * e.every / FPS));
+  if (Math.floor((q - last) / 0.5 + 1e-6) % 2 === 1) return;
+  const L = V2 ? V2.line : null, x = N.tx + (L && n > 0 ? L.glyphs[n - 1].inkR + 2 : 0);
+  c.globalAlpha = op; c.fillStyle = N.caret; c.fillRect(x, N.base - N.size * 0.9, 2.5, N.size * 1.15);
+}
+function paintTypedHud(c, N, t, q, op) {           // typewriter small print: one character per frame, block cursor
+  const L = N.line, en = N.spec.enter, wrapped = N.wrap && t < LOCK.end;
+  const n = wrapped ? L.glyphs.length : q < en.at - 1e-9 ? 0 : typed(q, en.at, L.glyphs.length);
+  setFont(c, L.font);
+  for (let i = 0; i < n; i++) { const g = L.glyphs[i]; if (!g.space) fillGlyph(c, g.ch, g.x, 0, N.color, op, 0); }
+  const fc = Math.ceil((q - en.at) * FPS - 1e-6);
+  if (!wrapped && en.cursor !== false && q >= en.at - 1e-9 && fc <= L.glyphs.length + 2) {
+    const g = L.glyphs[Math.min(n, L.glyphs.length - 1)], x = n < L.glyphs.length ? g.x : L.inkR + L.trackPx + 2 * U;
+    const cw = 0.5625 * L.size, ch = 0.8125 * L.size;
+    c.globalAlpha = op; c.fillStyle = N.color; c.fillRect(x, 0.156 * L.size - ch, cw, ch);
+  }
+}
+
+function drawEntry(c, E, t, q) {
+  const Sc = E.Sc, sw = DEV.sw, sh = DEV.sh;
+  c.save();
+  c.translate(V(Sc, 'x', t) * sw, 0);
+  let b = null;
+  if (E.expand) {
+    b = expandBox(E, t);
+    c.beginPath(); c.roundRect(b[0], b[1], b[2], b[3], b[4]); c.clip();
+    const k = b[2] / sw; c.transform(k, 0, 0, k, b[0], b[1]);
+  }
+  c.globalAlpha = 1; c.fillStyle = Sc.bg; c.fillRect(0, 0, sw, b ? Math.max(sh, b[3] * sw / b[2]) : sh);
+  const sy = V(Sc, 'scroll', t);
+  c.save(); c.translate(0, -sy);
+  for (const N of Sc.flow) drawNode(c, N, t, q, 1);
+  c.restore();
+  for (const N of Sc.fixed) drawNode(c, N, t, q, 1);
+  for (const N of Sc.overlays) {
+    const k = V(N, 'show', t);
+    if (k < 0.001) continue;
+    if (N.scrim) { c.globalAlpha = N.scrimOp * clamp01(k); c.fillStyle = N.scrim; c.fillRect(0, 0, sw, sh); }
+    drawNode(c, N, t, q, 1);
+  }
+  const dim = V(Sc, 'dim', t);
+  if (dim > 0.002) { c.globalAlpha = dim; c.fillStyle = Sc.dimC; c.fillRect(0, 0, sw, b ? Math.max(sh, b[3] * sw / b[2]) : sh); }
+  c.restore();
+  if (E.expand) {                                  // the source fades out over the growing container
+    const a = clamp01(1 - V(Sc, 'k', t) / 0.35), X = E.expand;
+    if (a > 0.002) {
+      const k = b[2] / (X.box0[2] - X.box0[0]);
+      c.save(); c.translate(V(Sc, 'x', t) * sw, 0);
+      const m = mmul(mmul([k, 0, 0, k, b[0], b[1]], mT(-X.box0[0], -X.box0[1])), X.pm);
+      c.transform(m[0], m[1], m[2], m[3], m[4], m[5]);
+      drawNode(c, X.src, t, q, a, true);
+      c.restore();
+    }
+  }
+}
+function coverOf(E, t) { return E.expand ? clamp01(V(E.Sc, 'k', t)) : clamp01(1 - Math.abs(V(E.Sc, 'x', t))); }
+function drawChrome(c, t, q, list) {             // status bar and home indicator, in the colours of the screens under them
+  const D = DEV, top = list[list.length - 1], below = list[list.length - 2];
+  const w = below ? coverOf(top, t) : 1;
+  const layers = [[top.Sc, w]];
+  if (below && w < 0.998) layers.unshift([below.Sc, 1 - w]);
+  for (const [Sc, a] of layers) {
+    if (a < 0.002) continue;
+    if (D.statusH) paintStatus(c, Sc.status, a);
+    if (D.home) { const hw = D.kind === 'tablet' ? 200 : 124; c.globalAlpha = a; c.fillStyle = Sc.home; rrect(c, (D.sw - hw) / 2, D.sh - 13, hw, 5, 2.5); c.fill(); }
+  }
+  c.globalAlpha = 1;
+}
+function paintStatus(c, color, a) {
+  const D = DEV, h = D.statusH, L = D.clock, mid = h / 2 + 1;
+  c.save(); c.globalAlpha = a; c.fillStyle = color; c.strokeStyle = color;
+  c.translate(D.kind === 'tablet' ? 24 : 30, mid + L.capH / 2);
+  drawText(c, L, color, () => ({ op: a }));
+  c.restore();
+  const x = D.sw - (D.kind === 'tablet' ? 24 : 26);
+  c.save(); c.globalAlpha = a; c.fillStyle = color; c.strokeStyle = color;
+  c.translate(x - 26, mid - 6);                    // battery
+  c.globalAlpha = a * 0.45; c.lineWidth = 1.2; rrect(c, 0.6, 0.6, 23.4, 11.4, 3.6); c.stroke();
+  c.globalAlpha = a; rrect(c, 2.5, 2.5, 19.6, 7.6, 2); c.fill(); c.fillRect(25.2, 4, 1.8, 4.4);
+  c.translate(-22, 12);                            // wifi: three arcs round the bottom point
+  c.lineWidth = 2.2; c.lineCap = 'round';
+  for (const r of [3.4, 7, 10.6]) { c.beginPath(); c.arc(8, -1.4, r, -Math.PI * 0.75, -Math.PI * 0.25); c.stroke(); }
+  c.translate(-24, 0);                             // signal: four bars
+  for (let i = 0; i < 4; i++) { rrect(c, i * 5, -3.5 - i * 2.6, 3.4, 3.5 + i * 2.6, 1); c.fill(); }
+  c.restore();
+}
+function paintDevice(c, t, q) {
+  const D = DEV, [x0, y0, x1, y1] = D.outer, w = x1 - x0, h = y1 - y0;
+  if (D.shadow) paintShadow(c, D.shadow, x0, y0, w, h, D.R, 1);
+  c.globalAlpha = 1;
+  if (D.buttons) {
+    c.fillStyle = D.edge || D.body;
+    for (const [bx, by, bh] of [[x0 - 3, 118, 36], [x0 - 3, 176, 62], [x0 - 3, 250, 62], [x1 - 1, 196, 96]]) { rrect(c, bx, by, 4, bh, 2); c.fill(); }
+  }
+  c.fillStyle = D.body; rrect(c, x0, y0, w, h, D.R); c.fill();
+  if (D.edge) { c.strokeStyle = D.edge; c.lineWidth = 2; rrect(c, x0 + 1, y0 + 1, w - 2, h - 2, Math.max(0, D.R - 1)); c.stroke(); }
+  if (D.kind === 'browser') {
+    c.fillStyle = D.barC; c.beginPath(); c.roundRect(x0, y0, w, D.bar, [D.r, D.r, 0, 0]); c.fill();
+    c.fillStyle = D.dots; for (let i = 0; i < 3; i++) { c.beginPath(); c.arc(22 + i * 20, -D.bar / 2, 6, 0, TAU); c.fill(); }
+    const uw = Math.min(D.sw * 0.46, 440), L = D.urlLine;
+    c.fillStyle = D.url; rrect(c, (D.sw - uw) / 2, -D.bar / 2 - 16, uw, 32, 16); c.fill();
+    c.save(); c.translate(D.sw / 2 + 10, -D.bar / 2 + L.capH / 2); drawText(c, L, D.urlColor, null); c.restore();
+    c.save(); c.translate(D.sw / 2 + 10 + L.inkL - 22, -D.bar / 2 - 8); c.scale(16 / 24, 16 / 24); c.strokeStyle = D.urlColor; c.lineWidth = 2.2; c.lineJoin = 'round'; c.lineCap = 'round'; c.stroke(new Path2D(ICONS.lock)); c.restore();
+  }
+  // the screen, and what is on it
+  c.save(); c.beginPath(); c.roundRect(0, 0, D.sw, D.sh, D.clipR); c.clip();
+  const list = ENTRIES.filter((E) => t >= E.a && t < E.b).sort((a, b) => a.z - b.z);
+  for (const E of list) drawEntry(c, E, t, q);
+  if (list.length) drawChrome(c, t, q, list);
+  if (D.notch === 'dot') { c.globalAlpha = 1; c.fillStyle = D.body; c.beginPath(); c.arc(D.sw / 2, 17, 6.5, 0, TAU); c.fill(); }
+  else if (D.notch === 'pill') { c.globalAlpha = 1; c.fillStyle = D.body; rrect(c, D.sw / 2 - 48, 10, 96, 28, 14); c.fill(); }
+  c.restore();
+  if (PTR) paintPointer(c, t);
+}
+function ptrPos(t) {
+  let x = V(PTR, 'px', t), y = V(PTR, 'py', t);
+  for (const m of PTR.moves) { const s = S(t - m.t, m.sp); if (s > 0 && s < 1) { const b = 4 * s * (1 - s) * m.a; x += m.nx * b; y += m.ny * b; } }
+  return [x, y];
+}
+function paintPointer(c, t) {
+  const op = V(PTR, 'op', t);
+  for (const R of RINGS) {                         // a cursor click: a ring from the tip
+    const u = t - R.t;
+    if (u <= 0 || u >= RIPPLE_T) continue;
+    const r = 6 + 26 * S(u, SP.RIPPLE), a = 0.5 * (1 - S(u - 0.05, SP.RIPPLEFADE));
+    if (a > 0.003) { c.globalAlpha = a; c.strokeStyle = PTR.ring; c.lineWidth = 2.5; c.beginPath(); c.arc(R.x, R.y, r, 0, TAU); c.closePath(); c.stroke(); }
+  }
+  if (op < 0.002) return;
+  const [x, y] = ptrPos(t), s = V(PTR, 'sc', t);
+  if (PTR.kind === 'cursor') {
+    const k = s * PTR.size / 30;
+    c.save(); c.translate(x, y); c.scale(k, k); c.globalAlpha = op; c.lineJoin = 'round';
+    c.fillStyle = PTR.fill; c.fill(PTR.arrow); c.strokeStyle = PTR.ring; c.lineWidth = 1.6; c.stroke(PTR.arrow); c.restore();
+  } else {
+    const r = PTR.size / 2 * s;
+    if (PTR.shadow) { const r0 = PTR.size / 2; c.save(); c.translate(x, y); c.scale(s, s); paintShadow(c, PTR.shadow, -r0, -r0, 2 * r0, 2 * r0, r0, op); c.restore(); }
+    c.globalAlpha = op * PTR.fillOp; c.fillStyle = PTR.fill; c.beginPath(); c.arc(x, y, r, 0, TAU); c.fill();
+    c.globalAlpha = op * PTR.ringOp; c.strokeStyle = PTR.ring; c.lineWidth = 2; c.beginPath(); c.arc(x, y, r - 1, 0, TAU); c.closePath(); c.stroke();
+  }
+  c.globalAlpha = 1;
+}
+let BUF = null;
+function drawDevice(c, t, q) {
+  const op = V(DEV, 'op', t);
+  if (op < 0.002) return;
+  const m = stageM(t), b = mbox(m, DEV.outer), pad = DEV.shadow ? (DEV.shadow.blur * 2.5 + Math.abs(DEV.shadow.dy)) * mScale(m) : 8;
+  if (b[2] < -pad || b[0] > W + pad || b[3] < -pad || b[1] > H + pad) return;
+  let x = c;
+  if (op < 0.998) { if (!BUF) BUF = mk2d(W, H); x = BUF[1]; x.setTransform(1, 0, 0, 1, 0, 0); x.globalAlpha = 1; x.globalCompositeOperation = 'source-over'; x.filter = 'none'; x.clearRect(0, 0, W, H); resetStroke(x); }
+  x.save(); x.setTransform(m[0], m[1], m[2], m[3], m[4], m[5]);
+  paintDevice(x, t, q);
+  x.restore();
+  if (x !== c) { c.save(); c.setTransform(1, 0, 0, 1, 0, 0); c.globalAlpha = op; c.drawImage(BUF[0], 0, 0); c.restore(); }
+}
+function calloutEnd(C, t) {                        // the canvas point the leader ends on, or null when the element is not on screen
+  const s = C.spec, to = s.to;
+  if (Array.isArray(to)) return mpt(stageM(t), to[0], to[1]);
+  const N = NODES[to];
+  if (!N.hud && !shownAt(N.screen, t)) return null;
+  const p = s.point || [0.5, 0.5];
+  return mpt(worldM(N, t), lerp(N.box[0], N.box[2], p[0]), lerp(N.box[1], N.box[3], p[1]));
+}
+function drawCallout(c, C, t) {
+  const L = C.line;
+  setFont(c, L.font);
+  for (const G of C.copies) {
+    const o = V(G, 'op', t);
+    if (o < 0.002) continue;
+    const g = G.g, dx = V(G, 'dx', t), dy = V(G, 'dy', t), s = V(G, 'sc', t), b = V(G, 'bl', t);
+    if (s !== 1) { const px = (g.inkL + g.inkR) / 2 + dx, py = L.baseline - L.capH / 2 + dy; c.save(); c.translate(px, py); c.scale(s, s); c.translate(-px, -py); fillGlyph(c, g.ch, g.x + dx, L.baseline + dy, C.color, o, b); c.restore(); }
+    else fillGlyph(c, g.ch, g.x + dx, L.baseline + dy, C.color, o, b);
+  }
+  const ln = clamp01(V(C, 'ln', t)), lo = clamp01(V(C, 'lo', t)), ds = V(C, 'dot', t);
+  if (ln - lo < 0.002 && ds < 0.01) return;
+  const E = calloutEnd(C, t);
+  if (!E) return;
+  const [x0, y0] = C.start;
+  if (ln - lo > 0.002) {
+    c.globalAlpha = 1; c.strokeStyle = C.lineC; c.lineWidth = C.lw; c.lineCap = 'round';
+    c.beginPath(); c.moveTo(lerp(x0, E[0], lo), lerp(y0, E[1], lo)); c.lineTo(lerp(x0, E[0], ln), lerp(y0, E[1], ln)); c.stroke();
+  }
+  if (ds > 0.01) {
+    c.globalAlpha = 1; c.fillStyle = C.ringC; c.beginPath(); c.arc(E[0], E[1], 13 * ds, 0, TAU); c.fill();
+    c.fillStyle = C.dotC; c.beginPath(); c.arc(E[0], E[1], 8 * ds, 0, TAU); c.fill();
+  }
+}
+function resetStroke(c) {                          // the core resets transform, alpha and filter; strokes and type are ours
+  c.lineWidth = 1; c.lineCap = 'butt'; c.lineJoin = 'miter'; c.miterLimit = 10; c.setLineDash([]); c.lineDashOffset = 0;
+  c.imageSmoothingEnabled = true; c.imageSmoothingQuality = 'low';
+}
+function drawFrame(c, t, q) {                    // free layers behind the device (front: true puts one above), callouts on top
+  resetStroke(c);
+  for (const N of HUD) if (!N.spec.front) drawNode(c, N, t, q, 1);
+  if (DEV) drawDevice(c, t, q);
+  for (const N of HUD) if (N.spec.front) drawNode(c, N, t, q, 1);
+  for (const C of CALLOUTS) drawCallout(c, C, t);
+}
+
+/* ---------------- motion: how far anything moves across a shutter ---------------- */
+function disp(ta, tb) {
+  let d = 0;
+  if (DEV) {
+    const ma = stageM(ta), mb = stageM(tb), z = Math.max(mScale(ma), mScale(mb));
+    if (V(DEV, 'op', ta) > 0.002 || V(DEV, 'op', tb) > 0.002) {
+      d = mdisp(ma, mb, DEV.outer);
+      for (const E of ENTRIES) {                  // a screen is only measured while it is drawn
+        const a = Math.max(ta, E.a), b = Math.min(tb, E.b - 1e-9);
+        if (b < a) continue;
+        const Sc = E.Sc, mA = stageM(a), sa = mmul(mA, screenM(Sc, a, E)), sb = mmul(mb, screenM(Sc, b, E));
+        d = Math.max(d, mdisp(sa, sb, [0, 0, DEV.sw, DEV.sh]), Math.abs(V(Sc, 'scroll', b) - V(Sc, 'scroll', a)) * mScale(sb));
+        if (E.expand) { const A = expandBox(E, a), B = expandBox(E, b); d = Math.max(d, z * Math.max(Math.abs(B[0] - A[0]), Math.abs(B[1] - A[1]), Math.abs(B[0] + B[2] - A[0] - A[2]), Math.abs(B[1] + B[3] - A[1] - A[3]))); }
+      }
+      for (const N of ALL) {
+        if (N.hud || !N.moves || !moving(N, ta, tb) || !seen(N, ta, tb)) continue;
+        const A = worldM(N, ta), B = worldM(N, tb), s = Math.max(mScale(A), mScale(B));
+        let m = mdisp(A, B, N.box);
+        if (N.type === 'toggle') m += Math.abs(V(N, 'on', tb) - V(N, 'on', ta)) * (N.w - N.h) * s;
+        if (N.type === 'checkbox') m += Math.abs(V(N, 'on', tb) - V(N, 'on', ta)) * N.w * s;
+        if (N.type === 'tabbar') m += Math.abs(V(N, 'sel', tb) - V(N, 'sel', ta)) * DEV.sw / Math.max(1, N.items.length) * s;
+        d = Math.max(d, m);
+      }
+      for (const N of ALL) if (N.ripples) for (const R of N.ripples) if (tb > R.t && ta < R.t + RIPPLE_T) d = Math.max(d, R.r * Math.abs(S(tb - R.t, SP.RIPPLE) - S(ta - R.t, SP.RIPPLE)) * z);
+      if (PTR && V(PTR, 'op', ta) > 0.002 && V(PTR, 'op', tb) > 0.002) {   // not across the jump to where it fades in
+        const pa = mpt(ma, ...ptrPos(ta)), pb = mpt(mb, ...ptrPos(tb));
+        d = Math.max(d, Math.hypot(pb[0] - pa[0], pb[1] - pa[1]) + Math.abs(V(PTR, 'sc', tb) - V(PTR, 'sc', ta)) * PTR.size * z);
+      }
+    }
+  }
+  for (const N of ALL) {
+    if (!N.hud || !seen(N, ta, tb)) continue;
+    if (N.moves && moving(N, ta, tb)) d = Math.max(d, mdisp(chainM(N, ta), chainM(N, tb), N.box));
+    if (N.copies) for (const G of N.copies) if (moving(G, ta, tb) && seen(G, ta, tb)) d = Math.max(d, glyphDisp(G, ta, tb, N.line.capH));
+  }
+  for (const C of CALLOUTS) {
+    for (const G of C.copies) if (moving(G, ta, tb) && seen(G, ta, tb)) d = Math.max(d, glyphDisp(G, ta, tb, C.line.capH));
+    if (V(C, 'ln', tb) - V(C, 'lo', tb) > 0.002 || V(C, 'ln', ta) - V(C, 'lo', ta) > 0.002) {
+      const A = calloutEnd(C, ta), B = calloutEnd(C, tb);
+      if (A && B) {
+        const len = Math.hypot(B[0] - C.start[0], B[1] - C.start[1]);
+        d = Math.max(d, Math.hypot(B[0] - A[0], B[1] - A[1]), len * Math.max(Math.abs(V(C, 'ln', tb) - V(C, 'ln', ta)), Math.abs(V(C, 'lo', tb) - V(C, 'lo', ta))), 13 * Math.abs(V(C, 'dot', tb) - V(C, 'dot', ta)));
+      }
+    }
+  }
+  return d;
+}
+const seen = (o, ta, tb) => V(o, 'op', ta) > 0.002 && V(o, 'op', tb) > 0.002;   // a jump while hidden moves nothing on screen
+const glyphDisp = (G, ta, tb, R) => Math.hypot(V(G, 'dx', tb) - V(G, 'dx', ta), V(G, 'dy', tb) - V(G, 'dy', ta)) + Math.abs(V(G, 'sc', tb) - V(G, 'sc', ta)) * R + Math.abs(V(G, 'rot', tb) - V(G, 'rot', ta)) * DEG * R;
+
+/* ---------------- analysis ---------------- */
+function hudShows(N, t, a = 1) {
+  if (N.hidden.some((w) => t >= w[0] && t < w[1])) return false;
+  const op = a * V(N, 'op', t);
+  if (op < 0.5 || Math.abs(V(N, 'sc', t)) < 0.01) return false;
+  if (N.kind === 'text') {
+    if (N.hudTyped) { const en = N.spec.enter; if (!(N.wrap && t < LOCK.end) && (frameOf(t) / FPS < en.at || typed(frameOf(t) / FPS, en.at, N.line.glyphs.length) === 0)) return false; }
+    if (N.copies && !N.copies.some((G) => V(G, 'op', t) > 0.5)) return false;
+  }
+  if (N.kind !== 'group' || !N.kids.length) { const b = mbox(chainM(N, t), N.box); if (b[2] > 0 && b[0] < W && b[3] > 0 && b[1] < H) return true; }
+  return N.kids.some((K) => hudShows(K, t, op));
+}
+function visible(t) {
+  if (DEV && V(DEV, 'op', t) > 0.5) { const b = mbox(stageM(t), DEV.outer); if (b[2] > 0 && b[0] < W && b[3] > 0 && b[1] < H) return true; }
+  for (const N of HUD) if (hudShows(N, t)) return true;
+  for (const C of CALLOUTS) if (C.copies.some((G) => V(G, 'op', t) > 0.5)) return true;
+  return false;
+}
+// where a text sits and what is behind it, at rest, in its screen's (or the canvas's) units
+const layerOf = (N) => (N.top.over ? 2 : N.fixed ? 1 : 0);
+const before = (A, B) => (layerOf(A) !== layerOf(B) ? layerOf(A) < layerOf(B) : A.po < B.po);
+function textPlace(T) {
+  const m = restChain(T.N), box = mbox(m, T.box), s = mScale(m);
+  let bg = T.on, straddle = null;
+  if (!bg) {
+    const cands = ALL.filter((B) => B !== T.N && B.kind === 'box' && B.fill && !B.alt && B.rest.op > 0.5 && B.screen === T.N.screen && B.hud === T.N.hud
+      && (layerOf(B) < 2 || B.top === T.N.top) && (before(B, T.N) || isAncestor(B, T.N)));
+    let best = null;
+    for (const B of cands) {
+      const bb = mbox(restChain(B), [0, 0, B.w, B.h]);
+      if (!inside(bb, (box[0] + box[2]) / 2, (box[1] + box[3]) / 2)) continue;
+      if (!best || before(best.B, B) || isAncestor(best.B, B)) best = { B, bb };
+    }
+    if (best) { bg = best.B.fillRole; if (!(inside(best.bb, box[0], box[1], 0.5) && inside(best.bb, box[2], box[3], 0.5))) straddle = best.B.id; }
+    else bg = T.N.hud ? 'bg' : T.N.screen.bgRole;
+  }
+  return { box, s, bg, straddle };
+}
+function isAncestor(A, N) { for (let n = N.parent; n; n = n.parent) if (n === A) return true; return false; }
+function checks(add) {
+  for (const [s, name, detail] of NOTES) add(name, s, detail);
+  const out = (T, s) => T.line.size * s * (T.N.hud ? 1 : DEV.scale) / U;
+  // text: size, contrast against its own container, overflow, collisions
+  const placed = TEXTS.map((T) => ({ T, ...textPlace(T) }));
+  for (const p of placed) {
+    const { T } = p, px = out(T, p.s), id = T.line.id || T.N.id;
+    if (!T.chrome) add(`text size: ${id}`, px < 24 - 1e-6 ? 'FAIL' : 'PASS', `${px.toFixed(1)} px at 1080 (text meant to be read is 24 px or more; skeleton lines are bars)`);
+    needContrast(`${id}${T.alt ? ' (' + T.color + ')' : ''}`, T.color, p.bg, px >= 40 ? 3 : 4.5);
+    if (p.straddle) add(`backdrop: ${id}`, 'WARN', `sits partly off ${p.straddle}; contrast is checked against ${p.bg} only`);
+    const P = T.N.parent;
+    if (P && P.kind === 'box' && T.N.kind === 'text') {
+      const b = mbox(restLocal(T.N), T.box);
+      if (b[0] < -0.5 || b[2] > P.w + 0.5 || b[1] < -0.5 || b[3] > P.h + 0.5) add(`overflow: ${id}`, 'FAIL', `its ink ${b.map((v) => v.toFixed(0)).join(', ')} leaves ${P.id} (0, 0, ${P.w}, ${P.h}): shorten it, or make it smaller`);
+    }
+    if (!T.N.hud && (p.box[0] < -0.5 || p.box[2] > DEV.sw + 0.5)) add(`overflow: ${id}`, 'FAIL', `runs off the screen (${p.box[0].toFixed(0)} to ${p.box[2].toFixed(0)} of 0 to ${DEV.sw})`);
+  }
+  const solid = placed.filter((p) => !p.T.alt && !p.T.N.alt && p.T.N.rest.op > 0.5 && !p.T.N.over && !(p.T.N.top.over) && !p.T.N.hudTyped);
+  for (let i = 0; i < solid.length; i++) for (let j = i + 1; j < solid.length; j++) {
+    const a = solid[i], b = solid[j];
+    if (a.T.N.hud || b.T.N.hud || a.T.N.screen !== b.T.N.screen || a.T.N.swap === b.T.N || b.T.N.swap === a.T.N) continue;
+    if (overlaps(a.box, b.box)) add(`collision: ${a.T.N.id} / ${b.T.N.id}`, 'FAIL', 'two texts overlap at rest');
+  }
+  // words: 4 a beat for callouts and the lockup; UI text is the product's, but a screen full of it will not read
+  for (const C of CALLOUTS) {
+    add(`words: ${C.id}`, C.words > 4 ? 'FAIL' : 'PASS', `${C.words} words (at most 4 a callout)`);
+    const both = CALLOUTS.filter((D) => D !== C && D.tin < C.tout && C.tin < D.tout);
+    for (const D of both) if (C.words + D.words > 4 && C.id < D.id) add(`words: ${C.id} + ${D.id}`, 'FAIL', `${C.words + D.words} words on screen together (at most 4 a beat)`);
+    if (C.spec.y % UNIT) add(`grid: ${C.id}`, 'WARN', `baseline ${C.spec.y} is not on the ${UNIT} px grid`);
+    checkLiveArea(add, C.id, C.box);
+  }
+  if (LOCK) {
+    const words = LOCK.nodes.filter((N) => N.kind === 'text' && !N.hudTyped && N.font !== 'mono').reduce((s, N) => s + N.spec.text.split(/\s+/).filter((w) => /[A-Za-z0-9]/.test(w)).length, 0);
+    add('words: lockup', words > 4 ? 'FAIL' : 'PASS', `${words} words of display type (at most 4)`);
+  }
+  for (const N of HUD) { hudLive(add, N); }
+  for (const Sc of SCREENS) {
+    const words = placed.filter((p) => p.T.N.screen === Sc && !p.T.alt && !p.T.N.alt && !p.T.chrome).reduce((s, p) => s + p.T.line.text.split(/\s+/).filter((w) => /[A-Za-z0-9]/.test(w)).length, 0);
+    if (words > 16) add(`words: ${Sc.id}`, 'WARN', `${words} words of UI text; a viewer reads about 4 a beat: turn what does not matter into bars`);
+    for (const N of [...Sc.flow, ...Sc.fixed]) {
+      if (N.spec.bleed) continue;
+      const b = mbox(restLocal(N), N.box);
+      if (b[0] < -0.5 || b[2] > DEV.sw + 0.5) add(`screen: ${N.id}`, 'WARN', `${b[0].toFixed(0)} to ${b[2].toFixed(0)} leaves the ${DEV.sw}-unit screen (bleed: true if meant)`);
+    }
+  }
+  // the device: inside the live area at rest, clear of the callouts, also while the camera moves
+  if (DEV) {
+    const db = mbox(devM(0, true), DEV.outer);
+    if (LOOP === 'hold') {
+      const t1 = DUR - 1e-6, a = stageM(0), b = stageM(t1), oa = V(DEV, 'op', 0), ob = V(DEV, 'op', t1);
+      const pad = DEV.shadow ? DEV.shadow.blur * 2.5 + Math.abs(DEV.shadow.dy) : 2, onCanvas = (m, o) => { const bb = mbox(m, DEV.outer); return o > 0.002 && bb[2] > -pad && bb[0] < W + pad && bb[3] > -pad && bb[1] < H + pad; };
+      const same = mdisp(a, b, DEV.outer) < 0.01 && Math.abs(oa - ob) < 1e-6;
+      add('device seam', !same && (onCanvas(a, oa) || onCanvas(b, ob)) ? 'FAIL' : 'PASS', same ? 'the device ends where frame 0 has it' : onCanvas(a, oa) || onCanvas(b, ob)
+        ? 'the device, or its shadow, shows at frame 0 or at the end, in two different places: enter from where it exits to, far enough off the canvas' : 'off the canvas, shadow included, at frame 0 and at the end');
+    }
+    checkLiveArea(add, 'device', db, DEV.spec.bleed);
+    for (const C of CALLOUTS) {
+      const g = gapOf(db, C.box);
+      add(`clearance: ${C.id}`, overlaps(db, C.box) ? 'FAIL' : g < 24 * U ? 'WARN' : 'PASS', overlaps(db, C.box) ? 'the callout sits on the device' : `${g.toFixed(0)} px from the device`);
+      for (let t = C.tin; t < Math.min(DUR, C.tout + 0.4); t += 2 / FPS) {
+        if (C.copies.every((G) => V(G, 'op', t) < 0.05)) continue;
+        const b = mbox(stageM(t), DEV.outer);
+        if (overlaps(b, C.box) && V(DEV, 'op', t) > 0.05) { add(`clearance: ${C.id} (moving)`, 'FAIL', `at ${t.toFixed(2)} s the device (camera z ${V(CAM, 'z', t).toFixed(2)}) runs under the callout`); break; }
+      }
+      // the leader must end on something on screen
+      const to = C.spec.to;
+      if (!Array.isArray(to) && !NODES[to]) { add(`leader: ${C.id}`, 'FAIL', `no element "${to}"`); continue; }
+      let bad = null;
+      for (let t = C.tin + 0.3; t < Math.min(DUR, C.tout); t += 0.1) {
+        const E = calloutEnd(C, t);
+        if (!E) { bad = `${to} is not on screen at ${t.toFixed(2)} s`; break; }
+        const sb = mbox(stageM(t), [0, 0, DEV.sw, DEV.sh]);
+        if (!inside(sb, E[0], E[1])) { bad = `the leader ends off the screen at ${t.toFixed(2)} s`; break; }
+        if (inside(C.box, E[0], E[1], 8)) { bad = 'the leader ends on its own words'; break; }
+      }
+      add(`leader: ${C.id}`, bad ? 'FAIL' : 'PASS', bad || `ends on ${Array.isArray(to) ? 'a point' : to} while it shows`);
+    }
+  }
+  // taps land on what they press
+  for (const T of TAPS) {
+    const N = T.N, id = N.id;
+    if (!N.hud && T.top !== N.screen) { add(`tap: ${id}`, 'FAIL', `${id} is on ${N.screen.id}, but ${T.top.id} is on top at ${T.t.toFixed(2)} s`); continue; }
+    const p = ptrPos(T.t), b = mbox(screenOf(N, T.t), N.box), vb = [0, 0, DEV.sw, DEV.sh];
+    if (!inside(b, p[0], p[1], 2)) add(`tap: ${id}`, 'FAIL', `the ${PTR.kind} is at (${p[0].toFixed(0)}, ${p[1].toFixed(0)}), outside ${id} (${b.map((v) => v.toFixed(0)).join(', ')}) at ${T.t.toFixed(2)} s`);
+    else if (!inside(vb, p[0], p[1])) add(`tap: ${id}`, 'FAIL', 'the tap is off the screen');
+    else add(`tap: ${id}`, T.landed > T.t + 1e-6 ? 'WARN' : 'PASS', T.landed > T.t + 1e-6 ? `the ${PTR.kind} lands ${(T.landed - T.t).toFixed(2)} s after the press: move sooner` : `presses at (${p[0].toFixed(0)}, ${p[1].toFixed(0)})`);
+  }
+  // fills that crossfade must not blend two hues into a third
+  for (const [id, a, b] of CROSS) add(`crossfade: ${id}`, inksClash(col(a), col(b)) ? 'FAIL' : 'PASS', inksClash(col(a), col(b)) ? `${a} and ${b} blend into a third hue mid-fade: fade through a neutral, or use two tints of one hue` : `${a} to ${b}`);
+  for (const f of FOCUS) if (f.b === Infinity && LOOP === 'hold') add(`caret: ${f.N.id}`, 'FAIL', 'still blinking at the end of a hold loop: blur it, or leave its screen');
+  if (LOOP === 'hold' && PTR && V(PTR, 'op', DUR - 1e-6) > 0.001) add('pointer', 'FAIL', 'still on screen at the end of a hold loop: pointer out before the lockup');
+}
+function hudLive(add, N) {
+  if (N.kind === 'group') { for (const K of N.kids) hudLive(add, K); return; }
+  checkLiveArea(add, N.id, mbox(restChain(N), N.box), N.spec.bleed);
+  if (N.kind === 'text' && !N.parent && N.y % UNIT) add(`grid: ${N.id}`, 'WARN', `baseline ${N.y} is not on the ${UNIT} px grid`);
+}
+function lastChange(see) {
+  for (const T of TYPING) see(T.end + 1 / FPS, `${T.N.id} typing`);
+  for (const f of FOCUS) see(f.b, `${f.N.id} caret`);
+  for (const N of HUD) if (N.hudTyped) { const en = N.spec.enter; see(en.at + (N.line.glyphs.length + (en.cursor !== false ? 3 : 1)) / FPS, `${N.id} finishes typing`); }
+}
+function stills(push) {
+  const d = DEV && DEV.spec.enter;
+  if (d) push((d.at + landT(d.spring || 'LIFT') + 0.3) * FPS, 'device-in', 'the device has landed');
+  for (const s of SHOTS) push(s.t * FPS, s.name, s.what);
+  for (const C of CALLOUTS) push((C.tin + 0.7) * FPS, `callout-${C.id}`, `${C.id} and its leader landed`);
+  if (LOCK) {
+    push(Math.round(LOCK.wrap.exit * FPS + 8), 'loop-out', 'the lockup leaving, the device arriving');
+    const back = Math.max(...LOCK.nodes.map((N) => (N.spec.enter ? N.spec.enter.at : 0)));
+    push((back + 0.6) * FPS, 'lockup-in', 'the lockup coming back');
+  }
+}
+function layout() {
+  const r = (v) => Math.round(v * 10) / 10, rb = (b) => b.map(r);
+  const nodes = (list) => list.map((N) => ({ id: N.id, type: N.type, box: rb(mbox(restChain(N), N.box)),
+    ...(N.kind === 'text' ? { text: N.line.text, size: r(N.line.size), capH: r(N.line.capH), baseline: N.y } : {}), ...(N.kids.length ? { kids: nodes(N.kids) } : {}) }));
+  return {
+    device: DEV && { kind: DEV.kind, screen: [DEV.sw, DEV.sh], scale: DEV.scale, box: rb(mbox(devM(0, true), DEV.outer)), screenBox: rb(mbox(devM(0, true), [0, 0, DEV.sw, DEV.sh])) },
+    screens: SCREENS.map((Sc) => ({ id: Sc.id, content: r(Sc.content), layers: nodes([...Sc.flow, ...Sc.fixed, ...Sc.overlays]) })),
+    texts: TEXTS.map((T) => { const p = textPlace(T); return { id: T.line.id || T.N.id, text: T.line.text, px: r(T.line.size * p.s * (T.N.hud ? 1 : DEV.scale) / U), on: p.bg, color: T.color }; }),
+    callouts: CALLOUTS.map((C) => ({ id: C.id, text: C.spec.text, box: rb(C.box), start: C.start && rb(C.start), capH: r(C.line.capH), size: r(C.line.size) })),
+    hud: nodes(HUD),
+  };
+}
+
+function build() {
+  if (FILM.device) buildDevice(FILM.device);
+  else if (FILM.screens && FILM.screens.length) throw new Error('screens need a device');
+  (FILM.screens || []).forEach(buildScreen);
+  CAM = { id: 'camera', P: {}, rest: { cx: CX, cy: CY, z: 1 } };
+  if (FILM.pointer && DEV) buildPointer(FILM.pointer);
+  buildHud();
+  (FILM.callouts || []).forEach(buildCallout);
+  for (const N of ALL) if (N.spec.enter || N.spec.keys || N.spec.exit || N.wrap) motionOf(N);
+  if (DEV) { deviceMotion(); if (SCREENS.length) runScript(); }
+  flushEvents();
+  cameraMotion();
+  flushEvents();
+  for (const N of ALL) N.moves = Object.keys(N.P).length > 0 || (N.parent && N.parent.moves) || !!N.ripples;
+  for (const C of CALLOUTS) {                      // the leader leaves the side of the words that faces its element
+    const t = Math.min(DUR - 1e-6, C.tin + 0.6), E = calloutEnd(C, t) || [CX, CY], L = C.line, y = L.baseline - L.capH / 2;
+    C.start = E[0] < (C.box[0] + C.box[2]) / 2 ? [C.box[0] - C.gap, y] : [C.box[2] + C.gap, y];
+  }
+  if (DEV && DEV.spec.enter) SHOTS.sort((a, b) => a.t - b.t);
+}
+
+boot({
+  name: 'ui',
+  springs: {
+    LIFT: [0.78, 12], DROP: [1, 14], MOVE: [0.85, 16], CURSOR: [0.9, 18], DRAG: [1, 16], PRESS: [1, 50], RELEASE: [0.5, 26],
+    PUSH: [1, 20], EXPAND: [0.86, 14], SHEET: [0.85, 16], TOAST: [0.7, 20], CLOSE: [1, 22], SCROLL: [0.8, 9], KNOB: [0.7, 28],
+    TICKS: [1, 26], ZOOM: [1, 8], RIPPLE: [1, 12], RIPPLEFADE: [1, 14], LEAD: [1, 18], POP: [0.5, 20],
+  },
+  build, draw: drawFrame, disp, checks, lastChange, stills, layout, visible,
+});
+})();
+</script>
+</body>
+</html>
