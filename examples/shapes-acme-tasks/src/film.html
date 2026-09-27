@@ -178,7 +178,9 @@ document.documentElement.style.background = PAL.bg;
 document.body.style.background = PAL.bg;
 // CPU raster everywhere: Chrome moves a canvas from GPU to CPU after repeated getImageData
 // reads, which changes antialiasing mid-render. Pin every 2D context from its first call.
-const ctx = canvas.getContext('2d', { willReadFrequently: true, alpha: false });
+// An alpha channel, though every frame fills it opaque: on an opaque canvas Chromium draws text with
+// LCD subpixel antialiasing (red and blue fringes on every glyph), whatever the command line says.
+const ctx = canvas.getContext('2d', { willReadFrequently: true, alpha: true });
 const mkCanvas = (w = W, h = H) => { const c = document.createElement('canvas'); c.width = w; c.height = h; return c; };
 const mk2d = (w, h) => { const c = mkCanvas(w, h); return [c, c.getContext('2d', { willReadFrequently: true })]; };
 const mctx = mkCanvas().getContext('2d', { willReadFrequently: true });   // measuring only
