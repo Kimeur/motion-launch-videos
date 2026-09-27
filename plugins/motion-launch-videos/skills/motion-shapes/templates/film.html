@@ -1,0 +1,1235 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Acme Tasks shapes loop</title>
+<style>
+@font-face{font-family:"Unbounded";font-style:normal;font-weight:700;font-display:block;src:url(data:font/woff2;base64,__FONT:unbounded-latin-700-normal.woff2__) format("woff2")}
+@font-face{font-family:"IBM Plex Mono";font-style:normal;font-weight:500;font-display:block;src:url(data:font/woff2;base64,__FONT:ibm-plex-mono-latin-500-normal.woff2__) format("woff2")}
+*,*::before,*::after{transition:none!important;animation:none!important}
+html,body{margin:0;height:100%;background:#111018}
+body{display:grid;place-items:center;overflow:hidden}
+canvas{display:block;max-width:100vw;max-height:100vh;width:auto;height:auto}
+</style>
+</head>
+<body>
+<canvas id="c" width="1080" height="1080"></canvas>
+<script>
+(() => {
+'use strict';
+
+/* ==========================================================================
+ * FILM: the part you edit. Everything below CORE BEGIN stays as it is.
+ *
+ * Times are seconds; beat(n) and bar(n) put them on the tempo grid.
+ * Positions are canvas pixels; a layer's x, y is its centre (a text layer's x
+ * is its anchor, y its baseline). Colours are palette role names.
+ * Every animated value is a spring from where it is to a new target:
+ *   enter: { at, from: {state}, spring, stagger }  from `from` to the layer's rest
+ *   keys:  [{ at, to: {state}, spring, stagger }]  to a new target, in time order
+ *   exit:  { at, to: {state}, spring, stagger }
+ * A state may hold dx, dy (px from rest), rot (degrees added), scale, sx, sy
+ * (factors), op (opacity), trim ([start, end] of the stroke, 0 to 1), shift
+ * (moves the trimmed segment round a closed shape), fill (fill opacity),
+ * morph (index into morphs), blur (text only, px).
+ * A 'hold' loop ends on a still copy of frame 0: the last scene (wrap) is on
+ * screen at rest at t = 0, leaves at wrap.exit, and is rebuilt at the end.
+ * ========================================================================== */
+const BPM = 120;
+const beat = (n) => n * 60 / BPM;            // quarter notes
+const bar = (n) => beat(4 * n);              // 4/4 bars
+
+const FILM = {
+  title: 'Acme Tasks shapes loop',
+  alt: 'A checkbox draws itself and ticks: Done. Three tasks slide in and tick off: One list. A ring fills round the week: Every day. Acme, example.com. Demo copy, fictional product.',
+  W: 1080, H: 1080, FPS: 60, DUR: bar(5), BPM,
+  loop: 'hold',
+  palette: { bg: '#111018', paper: '#F6F4EE', red: '#FF4F2E', sun: '#FFC21A', teal: '#2EC4B6', ink: '#111018' },
+  fonts: {
+    display: { family: 'Unbounded', weight: 700 },
+    mono: { family: 'IBM Plex Mono', weight: 500 },
+  },
+  grid: { margin: 104, unit: 8 },
+  poster: 0,
+  scenes: [
+    // Lockup. At rest on frame 0, shrinks away at t 0 (wrap), rebuilt as the ring leaves, then holds.
+    {
+      id: 'lockup', t0: beat(15), t1: bar(5), in: 'none',
+      wrap: { exit: 0, to: { scale: 0 }, spring: 'EXIT', stagger: 32 },
+      layers: [
+        { id: 'MARK', shape: 'circle', r: 104, x: 540, y: 392, fill: 'red',
+          enter: { at: beat(15.25), from: { scale: 0 }, spring: 'POP' } },
+        { id: 'TICK', shape: 'line', points: [[-46, 4], [-12, 38], [52, -34]], x: 540, y: 392, stroke: 'paper', width: 26, trim: [0, 1],
+          enter: { at: beat(15.75), from: { trim: [0, 0] }, spring: 'TRACE' }, accent: 'land' },
+        { id: 'ACME', shape: 'text', text: 'ACME', font: 'display', cap: 112, track: 20, anchor: 'C', x: 540, y: 664, fill: 'paper',
+          enter: { at: beat(16), from: { dy: 64, op: 0, blur: 10 }, spring: 'LAND', stagger: 32 } },
+        { id: 'URL', shape: 'text', text: 'EXAMPLE.COM', font: 'mono', size: 40, track: 40, anchor: 'C', x: 540, y: 752, fill: 'sun',
+          enter: { at: beat(16.75), typed: true } },
+        { id: 'DEMO', shape: 'text', text: 'DEMO COPY, FICTIONAL PRODUCT', font: 'mono', size: 26, track: 20, anchor: 'C', x: 540, y: 872, fill: 'paper',
+          enter: { at: beat(17.5), typed: true } },
+      ],
+    },
+    // Hook. A checkbox draws itself round, the tick draws in, eight sparks fly off it.
+    {
+      id: 'hook', t0: 0, t1: beat(5), in: 'none',
+      punch: { at: beat(4), z: 1.06 },
+      layers: [
+        { id: 'BOX', shape: 'rect', w: 296, h: 296, radius: 64, x: 540, y: 432, stroke: 'paper', width: 28, trim: [0, 1],
+          enter: { at: beat(0.25), from: { trim: [0, 0] }, spring: 'TRACE' } },
+        { id: 'CHECK', shape: 'line', points: [[-84, 0], [-26, 58], [92, -70]], x: 540, y: 432, stroke: 'red', width: 44, trim: [0, 1],
+          enter: { at: beat(1.5), from: { trim: [0, 0] }, spring: 'TRACE' }, accent: 'land' },
+        { id: 'SPARK', shape: 'line', points: [[0, -226], [0, -300]], x: 540, y: 432, stroke: 'sun', width: 16, trim: [0, 0],
+          repeat: { radial: 8 },
+          keys: [{ at: beat(2), to: { trim: [0, 1] }, spring: 'SNAP' }, { at: beat(2.5), to: { trim: [1, 1] }, spring: 'GLIDE' }] },
+        { id: 'DONE', shape: 'text', text: 'DONE.', font: 'display', cap: 128, track: 10, anchor: 'C', x: 540, y: 872, fill: 'paper',
+          clip: [0, 0, 1080, 976],
+          enter: { at: beat(1.75), from: { dy: 240 }, spring: 'LAND', stagger: 32 } },
+      ],
+    },
+    // What it does. A circle wipe in sun yellow opens from the tick; three tasks slide in and tick off.
+    {
+      id: 'list', t0: beat(5), t1: beat(10), in: { kind: 'circle', x: 540, y: 432 }, bg: 'sun',
+      layers: [
+        { id: 'LIST', shape: 'text', text: 'ONE LIST.', font: 'display', cap: 96, track: 10, anchor: 'C', x: 540, y: 256, fill: 'ink', on: 'sun',
+          enter: { at: beat(5.25), from: { dy: 48, op: 0, blur: 8 }, spring: 'LAND', stagger: 32 } },
+        { id: 'ROW', shape: 'rect', w: 760, h: 128, radius: 64, x: 540, y: 424, fill: 'paper',
+          repeat: { n: 3, dy: 168 },
+          enter: { at: beat(5.5), from: { dx: 1000 }, spring: 'LAND', stagger: 8 } },
+        { id: 'RING', shape: 'circle', r: 30, x: 250, y: 424, stroke: 'ink', width: 10,
+          repeat: { n: 3, dy: 168 },
+          enter: { at: beat(5.5), from: { dx: 1000 }, spring: 'LAND', stagger: 8 } },
+        { id: 'BAR', shape: 'rect', w: 380, h: 24, radius: 12, x: 526, y: 424, fill: 'ink',
+          repeat: { n: 3, dy: 168 },
+          enter: { at: beat(5.5), from: { dx: 1000 }, spring: 'LAND', stagger: 8 } },
+        { id: 'DOT', shape: 'circle', r: 30, x: 250, y: 424, fill: 'red',
+          repeat: { n: 3, dy: 168 },
+          enter: { at: beat(7), from: { scale: 0 }, spring: 'POP', stagger: 8 }, accent: 'land' },
+      ],
+    },
+    // Proof. Red bars sweep up; a ring fills round seven day-dots.
+    {
+      id: 'week', t0: beat(10), t1: bar(4), in: { kind: 'bars', n: 5, dir: 'up', color: 'red', stagger: 32 },
+      layers: [
+        { id: 'TRACK', shape: 'circle', r: 212, x: 540, y: 448, stroke: 'paper', width: 20, op: 0.16 },
+        { id: 'FILLRING', shape: 'circle', r: 212, x: 540, y: 448, stroke: 'teal', width: 44, trim: [0, 1],
+          enter: { at: beat(10.5), from: { trim: [0, 0] }, spring: 'FILL' } },
+        { id: 'DAYS', shape: 'circle', r: 20, x: 540, y: 448, fill: 'sun',
+          repeat: { radial: 7, r: 212 },
+          enter: { at: beat(11), from: { scale: 0 }, spring: 'POP', stagger: 16 }, accent: 'land' },
+        { id: 'DAILY', shape: 'text', text: 'EVERY DAY.', font: 'display', cap: 88, track: 10, anchor: 'C', x: 540, y: 880, fill: 'paper',
+          enter: { at: beat(11.5), from: { dy: 48, op: 0, blur: 8 }, spring: 'LAND', stagger: 32 },
+          exit: { at: beat(15), to: { dy: 360 }, spring: 'EXIT' } },
+      ],
+      exit: { at: beat(15), to: { scale: 0 }, spring: 'EXIT', stagger: 32 },
+    },
+  ],
+};
+
+/* ===== CORE BEGIN: shared/core.js, synced by tools/sync.mjs. Do not edit it here. ===== */
+/* ==========================================================================
+ * CORE: the deterministic runtime every motion-* engine shares.
+ * Source: shared/core.js in the motion-launch-videos repo, copied into each
+ * template by tools/sync.mjs. Do not edit it inside a film.
+ *
+ * seek(t) is a pure function of (t mod DUR): same t, same pixels, whatever was
+ * drawn before. No timers, no Date, no Math.random, no state between calls.
+ *   - Springs are closed-form step responses, one per target change, snapped
+ *     to exactly 1 once settled. A Prop is a base value plus its springs.
+ *     Springs still settling when the loop ends carry over the seam.
+ *   - Periodic motion runs a whole number of cycles per loop (cyc, wave,
+ *     loopNoise), so it is exact at the seam by construction.
+ *   - Randomness is seeded (mulberry32, hash).
+ *   - Continuous motion reads the exact t; discrete state (typing, drawings
+ *     held on twos, sprite frames, line boil) reads the quantised q, so every
+ *     subframe of one output frame agrees on it.
+ *   - Motion blur averages 1 to 64 subframes on a trailing 270-degree
+ *     shutter, one per 5 px of movement, never across a hard cut.
+ * The engine below describes its vertical through hooks (build, draw, disp,
+ * checks, stills, layout, visible, lastChange) and calls boot(ENGINE) last.
+ * The core keeps its internals to itself and exports the helpers listed at
+ * its end, so an engine can name its own functions freely.
+ * ========================================================================== */
+const CORE = (() => {
+const { W, H, FPS, DUR } = FILM;
+const NFR = Math.round(DUR * FPS);                 // output frames in the loop
+const CX = W / 2, CY = H / 2;
+const U = Math.min(W, H) / 1080;                   // scale for built-in pixel constants
+const PAL = FILM.palette;
+const USED = new Set();                            // palette roles the film draws with
+const col = (k) => PAL[k] || k;                    // look a role up (while drawing)
+const role = (k) => { USED.add(k); return PAL[k] || k; };   // resolve and register a role (at build time)
+const GRID = FILM.grid || {};
+const MARGIN = GRID.margin != null ? GRID.margin : Math.round(104 * U);
+const UNIT = GRID.unit || 8;
+const MEASURE = W - 2 * MARGIN;
+const LOOP = FILM.loop || 'hold';                  // 'hold': ends on a still copy of frame 0; 'cycle': periodic, continuous over the seam; 'none'
+const BLUR = FILM.blur !== false;                  // false: one sample per frame (cartoon, pixel art)
+const SHUTTER = 0.75;                              // 270 degrees, trailing
+const MIN_SAMPLES = 4, MAX_SAMPLES = 64, PX_PER_SAMPLE = 5;   // Uint16 sums hold up to 257 x 255
+const TAU = Math.PI * 2;
+
+const canvas = document.getElementById('c');
+canvas.width = W; canvas.height = H;
+canvas.setAttribute('role', 'img');
+canvas.setAttribute('aria-label', FILM.alt || FILM.title || '');
+if (FILM.title) document.title = FILM.title;
+document.documentElement.style.background = PAL.bg;
+document.body.style.background = PAL.bg;
+// CPU raster everywhere: Chrome moves a canvas from GPU to CPU after repeated getImageData
+// reads, which changes antialiasing mid-render. Pin every 2D context from its first call.
+const ctx = canvas.getContext('2d', { willReadFrequently: true, alpha: false });
+const mkCanvas = (w = W, h = H) => { const c = document.createElement('canvas'); c.width = w; c.height = h; return c; };
+const mk2d = (w, h) => { const c = mkCanvas(w, h); return [c, c.getContext('2d', { willReadFrequently: true })]; };
+const mctx = mkCanvas().getContext('2d', { willReadFrequently: true });   // measuring only
+
+/* ---------------- springs: closed-form step responses ---------------- */
+// [zeta, omega]. Underdamped (zeta < 1) overshoots and lands; zeta = 1 glides in without overshoot.
+// Engines add their own (boot merges ENGINE.springs, then FILM.springs).
+const SP = {
+  SLAM: [0.60, 30.0], LAND: [0.72, 28.0], PUNCH: [0.65, 31.0], FADE: [1, 32.4],
+  FOCUS: [1, 19.5], EXIT: [1, 32.4], PAN: [1, 32.4], DRAW: [1, 32.4],
+  LINE: [0.80, 15.6], MASK: [1, 19.5], TICK: [1, 32.4],
+};
+const spring = (sp) => { const s = typeof sp === 'string' ? SP[sp] : sp; if (!s) throw new Error(`unknown spring ${sp}`); return s; };
+const settle = (sp) => 16 / (sp[0] * sp[1]);       // after this the response snaps to exactly 1
+function S(tau, sp) {
+  const z = sp[0], w = sp[1];
+  if (tau <= 0) return 0;
+  if (tau >= settle(sp)) return 1;                 // residual < 2e-6 of the move: snap, so loops are bit-exact
+  if (z < 1) {
+    const wd = w * Math.sqrt(1 - z * z);
+    return 1 - Math.exp(-z * w * tau) * (Math.cos(wd * tau) + (z * w / wd) * Math.sin(wd * tau));
+  }
+  return 1 - (1 + w * tau) * Math.exp(-w * tau);
+}
+function dS(tau, sp) {                             // d S / d tau, per second
+  const z = sp[0], w = sp[1];
+  if (tau <= 0 || tau >= settle(sp)) return 0;
+  if (z < 1) { const wd = w * Math.sqrt(1 - z * z); return (w * w / wd) * Math.exp(-z * w * tau) * Math.sin(wd * tau); }
+  return w * w * tau * Math.exp(-w * tau);
+}
+// the visible landing: the first crossing of the target when underdamped, 95 % when critically damped
+function landT(sp) {
+  sp = spring(sp);
+  const z = sp[0], w = sp[1];
+  if (z < 1) { const wd = w * Math.sqrt(1 - z * z); return (Math.PI - Math.atan(wd / (z * w))) / wd; }
+  let a = 0, b = settle(sp);
+  for (let i = 0; i < 40; i++) { const m = (a + b) / 2; if (S(m, sp) < 0.95) a = m; else b = m; }
+  return b;
+}
+
+// A property = base value + one spring per target change (superposed). set() is an instant jump
+// that cancels earlier springs; use it only while the element is invisible, at a hard cut, or hidden
+// inside fast motion blur. Events are added in time order. In a looping film, springs still settling
+// at the end of the loop carry over the seam into its start (only while no set() has happened yet),
+// so the film is continuous there; the value a Prop ends on must equal the value it starts from.
+const PROPS = [];
+class Prop {
+  constructor(v0, name) { this.v0 = v0; this.last = v0; this.ev = []; this.tLast = -Infinity; this.name = name || '?'; this.tail = null; this.firstSet = Infinity; PROPS.push(this); }
+  order(t) { if (t < this.tLast - 1e-9) throw new Error(`${this.name}: event at ${t} added after one at ${this.tLast}`); this.tLast = t; this.tail = null; }
+  to(t, v, sp) { this.order(t); this.ev.push({ t, d: v - this.last, sp: spring(sp), set: false }); this.last = v; return this; }
+  set(t, v) { this.order(t); this.ev.push({ t, v, set: true }); this.last = v; return this; }
+  seam() {                                         // the springs that carry over the seam
+    if (this.tail) return this.tail;
+    let k = -1;
+    this.firstSet = Infinity;
+    for (let i = 0; i < this.ev.length; i++) if (this.ev[i].set) { k = i; if (this.firstSet === Infinity) this.firstSet = this.ev[i].t; }
+    this.tail = LOOP === 'none' ? [] : this.ev.slice(k + 1).filter((e) => e.d !== 0 && e.t + settle(e.sp) > DUR);
+    return this.tail;
+  }
+  at(t) {
+    let v = this.v0, i0 = 0;
+    const ev = this.ev;
+    for (let i = 0; i < ev.length; i++) if (ev[i].set && ev[i].t <= t) { v = ev[i].v; i0 = i + 1; }
+    for (let i = i0; i < ev.length; i++) { const e = ev[i]; if (!e.set) v += e.d * S(t - e.t, e.sp); }
+    const tail = this.seam();
+    if (tail.length && t < this.firstSet) for (const e of tail) v += e.d * (S(t + DUR - e.t, e.sp) - 1);
+    return v;
+  }
+  vel(t) {                                         // per second
+    let v = 0, i0 = 0;
+    const ev = this.ev;
+    for (let i = 0; i < ev.length; i++) if (ev[i].set && ev[i].t <= t) i0 = i + 1;
+    for (let i = i0; i < ev.length; i++) { const e = ev[i]; if (!e.set) v += e.d * dS(t - e.t, e.sp); }
+    const tail = this.seam();
+    if (tail.length && t < this.firstSet) for (const e of tail) v += e.d * dS(t + DUR - e.t, e.sp);
+    return v;
+  }
+  active(a, b) {                                   // does the value change anywhere in (a, b]?
+    for (const e of this.ev) {
+      if (e.set) { if (e.t > a && e.t <= b) return true; }
+      else if (e.d !== 0 && e.t < b && e.t + settle(e.sp) > a) return true;
+    }
+    if (a < this.firstSet) for (const e of this.seam()) if (e.t - DUR < b && e.t - DUR + settle(e.sp) > a) return true;
+    return false;
+  }
+  settleEnd() { let m = -Infinity; for (const e of this.ev) m = Math.max(m, e.set ? e.t : e.t + settle(e.sp)); return m; }
+  lastSet(a, b) { let m = -Infinity; for (const e of this.ev) if (e.set && e.t > a && e.t <= b && e.t > m) m = e.t; return m; }
+}
+
+/* ---------------- periodic motion and seeded randomness ---------------- */
+// n whole cycles per loop: exact at the seam by construction. Use these for anything that never stops
+// (an idle bob, a spin, a drifting field) and set ENGINE.always, or declare its windows with activeIn.
+const cyc = (t, n, phase = 0) => TAU * (n * t / DUR + phase);
+const wave = (t, n, phase = 0) => Math.sin(cyc(t, n, phase));
+function mulberry32(a) {
+  return function () {
+    a |= 0; a = (a + 0x6D2B79F5) | 0;
+    let t = Math.imul(a ^ (a >>> 15), 1 | a);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+// three integers to [0, 1), well mixed: a pure replacement for Math.random keyed by what it decides
+function hash(a, b = 0, c = 0) {
+  let h = Math.imul((a | 0) ^ 0x3C6EF372, 0x85EBCA6B);
+  h = Math.imul(h ^ (h >>> 13) ^ (b | 0), 0xC2B2AE35);
+  h = Math.imul(h ^ (h >>> 16) ^ (c | 0), 0x27D4EB2F);
+  h ^= h >>> 15; h = Math.imul(h, 0x85EBCA6B); h ^= h >>> 13; h = Math.imul(h, 0xC2B2AE35); h ^= h >>> 16;
+  return (h >>> 0) / 4294967296;
+}
+// smooth noise in [-1, 1] that loops exactly: three whole harmonics (n, 2n+1, 4n+3 cycles per loop) with seeded phases
+function loopNoise(t, n, seed) {
+  return (Math.sin(cyc(t, n, hash(seed, 1))) + 0.5 * Math.sin(cyc(t, 2 * n + 1, hash(seed, 2))) + 0.25 * Math.sin(cyc(t, 4 * n + 3, hash(seed, 3)))) / 1.75;
+}
+function shuffled(arr, seed) {                     // Fisher-Yates on a copy, seeded
+  const r = mulberry32(seed), a = arr.slice();
+  for (let i = a.length - 1; i > 0; i--) { const j = Math.floor(r() * (i + 1)); const x = a[i]; a[i] = a[j]; a[j] = x; }
+  return a;
+}
+
+/* ---------------- time ---------------- */
+const wrapT = (t) => ((t % DUR) + DUR) % DUR;
+const frameOf = (t) => Math.ceil(t * FPS - 1e-9);  // all subframes of output frame n map to n
+const typed = (q, ts, n) => Math.max(0, Math.min(n, Math.ceil((q - ts) * FPS - 1e-6)));   // one character per frame
+const noteSec = (v) => (typeof v === 'number' && v >= 1 ? 4 * 60 / FILM.BPM / v : v);     // 16 -> a 16th note
+const drawing = (q, fps) => Math.floor(q * fps + 1e-6);    // index of the held drawing (12 fps = on twos at 24, fives at 60)
+
+/* ---------------- colour ---------------- */
+function rgbOf(hex) { const h = String(hex).replace('#', ''); const n = parseInt(h.length === 3 ? h.replace(/./g, '$&$&') : h.slice(0, 6), 16); return [(n >> 16) & 255, (n >> 8) & 255, n & 255]; }
+const hexOf = (r, g, b) => '#' + [r, g, b].map((v) => Math.max(0, Math.min(255, Math.round(v))).toString(16).padStart(2, '0')).join('').toUpperCase();
+function mix(a, b, k) { const x = rgbOf(a), y = rgbOf(b); return hexOf(x[0] + (y[0] - x[0]) * k, x[1] + (y[1] - x[1]) * k, x[2] + (y[2] - x[2]) * k); }
+function hueChroma(r, g, b) {
+  const mx = Math.max(r, g, b), mn = Math.min(r, g, b), C = mx - mn;
+  if (C === 0) return [0, 0];
+  let h;
+  if (mx === r) h = 60 * (((g - b) / C) % 6); else if (mx === g) h = 60 * ((b - r) / C + 2); else h = 60 * ((r - g) / C + 4);
+  return [h < 0 ? h + 360 : h, C];
+}
+const hueDist = (a, b) => { const d = Math.abs(a - b) % 360; return d > 180 ? 360 - d : d; };
+function lum(hex) { const c = rgbOf(hex).map((v) => { v /= 255; return v <= 0.04045 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4); }); return 0.2126 * c[0] + 0.7152 * c[1] + 0.0722 * c[2]; }
+const contrast = (a, b) => { const x = lum(a), y = lum(b); return (Math.max(x, y) + 0.05) / (Math.min(x, y) + 0.05); };
+function inksClash(a, b) {                         // two inks may share a pixel only when that cannot make a new hue
+  const [ha, ca] = hueChroma(...rgbOf(a)), [hb, cb] = hueChroma(...rgbOf(b));
+  return ca >= 40 && cb >= 40 && hueDist(ha, hb) > 13;
+}
+
+/* ---------------- fonts and type ---------------- */
+const face = (r) => { const f = FILM.fonts && FILM.fonts[r]; if (!f) throw new Error(`no font role "${r}"`); return f; };
+const fontStr = (r, size) => { const f = face(r); return `${f.style === 'italic' ? 'italic ' : ''}${f.weight} ${size}px "${f.family}"`; };
+function setFont(c, f) { c.font = f; c.fontKerning = 'normal'; c.letterSpacing = '0px'; c.textBaseline = 'alphabetic'; c.textAlign = 'left'; }
+function capRatio(r) { setFont(mctx, fontStr(r, 1000)); return mctx.measureText('H').actualBoundingBoxAscent / 1000; }
+const TEXT = {};                                   // font role -> every character it draws (checked against the font's cmap)
+const useText = (r, s) => { face(r); TEXT[r] = (TEXT[r] || '') + s; return s; };
+function textByFace() {
+  const out = {};
+  for (const [r, s] of Object.entries(TEXT)) { const f = face(r), k = `${f.family}|${f.weight}`; out[k] = (out[k] || '') + s; }
+  return out;
+}
+
+// One line of type, one glyph at a time: the font's kerning recovered from pair widths, optical
+// pairs on top (1/1000 em), then a fixed tracking, a tracking solved to span `justify` px, or a
+// size solved (`fit`) so the ink spans the measure (or `fit: <px>`). `cap: <px>` sizes from a cap
+// height. x and anchor ('L', 'R', 'C') place the ink edge or centre. Measured once, after the fonts load.
+function measureRun(o, size) {
+  const font = fontStr(o.font || 'display', size);
+  setFont(mctx, font);
+  const ch = Array.from(o.text), n = ch.length;
+  const met = ch.map((c) => mctx.measureText(c));
+  const adv = met.map((m) => m.width);
+  const gap = [];
+  for (let i = 0; i < n - 1; i++) {
+    const kern = mctx.measureText(ch[i] + ch[i + 1]).width - adv[i] - adv[i + 1];
+    gap.push(adv[i] + kern + ((o.pairs || {})[ch[i] + ch[i + 1]] || 0) / 1000 * size);
+  }
+  const pens = (T) => { const x = [0]; for (let i = 0; i < n - 1; i++) x.push(x[i] + gap[i] + T); return x; };
+  const inkW = (x) => (x[n - 1] + met[n - 1].actualBoundingBoxRight) - (x[0] - met[0].actualBoundingBoxLeft);
+  return { font, ch, n, met, pens, inkW };
+}
+function layoutText(o) {
+  const r = o.font || 'display';
+  useText(r, o.text);
+  let size = o.size != null ? o.size : o.cap != null ? o.cap / capRatio(r) : 100;
+  const width = o.fit ? (o.fit === true ? MEASURE : o.fit) : null;
+  if (width) for (let k = 0; k < 3; k++) {         // ink width is linear in size; converge
+    const m = measureRun(o, size);
+    size *= width / m.inkW(m.pens((o.track || 0) / 1000 * size));
+  }
+  const m = measureRun(o, size), { ch, n, met } = m;
+  const T = o.justify != null && n > 1 ? (o.justify - m.inkW(m.pens(0))) / (n - 1) : (o.track || 0) / 1000 * size;
+  const x = m.pens(T);
+  const inkL0 = x[0] - met[0].actualBoundingBoxLeft, inkR0 = x[n - 1] + met[n - 1].actualBoundingBoxRight;
+  const anchor = o.anchor || 'L';
+  const ax = o.x != null ? o.x : anchor === 'R' ? W - MARGIN : anchor === 'C' ? CX : MARGIN;
+  const shift = anchor === 'R' ? ax - inkR0 : anchor === 'C' ? ax - (inkL0 + inkR0) / 2 : ax - inkL0;
+  let slot = 0;
+  const glyphs = ch.map((c, i) => {
+    const sp = /\s/.test(c);
+    const g = { ch: c, i, x: x[i] + shift, space: sp, slot: sp ? -1 : slot,
+      inkL: x[i] + shift - met[i].actualBoundingBoxLeft, inkR: x[i] + shift + met[i].actualBoundingBoxRight,
+      asc: met[i].actualBoundingBoxAscent, desc: met[i].actualBoundingBoxDescent };
+    if (!sp) slot++;
+    return g;
+  });
+  setFont(mctx, m.font);
+  const capH = mctx.measureText('H').actualBoundingBoxAscent;
+  const ink = glyphs.filter((g) => !g.space);
+  const base = o.baseline != null ? o.baseline : 0;
+  return { id: o.id, text: o.text, role: r, font: m.font, size, baseline: base, glyphs, slots: slot,
+    trackPx: T, trackEm: T / size * 1000, inkL: inkL0 + shift, inkR: inkR0 + shift, capH, capTop: base - capH,
+    top: base - Math.max(...ink.map((g) => g.asc)), bottom: base + Math.max(...ink.map((g) => g.desc)) };
+}
+
+// A canvas filter blurs a layer the size of the whole canvas (about 25 ms at 1080 px). Blurred
+// glyphs are instead drawn once into small sprites, blur quantised to steps nobody can see, in a
+// bounded cache. A sprite is a pure function of (font, glyph, colour, blur): a hit and a miss give
+// the same pixels, so seek() stays pure.
+const SPRITES = new Map();
+let spritePx = 0;
+const SPRITE_BUDGET = 24e6;
+const blurQ = (b) => (b < 4 ? Math.round(b * 4) / 4 : b < 10 ? Math.round(b * 2) / 2 : Math.round(b));
+function glyphSprite(font, ch, color, b) {
+  const key = font + '|' + ch + '|' + color + '|' + b;
+  let s = SPRITES.get(key);
+  if (s) { SPRITES.delete(key); SPRITES.set(key, s); return s; }
+  setFont(mctx, font);
+  const m = mctx.measureText(ch), pad = Math.ceil(3 * b) + 2;
+  const c = mkCanvas(Math.max(1, Math.ceil(m.actualBoundingBoxLeft + m.actualBoundingBoxRight) + 2 * pad), Math.max(1, Math.ceil(m.actualBoundingBoxAscent + m.actualBoundingBoxDescent) + 2 * pad));
+  const x = c.getContext('2d', { willReadFrequently: true });
+  setFont(x, font);
+  x.fillStyle = color; x.filter = `blur(${b}px)`;
+  const ox = pad + m.actualBoundingBoxLeft, oy = pad + m.actualBoundingBoxAscent;
+  x.fillText(ch, ox, oy);
+  s = { c, ox, oy, px: c.width * c.height };
+  SPRITES.set(key, s); spritePx += s.px;
+  for (const [k, v] of SPRITES) { if (spritePx <= SPRITE_BUDGET) break; SPRITES.delete(k); spritePx -= v.px; }
+  return s;
+}
+function fillGlyph(c, ch, x, y, color, a, blur) {
+  if (!(a > 0.002)) return;
+  c.globalAlpha = a > 1 ? 1 : a;
+  c.filter = 'none';
+  const bq = blur > 0.05 ? blurQ(blur) : 0;
+  if (bq > 0) { const s = glyphSprite(c.font, ch, color, bq); c.drawImage(s.c, x - s.ox, y - s.oy); return; }
+  c.fillStyle = color;
+  c.fillText(ch, x, y);
+}
+// Draw a laid-out line. fx(g) may return { dx, dy, op, blur, sx, sy, rot, color, ch, pivot } per glyph
+// ('base' scales and turns about the glyph's foot on the baseline, 'mid' about its centre), or null to hide it.
+function drawText(c, L, color, fx) {
+  setFont(c, L.font);
+  for (const g of L.glyphs) {
+    if (g.space) continue;
+    const e = fx ? fx(g) : {};
+    if (!e) continue;
+    const op = e.op != null ? e.op : 1;
+    if (!(op > 0.002)) continue;
+    const dx = e.dx || 0, dy = e.dy || 0, x = g.x + dx, y = L.baseline + dy;
+    const sx = e.sx != null ? e.sx : 1, sy = e.sy != null ? e.sy : 1, rot = e.rot || 0;
+    const cc = e.color || color, ch = e.ch || g.ch;
+    if (rot || sx !== 1 || sy !== 1) {
+      const px = (g.inkL + g.inkR) / 2 + dx, py = e.pivot === 'base' ? y : y - L.capH / 2;
+      c.save(); c.translate(px, py); c.rotate(rot); c.scale(sx, sy); c.translate(-px, -py);
+      fillGlyph(c, ch, x, y, cc, op, e.blur || 0);
+      c.restore();
+    } else fillGlyph(c, ch, x, y, cc, op, e.blur || 0);
+  }
+  c.globalAlpha = 1; c.filter = 'none';
+}
+
+/* ---------------- SVG paths ---------------- */
+// A path from SVG path data: Path2D to draw it, its length and points for trims and morphs.
+// Measured once through a hidden SVG element (the only DOM the core touches besides the canvas).
+let svgRoot = null;
+function svgPath(d) {
+  if (!svgRoot) {
+    svgRoot = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+    svgRoot.setAttribute('style', 'position:absolute;left:0;top:0;width:0;height:0;overflow:hidden');
+    document.body.appendChild(svgRoot);
+  }
+  const el = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+  el.setAttribute('d', d);
+  svgRoot.appendChild(el);
+  const len = el.getTotalLength(), bb = el.getBBox();
+  return { d, p2d: new Path2D(d), len, box: [bb.x, bb.y, bb.x + bb.width, bb.y + bb.height],
+    points: (n) => { const out = []; for (let i = 0; i < n; i++) { const p = el.getPointAtLength(len * i / n); out.push([p.x, p.y]); } return out; } };
+}
+
+/* ---------------- registries the engine fills while it builds ---------------- */
+const CUTS = [];                                   // hard cuts: motion blur never averages across them
+const ACTIVE = [];                                 // [a, b] windows where something moves outside the Props
+const ACCENTS = [];                                // { t, what }: accent frames (stills and the palette gate)
+const WARN = [];                                   // timeline warnings for the critique
+const CONTRAST = [];                               // { id, fg, bg, min }: text that must read
+let ENGINE = null;
+const cutAt = (t) => { if (t > 1e-9 && t < DUR && !CUTS.includes(t)) CUTS.push(t); };
+const activeIn = (a, b) => { ACTIVE.push([a, b]); };
+const accentAt = (t, what) => { ACCENTS.push({ t, what }); };
+const needContrast = (id, fg, bg, min) => { CONTRAST.push({ id, fg, bg: bg || 'bg', min }); };
+
+/* ---------------- frame ---------------- */
+function draw(c, tIn) {
+  const t = wrapT(tIn);
+  let nq = frameOf(t);
+  if (nq >= NFR) nq -= NFR;                        // the last subframes of the loop belong to frame 0
+  const q = nq / FPS;
+  c.setTransform(1, 0, 0, 1, 0, 0);
+  c.globalCompositeOperation = 'source-over'; c.globalAlpha = 1; c.filter = 'none';
+  c.fillStyle = PAL.bg; c.fillRect(0, 0, W, H);
+  ENGINE.draw(c, t, q, nq);
+  c.setTransform(1, 0, 0, 1, 0, 0);
+  c.globalCompositeOperation = 'source-over'; c.globalAlpha = 1; c.filter = 'none';
+}
+let isReady = false;
+function seek(t) { if (!isReady) return false; draw(ctx, Number(t)); return true; }
+
+/* ---------------- motion blur ---------------- */
+// Subframes on a trailing shutter, clamped to a hard cut so the first frame after it is not a
+// double exposure. How many: 1 when nothing changes (exact: the mean of identical samples is the
+// sample), else one per 5 px of the engine's measured displacement, 4 to 64.
+function shutterTimes(n, k) {
+  const tn = n / FPS, out = [];
+  for (let i = k - 1; i >= 0; i--) {
+    let t = k === 1 ? tn : tn - i * SHUTTER / (FPS * (k - 1));
+    for (const cut of CUTS) if (tn >= cut && t < cut) t = cut;
+    if (ENGINE.seamCut && tn === 0 && t < 0) t = 0;   // a cut at the loop point itself
+    out.push(t);
+  }
+  return out;
+}
+function motionAt(n) {
+  if (!BLUR) return { samples: 1, disp: 0 };
+  const ta = wrapT(shutterTimes(n, 2)[0]), tb = wrapT(n / FPS);
+  const spans = ta === tb ? [] : ta < tb ? [[ta, tb]] : [[ta, DUR], [0, tb]];   // a shutter clamped flat against a cut cannot move
+  let moving = false;
+  for (const [a, b] of spans) if (ENGINE.always || ACTIVE.some(([x, y]) => x < b && y > a) || PROPS.some((p) => p.active(a, b))) { moving = true; break; }
+  if (!moving) return { samples: 1, disp: 0 };
+  const minS = ENGINE.minSamples || MIN_SAMPLES;    // an engine whose every sample is costly (WebGL) may allow 2
+  const disp = ENGINE.disp ? ENGINE.disp(ta, tb) : PX_PER_SAMPLE * minS;
+  return { samples: Math.max(minS, Math.min(MAX_SAMPLES, Math.ceil(disp / PX_PER_SAMPLE))), disp };
+}
+let SUM = null;
+function renderFrame(n) {
+  if (!isReady) return 0;
+  const { samples } = motionAt(n);
+  const times = shutterTimes(n, samples);
+  if (samples === 1) { draw(ctx, times[0]); return 1; }
+  if (ENGINE.accumulate) { ENGINE.accumulate(ctx, times); return samples; }
+  if (!SUM) SUM = new Uint16Array(W * H * 4); else SUM.fill(0);
+  for (const t of times) {
+    draw(ctx, t);
+    const px = ctx.getImageData(0, 0, W, H).data;
+    for (let i = 0; i < px.length; i++) SUM[i] += px[i];
+  }
+  const out = ctx.createImageData(W, H), o = out.data, half = samples >> 1;
+  for (let i = 0; i < o.length; i++) o[i] = ((SUM[i] + half) / samples) | 0;
+  ctx.putImageData(out, 0, 0);
+  return samples;
+}
+
+/* ---------------- analysis (never called by seek) ---------------- */
+function accentFrames() { return ACCENTS.map((m) => ({ what: m.what, t: Math.round(m.t * 1000) / 1000, frame: Math.round(m.t * FPS) % NFR })); }
+
+// Off-palette scan. Default: pixels with chroma >= 40 whose hue is more than 13 degrees from every
+// chromatic palette colour (two inks mixed into a new one), counted as `area` only where the 4
+// neighbours are off too (patches 3+ px across, not the 1-px antialiasing fringe). strict: any pixel
+// that is not exactly a palette colour (pixel art).
+function offPalette(frames, mode, strict) {
+  const cols = Object.values(PAL).map(rgbOf);
+  const hues = cols.map((c) => hueChroma(...c)).filter(([, c]) => c >= 40).map(([h]) => h);
+  const exact = new Set(cols.map(([r, g, b]) => (r << 16) | (g << 8) | b));
+  const out = [];
+  for (const n of frames) {
+    if (mode === 'seek') seek(n / FPS); else renderFrame(n);
+    const px = ctx.getImageData(0, 0, W, H).data, off = new Uint8Array(W * H);
+    let count = 0; const seen = {};
+    for (let p = 0, i = 0; p < W * H; p++, i += 4) {
+      let bad;
+      if (strict) bad = !exact.has((px[i] << 16) | (px[i + 1] << 8) | px[i + 2]);
+      else { const [h, C] = hueChroma(px[i], px[i + 1], px[i + 2]); bad = C >= 40 && !hues.some((hp) => hueDist(h, hp) <= 13); }
+      if (bad) { off[p] = 1; count++; const k = `${px[i]},${px[i + 1]},${px[i + 2]}`; seen[k] = (seen[k] || 0) + 1; }
+    }
+    let area = strict ? count : 0;
+    if (!strict) for (let y = 1; y < H - 1; y++) for (let x = 1; x < W - 1; x++) { const p = y * W + x; if (off[p] && off[p - 1] && off[p + 1] && off[p - W] && off[p + W]) area++; }
+    const top = Object.entries(seen).sort((a, b) => b[1] - a[1]).slice(0, 3).map(([k, v]) => `(${k})x${v}`).join(' ');
+    out.push({ frame: n, count, area, top });
+  }
+  return out;
+}
+
+// the last moment anything on screen can change: spring settles, active windows, accents, and the
+// engine's own discrete state (typing, blinking, snaps)
+function lastChange() {
+  let t = -Infinity, what = 'nothing moves';
+  const see = (v, w) => { if (v > t) { t = v; what = w; } };
+  for (const p of PROPS) see(p.settleEnd(), `${p.name} settles`);
+  for (const w of ACTIVE) see(w[1], 'an active window ends');
+  for (const m of ACCENTS) see(m.t + 3 / FPS, `the accent on ${m.what} ends`);
+  if (ENGINE.lastChange) ENGINE.lastChange(see);
+  return { t, what };
+}
+function loopChecks(add) {
+  for (const p of PROPS) for (const e of p.ev) if (e.t >= DUR - 1e-9 || e.t < 0) { add('timeline', 'WARN', `${p.name}: an event at ${e.t.toFixed(3)} s is outside the loop (0 to ${DUR})`); break; }
+  if (LOOP === 'hold') {
+    const last = lastChange(), need = DUR - (1 + SHUTTER) / FPS, hold = Math.floor((DUR - last.t) * FPS + 1e-6);
+    add('loop tail', last.t <= need ? 'PASS' : 'FAIL', `last change at ${last.t.toFixed(3)} s (${last.what}); still hold at least ${hold} frames (needs >= 2; loopcheck counts identical pixels)`);
+  } else if (LOOP === 'cycle') {
+    const open = PROPS.filter((p) => Math.abs(p.last - p.v0) > 1e-6);
+    add('loop closes', open.length ? 'FAIL' : 'PASS', open.length
+      ? `${open.slice(0, 6).map((p) => `${p.name} ends at ${+p.last.toFixed(3)} but starts at ${+p.v0.toFixed(3)}`).join('; ')}${open.length > 6 ? ` and ${open.length - 6} more` : ''}: the loop jumps`
+      : `${PROPS.length} props return to where they start; springs still settling at the end carry over the seam`);
+    if (ENGINE.cycles) for (const c of ENGINE.cycles()) {
+      const k = DUR / c.period;
+      add(`cycle: ${c.what}`, Math.abs(k - Math.round(k)) < 1e-6 ? 'PASS' : 'FAIL', `${+k.toFixed(4)} cycles per loop (period ${+c.period.toFixed(4)} s); must be whole`);
+    }
+  }
+}
+// frames where nothing is on screen (a blank flash between scenes), from the engine's visible(t)
+function emptyRuns() {
+  const runs = [];
+  let start = -1;
+  for (let n = 0; n <= NFR; n++) {
+    const empty = n < NFR && !ENGINE.visible(n / FPS);
+    if (empty && start < 0) start = n;
+    if (!empty && start >= 0) { runs.push([start, n - 1]); start = -1; }
+  }
+  return runs;
+}
+// Collision and live-area helpers for engines' checks. Boxes are [x0, y0, x1, y1] in canvas px.
+function checkLiveArea(add, id, b, bleed) {
+  if (bleed) return;
+  const out = [];
+  if (b[0] < MARGIN - 1) out.push(`left ${b[0].toFixed(1)} < ${MARGIN}`);
+  if (b[2] > W - MARGIN + 1) out.push(`right ${b[2].toFixed(1)} > ${W - MARGIN}`);
+  if (b[1] < MARGIN - 1) out.push(`top ${b[1].toFixed(1)} < ${MARGIN}`);
+  if (b[3] > H - MARGIN + 1) out.push(`bottom ${b[3].toFixed(1)} > ${H - MARGIN}`);
+  add(`live area: ${id}`, out.length ? 'FAIL' : 'PASS', out.join(', ') || `${b.map((v) => v.toFixed(0)).join(', ')}`);
+}
+function checkSpacing(add, items, tight = 16 * U) {  // items: [{ id, b }] on screen together at rest
+  for (let i = 0; i < items.length; i++) for (let j = i + 1; j < items.length; j++) {
+    const a = items[i].b, b = items[j].b;
+    const dx = Math.max(0, a[0] - b[2], b[0] - a[2]), dy = Math.max(0, a[1] - b[3], b[1] - a[3]);
+    const gap = dx === 0 && dy === 0 ? -1 : Math.hypot(dx, dy);
+    if (gap < 0) add(`collision: ${items[i].id} / ${items[j].id}`, 'FAIL', 'boxes overlap at rest');
+    else if (gap < tight) add(`cramped: ${items[i].id} / ${items[j].id}`, 'WARN', `${gap.toFixed(1)} px apart (< ${tight.toFixed(0)} px)`);
+  }
+}
+function critique() {
+  const checks = [];
+  const add = (name, status, detail) => checks.push({ name, status, detail });
+  if (ENGINE.checks) ENGINE.checks(add);
+  for (const c of CONTRAST) {
+    const r = contrast(col(c.fg), col(c.bg));
+    add(`contrast: ${c.id}`, r < c.min ? 'FAIL' : 'PASS', `${r.toFixed(2)}:1 on ${c.bg} (needs ${c.min}:1)`);
+  }
+  const stray = [...USED].filter((k) => !(k in PAL));
+  add('palette roles', stray.length ? 'FAIL' : 'PASS', stray.length ? `not in the palette: ${stray.join(', ')}` : `${USED.size} roles used, all in the palette`);
+  loopChecks(add);
+  if (ENGINE.visible) {
+    const minRun = Math.max(2, Math.round(FPS / 15));
+    for (const [a, b] of emptyRuns()) if (b - a + 1 >= minRun)
+      add('blank frames', 'WARN', `frames ${a}-${b} (t ${(a / FPS).toFixed(3)}-${(b / FPS).toFixed(3)}) show nothing: start the next entrance sooner, or pop it in at the cut`);
+  }
+  for (const w of WARN) add('timeline', 'WARN', w);
+  return checks;
+}
+// review stills: the engine's plan (each scene in and at rest, each transition) plus every accent frame
+function stillsPlan() {
+  const plan = [], seen = new Set();
+  const push = (frame, name, what) => { frame = Math.max(0, Math.min(NFR - 1, Math.round(frame))); if (seen.has(frame)) return; seen.add(frame); plan.push({ frame, name, what }); };
+  if (ENGINE.stills) ENGINE.stills(push);
+  for (const m of accentFrames()) push(m.frame, `accent-${m.what}`, `accent on ${m.what}`);
+  return plan.sort((a, b) => a.frame - b.frame);
+}
+function layoutTable() {
+  return { film: { W, H, FPS, DUR, frames: NFR, bpm: FILM.BPM, loop: LOOP, blur: BLUR, margin: MARGIN, measure: MEASURE, engine: ENGINE.name },
+    ...(ENGINE.layout ? ENGINE.layout() : {}), cuts: CUTS, accents: accentFrames(), warnings: WARN };
+}
+
+/* ---------------- boot ---------------- */
+function filmChars() {                              // every character any string in FILM holds, to load the fonts with
+  const s = new Set('H0');
+  const walk = (v, d) => { if (typeof v === 'string') { for (const c of v) s.add(c); } else if (v && typeof v === 'object' && d < 12) for (const k in v) walk(v[k], d + 1); };
+  walk(FILM, 0);
+  return [...s].join('');
+}
+function boot(E) {
+  ENGINE = E;
+  Object.assign(SP, E.springs || {}, FILM.springs || {});
+  for (const [k, v] of Object.entries(SP)) if (!(v[0] > 0 && v[0] <= 1 && v[1] > 0)) throw new Error(`spring ${k}: zeta must be in (0, 1] and omega > 0`);
+  window.DURATION = DUR; window.FPS = FPS; window.WIDTH = W; window.HEIGHT = H;
+  window.FILM_META = { title: FILM.title, poster: FILM.poster || 0, bg: PAL.bg, palette: PAL, loop: LOOP, blur: BLUR,
+    engine: E.name, strictPalette: !!E.strictPalette, seamCut: !!E.seamCut, gif: E.gif || null };
+  Object.assign(window, { seek, renderFrame, motionAt, layoutTable, critique, stillsPlan, textByFace, accentFrames, misFrames: accentFrames, offPalette });
+  const roles = Object.keys(FILM.fonts || {}), sample = filmChars();
+  window.ready = Promise.all(roles.map((r) => document.fonts.load(fontStr(r, 100), sample)))
+    .then((sets) => { if (sets.some((s) => !s.length)) throw new Error('a font face failed to load'); return E.build(); })
+    .then(() => {
+      for (const p of PROPS) p.seam();
+      CUTS.sort((a, b) => a - b);
+      isReady = true;
+      seek(0);
+      return true;
+    });
+  // Preview: requestAnimationFrame is the only time source and it only calls seek().
+  // Space pauses, the arrow keys step one frame, ?t=3.5 opens paused at a time.
+  if (!/[?&]capture\b/.test(location.search)) {
+    window.ready.then(() => {
+      const m = /[?&]t=([\d.]+)/.exec(location.search);
+      let paused = !!m, pos = m ? Number(m[1]) : 0, last = null;
+      const tick = (ts) => {
+        if (!paused && last !== null) pos = wrapT(pos + (ts - last) / 1000);
+        last = ts; seek(pos); requestAnimationFrame(tick);
+      };
+      addEventListener('keydown', (e) => {
+        if (e.key === ' ') { paused = !paused; e.preventDefault(); }
+        if (e.key === 'ArrowRight') { paused = true; pos = wrapT(Math.round(pos * FPS + 1) / FPS); }
+        if (e.key === 'ArrowLeft') { paused = true; pos = wrapT(Math.round(pos * FPS - 1) / FPS); }
+      });
+      requestAnimationFrame(tick);
+    });
+  }
+}
+
+  return { W, H, FPS, DUR, NFR, CX, CY, U, PAL, col, role, GRID, MARGIN, UNIT, MEASURE, LOOP, BLUR, SHUTTER, TAU,
+    canvas, ctx, mkCanvas, mk2d, mctx,
+    SP, spring, settle, S, dS, landT, Prop, PROPS,
+    cyc, wave, mulberry32, hash, loopNoise, shuffled,
+    wrapT, frameOf, typed, noteSec, drawing,
+    rgbOf, hexOf, mix, hueChroma, hueDist, lum, contrast, inksClash,
+    face, fontStr, setFont, capRatio, useText, measureRun, layoutText, blurQ, glyphSprite, fillGlyph, drawText,
+    svgPath, CUTS, ACTIVE, ACCENTS, WARN, CONTRAST, cutAt, activeIn, accentAt, needContrast,
+    checkLiveArea, checkSpacing, seek, boot };
+})();
+const { W, H, FPS, DUR, NFR, CX, CY, U, PAL, col, role, GRID, MARGIN, UNIT, MEASURE, LOOP, BLUR, SHUTTER, TAU,
+  canvas, ctx, mkCanvas, mk2d, mctx,
+  SP, spring, settle, S, dS, landT, Prop, PROPS,
+  cyc, wave, mulberry32, hash, loopNoise, shuffled,
+  wrapT, frameOf, typed, noteSec, drawing,
+  rgbOf, hexOf, mix, hueChroma, hueDist, lum, contrast, inksClash,
+  face, fontStr, setFont, capRatio, useText, measureRun, layoutText, blurQ, glyphSprite, fillGlyph, drawText,
+  svgPath, CUTS, ACTIVE, ACCENTS, WARN, CONTRAST, cutAt, activeIn, accentAt, needContrast,
+  checkLiveArea, checkSpacing, seek, boot } = CORE;
+/* ===== CORE END ===== */
+
+/* ==========================================================================
+ * ENGINE: motion-shapes. Flat 2D motion graphics: shapes, SVG paths, repeaters
+ * and type, every value on springs, with trims, morphs, wipes and a camera.
+ * ========================================================================== */
+const DEG = Math.PI / 180;
+const NPTS = 240;                                 // points per outline for morphs and motion measurement
+const clamp01 = (v) => (v < 0 ? 0 : v > 1 ? 1 : v);
+const SCENES = [], LAYERS = {};
+let camX = null, camZ = null;
+
+/* ---------------- geometry: every shape is SVG path data, centred on its own 0,0 ---------------- */
+// Closed shapes start at the top and run clockwise, so trims draw on from 12 o'clock and morphs line up.
+function geomSpec(s) {
+  const f = (v) => +(+v).toFixed(3);
+  switch (s.shape) {
+    case 'circle': { const r = s.r; return { d: `M0 ${f(-r)}A${f(r)} ${f(r)} 0 1 1 0 ${f(r)}A${f(r)} ${f(r)} 0 1 1 0 ${f(-r)}Z`, closed: true }; }
+    case 'ellipse': { const a = s.rx, b = s.ry; return { d: `M0 ${f(-b)}A${f(a)} ${f(b)} 0 1 1 0 ${f(b)}A${f(a)} ${f(b)} 0 1 1 0 ${f(-b)}Z`, closed: true }; }
+    case 'rect': {
+      const w = s.w / 2, h = s.h / 2, r = Math.min(s.radius || 0, w, h);
+      return { d: `M0 ${f(-h)}H${f(w - r)}A${f(r)} ${f(r)} 0 0 1 ${f(w)} ${f(-h + r)}V${f(h - r)}A${f(r)} ${f(r)} 0 0 1 ${f(w - r)} ${f(h)}H${f(-w + r)}A${f(r)} ${f(r)} 0 0 1 ${f(-w)} ${f(h - r)}V${f(-h + r)}A${f(r)} ${f(r)} 0 0 1 ${f(-w + r)} ${f(-h)}Z`, closed: true };
+    }
+    case 'poly': case 'star': {
+      const n = s.shape === 'star' ? (s.points || 5) * 2 : (s.sides || 3), pts = [];
+      for (let k = 0; k < n; k++) { const a = -Math.PI / 2 + TAU * k / n, r = s.shape === 'star' && k % 2 ? s.r * (s.inner || 0.45) : s.r; pts.push([r * Math.cos(a), r * Math.sin(a)]); }
+      return { d: 'M' + pts.map((p) => `${f(p[0])} ${f(p[1])}`).join('L') + 'Z', closed: true };
+    }
+    case 'arc': {                                  // degrees clockwise from 12 o'clock
+      const r = s.r, a0 = (s.from || 0) * DEG - Math.PI / 2, a1 = (s.to != null ? s.to : 360) * DEG - Math.PI / 2, span = a1 - a0;
+      const p = (a) => `${f(r * Math.cos(a))} ${f(r * Math.sin(a))}`;
+      if (span >= TAU - 1e-6) return geomSpec({ shape: 'circle', r });
+      const mid = a0 + span / 2;
+      return { d: `M${p(a0)}A${f(r)} ${f(r)} 0 0 1 ${p(mid)}A${f(r)} ${f(r)} 0 0 1 ${p(a1)}`, closed: false };
+    }
+    case 'line': { const pts = s.points || [[s.x1, s.y1], [s.x2, s.y2]]; return { d: 'M' + pts.map((p) => `${f(p[0])} ${f(p[1])}`).join('L') + (s.closed ? 'Z' : ''), closed: !!s.closed }; }
+    case 'path': return { d: s.d, closed: /z\s*$/i.test(String(s.d).trim()), raw: true };
+    default: throw new Error(`unknown shape "${s.shape}"`);
+  }
+}
+function signedArea(pts) { let a = 0; for (let i = 0; i < pts.length; i++) { const p = pts[i], q = pts[(i + 1) % pts.length]; a += p[0] * q[1] - q[0] * p[1]; } return a / 2; }
+function buildGeom(s) {
+  const spec = geomSpec(s), P = svgPath(spec.d);
+  let m = null;
+  if (spec.raw) {                                  // an SVG path in its own units: centre it, and scale it to `size` px
+    const [x0, y0, x1, y1] = P.box, k = s.size ? s.size / Math.max(x1 - x0, y1 - y0) : (s.unit || 1);
+    m = new DOMMatrix([k, 0, 0, k, -(x0 + x1) / 2 * k, -(y0 + y1) / 2 * k]);
+  }
+  let p2d = P.p2d;
+  if (m) { p2d = new Path2D(); p2d.addPath(P.p2d, m); }
+  const k = m ? m.a : 1;
+  let pts = P.points(NPTS).map(([x, y]) => (m ? [x * m.a + m.e, y * m.d + m.f] : [x, y]));
+  if (spec.closed && signedArea(pts) < 0) pts = [pts[0], ...pts.slice(1).reverse()];   // clockwise, same start
+  let R = 0, x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+  for (const [x, y] of pts) { R = Math.max(R, Math.hypot(x, y)); x0 = Math.min(x0, x); y0 = Math.min(y0, y); x1 = Math.max(x1, x); y1 = Math.max(y1, y); }
+  return { p2d, len: P.len * k, closed: spec.closed, pts, R, box: [x0, y0, x1, y1] };
+}
+function alignTo(a, b) {                           // rotate b's point list so its start lines up with a's (least squares)
+  let best = 0, bestE = Infinity;
+  const n = a.length;
+  for (let r = 0; r < n; r++) { let e = 0; for (let i = 0; i < n; i += 4) { const p = a[i], q = b[(i + r) % n]; e += (p[0] - q[0]) ** 2 + (p[1] - q[1]) ** 2; } if (e < bestE) { bestE = e; best = r; } }
+  return b.slice(best).concat(b.slice(0, best));
+}
+function polyPath(pts, closed) { const p = new Path2D(); p.moveTo(pts[0][0], pts[0][1]); for (let i = 1; i < pts.length; i++) p.lineTo(pts[i][0], pts[i][1]); if (closed) p.closePath(); return p; }
+function polyLen(pts, closed) { let s = 0; for (let i = 1; i < pts.length; i++) s += Math.hypot(pts[i][0] - pts[i - 1][0], pts[i][1] - pts[i - 1][1]); if (closed) s += Math.hypot(pts[0][0] - pts[pts.length - 1][0], pts[0][1] - pts[pts.length - 1][1]); return s; }
+function morphPts(L, m) {                          // outline at morph position m (0 = base shape, 1 = first morph, ...)
+  const G = L.geoms, i = Math.max(0, Math.min(G.length - 2, Math.floor(m))), f = Math.max(-0.35, Math.min(1.35, m - i));
+  const a = G[i].pts, b = G[i + 1].pts;
+  return a.map((p, j) => [p[0] + (b[j][0] - p[0]) * f, p[1] + (b[j][1] - p[1]) * f]);
+}
+
+/* ---------------- layers and their copies ---------------- */
+// Every copy (one per repeat, or one per glyph of a text layer) carries its own springs, so a stagger
+// is just a later start. State keys: dx dy rot scale sx sy op trim shift fill morph blur.
+const KEYS = { dx: 0, dy: 0, rot: 0, sc: 1, sx: 1, sy: 1, op: 1, ta: 0, tb: 1, sh: 0, fo: 1, mo: 0, bl: 0 };
+function stateVals(s) {                            // a from/to state -> prop values
+  const o = {};
+  if (!s) return o;
+  for (const k of ['dx', 'dy', 'rot', 'sx', 'sy', 'op', 'shift', 'fill', 'morph', 'blur']) if (s[k] != null) o[{ shift: 'sh', fill: 'fo', morph: 'mo', blur: 'bl' }[k] || k] = s[k];
+  if (s.scale != null) o.sc = s.scale;
+  if (s.trim != null) { const tr = Array.isArray(s.trim) ? s.trim : [0, s.trim]; o.ta = tr[0]; o.tb = tr[1]; }
+  return o;
+}
+const springFor = (k, sp) => (k === 'op' || k === 'fo' ? 'FADE' : k === 'bl' ? 'FOCUS' : sp || 'LAND');
+function orderOf(cps, how, seed) {                // stagger rank of each copy (a number; 'center' is fractional)
+  const n = cps.length;
+  if (how === 'reverse') return cps.map((_, k) => n - 1 - k);
+  if (how === 'random') { const p = shuffled(cps.map((_, k) => k), seed); return cps.map((_, k) => p.indexOf(k)); }
+  if (how === 'center') {
+    const cx = cps.reduce((s, c) => s + c.ox, 0) / n, cy = cps.reduce((s, c) => s + c.oy, 0) / n;
+    const ds = cps.map((c) => Math.hypot(c.ox - cx, c.oy - cy)), step = Math.min(...ds.filter((d) => d > 1e-6), Infinity);
+    return ds.map((d) => (step === Infinity ? 0 : d / step));
+  }
+  if (how === 'x' || how === 'y') { const s = cps.map((c, k) => [how === 'x' ? c.ox : c.oy, k]).sort((a, b) => a[0] - b[0]); return cps.map((_, k) => s.findIndex((e) => e[1] === k)); }
+  return cps.map((_, k) => k);
+}
+function copiesOf(ls) {
+  const r = ls.repeat;
+  if (!r) return [{ ox: 0, oy: 0, orot: 0, osc: 1 }];
+  const out = [];
+  if (r.grid) {
+    const [cols, rows] = r.grid, [gx, gy] = r.gap || [100, 100];
+    for (let j = 0; j < rows; j++) for (let i = 0; i < cols; i++) out.push({ ox: (i - (cols - 1) / 2) * gx, oy: (j - (rows - 1) / 2) * gy, orot: 0, osc: 1 });
+  } else if (r.radial) {
+    for (let k = 0; k < r.radial; k++) { const a = TAU * k / r.radial + (r.start || 0) * DEG; out.push({ ox: (r.r || 0) * Math.sin(a), oy: -(r.r || 0) * Math.cos(a), orot: r.rotate === false ? 0 : a, osc: 1 }); }
+  } else for (let k = 0; k < (r.n || 1); k++) out.push({ ox: k * (r.dx || 0), oy: k * (r.dy || 0), orot: k * (r.rot || 0) * DEG, osc: Math.pow(r.scale || 1, k) });
+  return out;
+}
+
+function buildLayer(Sc, ls, li) {
+  if (LAYERS[ls.id]) throw new Error(`duplicate layer id ${ls.id}`);
+  const L = { spec: ls, id: ls.id, scene: Sc, kind: ls.shape === 'text' ? 'text' : 'shape', li };
+  LAYERS[L.id] = L;
+  L.fill = ls.fill ? role(ls.fill) : null;
+  L.stroke = ls.stroke ? role(ls.stroke) : null;
+  L.width = ls.width != null ? ls.width : 8;
+  L.dash = ls.dash || null;
+  if (L.kind === 'text') {
+    if (!ls.fill) throw new Error(`${ls.id}: a text layer needs a fill role`);
+    L.typed = !!(ls.enter && ls.enter.typed);
+    L.line = layoutText({ id: ls.id, text: ls.text, font: ls.font || 'display', size: ls.size, cap: ls.cap, fit: ls.fit, track: ls.track, pairs: ls.pairs, anchor: ls.anchor || 'L', x: ls.x, baseline: ls.y });
+    L.px = (L.line.inkL + L.line.inkR) / 2; L.py = L.line.baseline - L.line.capH / 2;
+    L.box = [L.line.inkL, L.line.top, L.line.inkR, L.line.bottom];
+    L.words = ls.font === 'mono' || L.typed ? 0 : ls.text.split(/\s+/).filter((w) => /[A-Za-z0-9€$£]/.test(w)).length;
+    needContrast(ls.id, ls.fill, ls.on || Sc.spec.bg || 'bg', L.typed || (ls.size || 99) < 40 ? 4.5 : 3);
+    L.copies = L.typed ? [] : L.line.glyphs.filter((g) => !g.space).map((g) => ({ g, ox: (g.inkL + g.inkR) / 2 - L.px, oy: 0, orot: 0, osc: 1 }));
+  } else {
+    L.geoms = [buildGeom(ls), ...(ls.morphs || []).map((m) => buildGeom({ ...ls, ...m }))];
+    for (let i = 1; i < L.geoms.length; i++) {
+      if (L.geoms[i].closed !== L.geoms[0].closed) WARN.push(`${L.id}: morph ${i} mixes open and closed outlines`);
+      L.geoms[i].pts = alignTo(L.geoms[i - 1].pts, L.geoms[i].pts);
+    }
+    L.px = ls.x != null ? ls.x : CX; L.py = ls.y != null ? ls.y : CY;
+    L.copies = copiesOf(ls);
+    const g = L.geoms[0], sw = L.stroke ? L.width / 2 : 0;
+    L.R = Math.max(...L.geoms.map((q) => q.R)) + sw;
+    const bs = L.copies.map((cp) => { const c = Math.cos(cp.orot), s = Math.sin(cp.orot), sc = (ls.scale != null ? ls.scale : 1) * cp.osc;
+      const corners = [[g.box[0], g.box[1]], [g.box[2], g.box[1]], [g.box[2], g.box[3]], [g.box[0], g.box[3]]].map(([x, y]) => [L.px + cp.ox + sc * (x * c - y * s), L.py + cp.oy + sc * (x * s + y * c)]);
+      return [Math.min(...corners.map((p) => p[0])) - sw, Math.min(...corners.map((p) => p[1])) - sw, Math.max(...corners.map((p) => p[0])) + sw, Math.max(...corners.map((p) => p[1])) + sw]; });
+    L.box = [Math.min(...bs.map((b) => b[0])), Math.min(...bs.map((b) => b[1])), Math.max(...bs.map((b) => b[2])), Math.max(...bs.map((b) => b[3]))];
+  }
+  // rest values and one set of springs per copy
+  const trim = ls.trim != null ? (Array.isArray(ls.trim) ? ls.trim : [0, ls.trim]) : [0, 1];
+  const rest = { ...KEYS, op: ls.op != null ? ls.op : 1, ta: trim[0], tb: trim[1] };
+  const en = ls.enter && !ls.enter.typed ? ls.enter : null;
+  const from = { ...rest, ...stateVals(en && en.from) };
+  const nC = L.copies.length;
+  const rank = (spec) => (spec && spec.stagger ? orderOf(L.copies, spec.order, 0x51A6 + li) : null);
+  const enR = rank(en);
+  L.copies.forEach((cp, k) => {
+    cp.k = k;
+    cp.P = {};
+    const v0 = Sc.wrap ? rest : from;
+    for (const key of Object.keys(KEYS)) cp.P[key] = new Prop(v0[key], `${L.id}${nC > 1 ? '#' + k : ''}.${key}`);
+    cp.tArr = Sc.t0;
+    cp.phase = ls.loop && ls.loop.phase === 'index' ? k / nC : 0;
+  });
+  L.rest = rest; L.from = from; L.enR = enR;
+  Sc.layers.push(L);
+  return L;
+}
+
+// the events, in time order per copy: the wrap exit, the entrance, keys, the exit
+function layerTimeline(Sc, L) {
+  const ls = L.spec, en = ls.enter && !ls.enter.typed ? ls.enter : null;
+  const stag = (spec, k, ranks) => (spec && spec.stagger ? noteSec(spec.stagger) * ranks[k] : 0);
+  const keyRanks = (ls.keys || []).map((key) => (key.stagger ? orderOf(L.copies, key.order, 0x7E57 + L.li) : null));
+  const ex = ls.exit || Sc.spec.exit, exRanks = ls.exit && ex.stagger ? orderOf(L.copies, ex.order, 0xE417 + L.li) : null;
+  L.copies.forEach((cp, k) => {
+    const P = cp.P, ev = [];                       // [t, values, spring, isSet]
+    if (Sc.wrap) {                                 // on screen at rest at t 0, leaves at wrap.exit, hidden once gone
+      const w = Sc.wrap;
+      ev.push([w.exit + (w.stagger ? noteSec(w.stagger) * L.li : 0), stateVals(w.to || { scale: 0 }), w.spring || 'EXIT']);
+      const back = en ? en.at + stag(en, k, L.enR) : Sc.t0;
+      if (Sc.wrapEnd < back) ev.push([Sc.wrapEnd, { op: 0 }, null, true]);
+    }
+    if (en) {
+      const ts = en.at + stag(en, k, L.enR);
+      cp.tArr = ts;
+      ev.push([ts, L.from, null, true]);           // jump to the entrance state while it is unseen
+      ev.push([ts, pickKeys(L.rest, L.from), en.spring]);
+      cp.land = ts + landT(en.spring || 'LAND');
+    } else if (Sc.wrap) ev.push([Sc.t0, L.rest, null, true]);
+    (ls.keys || []).forEach((key, j) => ev.push([key.at + stag(key, k, keyRanks[j]), stateVals(key.to), key.spring]));
+    if (ex) ev.push([ex.at + (ls.exit ? stag(ex, k, exRanks) : (ex.stagger ? noteSec(ex.stagger) * L.li : 0)), stateVals(ex.to), ex.spring || 'EXIT']);
+    ev.sort((a, b) => a[0] - b[0] || (b[3] ? 1 : 0) - (a[3] ? 1 : 0));
+    for (const [t, vals, sp, isSet] of ev) for (const [key, v] of Object.entries(vals)) { if (isSet) P[key].set(t, v); else P[key].to(t, v, springFor(key, sp)); }
+  });
+  if (ls.accent) {
+    const lands = L.copies.map((cp) => cp.land).filter((v) => v != null);
+    const t = ls.accent === 'land' ? Math.max(...lands, Sc.t0) : ls.accent;
+    accentAt(t, L.id);
+  }
+}
+function pickKeys(rest, from) { const o = {}; for (const k of Object.keys(from)) if (from[k] !== rest[k]) o[k] = rest[k]; return o; }
+
+/* ---------------- scenes, transitions and the camera ---------------- */
+function buildScenes() {
+  for (const spec of FILM.scenes) {
+    const tr = typeof spec.in === 'string' ? { kind: spec.in } : (spec.in || { kind: 'none' });
+    const Sc = { spec, id: spec.id, world: spec.world || 0, t0: spec.t0, t1: spec.t1, in: tr.kind, tr, wrap: spec.wrap || null, punch: spec.punch || null, layers: [], wrapEnd: 0 };
+    if (spec.bg) role(spec.bg);
+    SCENES.push(Sc);
+    (spec.layers || []).forEach((ls, li) => buildLayer(Sc, ls, li));
+  }
+  SCENES.sort((a, b) => a.t0 - b.t0);
+  for (const Sc of SCENES) if (Sc.wrap) {          // when the last piece of the lockup has left
+    const w = Sc.wrap;
+    Sc.wrapEnd = Math.max(...Sc.layers.map((L) => w.exit + (w.stagger ? noteSec(w.stagger) * L.li : 0))) + settle(spring(w.spring || 'EXIT'));
+  }
+  for (const Sc of SCENES) for (const L of Sc.layers) layerTimeline(Sc, L);
+  for (const Sc of SCENES) { Sc.win = [[Sc.t0, Sc.t1]]; if (Sc.wrap) Sc.win.push([0, Sc.wrapEnd]); }
+  // transitions: extend the outgoing scene until the incoming one covers it
+  for (const Sc of SCENES) {
+    const tr = Sc.tr, prev = SCENES.filter((p) => p !== Sc && p.win.some(([a, b]) => a < Sc.t0 && b >= Sc.t0 - 1e-9));
+    if (tr.kind === 'cut') cutAt(Sc.t0);
+    if (tr.kind === 'circle') {
+      const x = tr.x != null ? tr.x : CX, y = tr.y != null ? tr.y : CY;
+      const far = Math.max(Math.hypot(x, y), Math.hypot(W - x, y), Math.hypot(x, H - y), Math.hypot(W - x, H - y));
+      const sp = spring(tr.spring || 'MASK'), rMax = far * 1.25;
+      let a = 0, b = settle(sp);
+      for (let i = 0; i < 40; i++) { const m = (a + b) / 2; if (rMax * S(m, sp) < far) a = m; else b = m; }
+      Object.assign(tr, { x, y, far, rMax, sp, dur: b, t0: Sc.t0, tEnd: Sc.t0 + b });
+      for (const p of prev) for (const w of p.win) if (w[0] < Sc.t0 && w[1] >= Sc.t0 - 1e-9) w[1] = Math.max(w[1], tr.tEnd);
+      activeIn(Sc.t0, tr.tEnd);
+    }
+    if (tr.kind === 'bars') {                      // bars cover the frame by t0 (the scenes swap under them), then clear it
+      const n = tr.n || 5, sp = spring(tr.spring || 'EXIT'), st = noteSec(tr.stagger || 32);
+      let a = 0, b = settle(sp);
+      for (let i = 0; i < 40; i++) { const m = (a + b) / 2; if (1.08 * S(m, sp) < 1) a = m; else b = m; }
+      const lead = (n - 1) * st + b;
+      Object.assign(tr, { n, sp, st, cover: b, color: role(tr.color || 'fg'), dir: tr.dir || 'up', tStart: Sc.t0 - lead, t0: Sc.t0, tEnd: Sc.t0 + (n - 1) * st + settle(sp) });
+      for (const p of prev) for (const w of p.win) if (w[0] < Sc.t0 && w[1] > Sc.t0) w[1] = Sc.t0;
+      cutAt(Sc.t0);
+      activeIn(tr.tStart, tr.tEnd);
+    }
+  }
+  // camera: x selects the world (a 'push' springs to it), z punches in; one spring per target change
+  const wrapScene = SCENES.find((s) => s.wrap), x0 = (wrapScene ? wrapScene.world : SCENES[0].world) * W;
+  const ev = [];
+  let cx = x0, zDirty = false;
+  for (const Sc of SCENES) {
+    const x = Sc.world * W;
+    if (Sc.in === 'push' && x !== cx) {
+      ev.push({ t: Sc.t0, k: 'pan', v: x });
+      for (const P of SCENES) if (P !== Sc) for (const w of P.win) if (w[0] < Sc.t0 && w[1] >= Sc.t0 - 1e-9) w[1] = Math.max(w[1], Sc.t0 + settle(SP.PAN));
+    } else if (x !== cx) { ev.push({ t: Sc.t0, k: 'setx', v: x }); if (!['cut', 'bars'].includes(Sc.in)) WARN.push(`${Sc.id}: changes world without a push; treated as a cut`); cutAt(Sc.t0); }
+    if (zDirty) { const hard = ['cut', 'bars'].includes(Sc.in) || (x !== cx && Sc.in !== 'push'); ev.push({ t: Sc.in === 'push' ? Sc.t0 + 1 / SP.PAN[1] : Sc.t0, k: hard || Sc.in === 'push' ? 'setz' : 'easez', v: 1 }); zDirty = false; }
+    if (Sc.punch) { ev.push({ t: Sc.punch.at, k: 'punch', v: Sc.punch.z }); zDirty = true; }
+    cx = x;
+  }
+  if (cx !== x0) WARN.push(`the camera ends in world ${cx / W} but starts in world ${x0 / W}: the loop will jump`);
+  if (zDirty) WARN.push('the last punch-in is never reset: the loop will jump in scale');
+  ev.sort((a, b) => a.t - b.t);
+  camX = new Prop(x0, 'camera.x'); camZ = new Prop(1, 'camera.z');
+  for (const e of ev) {
+    if (e.k === 'pan') camX.to(e.t, e.v, 'PAN'); else if (e.k === 'setx') camX.set(e.t, e.v);
+    else if (e.k === 'punch') camZ.to(e.t, e.v, 'PUNCH'); else if (e.k === 'easez') camZ.to(e.t, e.v, 'EXIT'); else camZ.set(e.t, e.v);
+  }
+  // loop behaviours move on every frame their scene is drawn
+  for (const Sc of SCENES) if (Sc.layers.some((L) => L.spec.loop)) for (const w of Sc.win) activeIn(w[0], w[1]);
+}
+const camera = (t) => ({ x: camX.at(t), z: camZ.at(t) });
+function camT(c, cam, ox) { c.setTransform(cam.z, 0, 0, cam.z, CX + cam.z * (ox - CX - cam.x), CY - cam.z * CY); }
+const inWin = (Sc, t) => Sc.win.some(([a, b]) => t >= a && t < b);
+
+/* ---------------- drawing ---------------- */
+function copyState(L, cp, t) {
+  const P = cp.P, ls = L.spec;
+  let dx = P.dx.at(t), dy = P.dy.at(t), rot = cp.orot + ((ls.rot || 0) + P.rot.at(t)) * DEG;
+  let sc = (ls.scale != null ? ls.scale : 1) * cp.osc * P.sc.at(t);
+  const B = ls.loop;
+  if (B) {
+    const ph = cp.phase;
+    if (B.spin) rot += TAU * B.spin * t / DUR;
+    if (B.sway) rot += B.sway[1] * DEG * Math.sin(cyc(t, B.sway[0], ph));
+    if (B.bob) dy += B.bob[1] * Math.sin(cyc(t, B.bob[0], ph));
+    if (B.pulse) sc *= 1 + B.pulse[1] * Math.sin(cyc(t, B.pulse[0], ph));
+    if (B.orbit) { dx += B.orbit[1] * Math.sin(cyc(t, B.orbit[0], ph)); dy -= B.orbit[1] * Math.cos(cyc(t, B.orbit[0], ph)); }
+  }
+  return { x: L.px + cp.ox + dx, y: L.py + cp.oy + dy, rot, sx: sc * P.sx.at(t), sy: sc * P.sy.at(t), op: P.op.at(t),
+    ta: P.ta.at(t), tb: P.tb.at(t), sh: P.sh.at(t), fo: P.fo.at(t), mo: P.mo.at(t), bl: P.bl.at(t) };
+}
+function paintShape(c, L, st, t) {
+  let path = L.geoms[0].p2d, len = L.geoms[0].len;
+  const closed = L.geoms[0].closed;
+  if (L.geoms.length > 1 && Math.abs(st.mo) > 1e-4) {
+    const g = Math.round(st.mo);
+    if (Math.abs(st.mo - g) < 1e-4 && g >= 0 && g < L.geoms.length) { path = L.geoms[g].p2d; len = L.geoms[g].len; }
+    else { const pts = morphPts(L, st.mo); path = polyPath(pts, closed); len = polyLen(pts, closed); }
+  }
+  if (L.fill && st.fo > 0.002) { c.globalAlpha = Math.min(1, st.op * st.fo); c.fillStyle = L.fill; c.fill(path); }
+  if (!L.stroke) return;
+  const a = clamp01(st.ta), b = clamp01(st.tb), seg = (b - a) * len;
+  if (seg < 0.25) return;
+  c.globalAlpha = Math.min(1, st.op); c.strokeStyle = L.stroke; c.lineWidth = L.width;
+  c.lineCap = L.spec.cap || 'round'; c.lineJoin = L.spec.join || 'round';
+  if (b - a < 0.9999) {                            // trim: one dash along the outline, wrapping round a closed one
+    const off = (a + st.sh) * len;
+    if (closed) { c.setLineDash([seg, Math.max(1e-3, len - seg)]); c.lineDashOffset = -(((off % len) + len) % len); }
+    else { c.setLineDash([seg, len + 1]); c.lineDashOffset = -a * len; }
+  } else if (L.dash) {
+    c.setLineDash(L.dash);
+    const B = L.spec.loop;
+    c.lineDashOffset = B && B.march ? -(L.dash[0] + L.dash[1]) * B.march * t / DUR : 0;
+  }
+  c.stroke(path);
+  c.setLineDash([]); c.lineDashOffset = 0;
+}
+function drawLayer(c, L, t, q) {
+  const ls = L.spec;
+  if (ls.clip) { c.save(); c.beginPath(); c.rect(ls.clip[0], ls.clip[1], ls.clip[2] - ls.clip[0], ls.clip[3] - ls.clip[1]); c.clip(); }
+  if (L.kind === 'text' && L.typed) drawTyped(c, L, t, q);
+  else if (L.kind === 'text') {
+    const ln = L.line, color = L.fill;
+    setFont(c, ln.font);
+    for (const cp of L.copies) {
+      const st = copyState(L, cp, t);
+      if (!(st.op > 0.002) || Math.abs(st.sx) < 1e-4 || Math.abs(st.sy) < 1e-4) continue;
+      const gx = L.px + cp.ox, gy = ln.baseline - ln.capH / 2;   // the glyph's pivot at rest
+      c.save();
+      c.translate(st.x, st.y); c.rotate(st.rot); c.scale(st.sx, st.sy); c.translate(-gx, -gy);
+      fillGlyph(c, cp.g.ch, cp.g.x, ln.baseline, color, st.op, st.bl);
+      c.restore();
+    }
+  } else for (const cp of L.copies) {
+    const st = copyState(L, cp, t);
+    if (!(st.op > 0.002) || Math.abs(st.sx) < 1e-4 || Math.abs(st.sy) < 1e-4) continue;
+    c.save(); c.translate(st.x, st.y); c.rotate(st.rot); c.scale(st.sx, st.sy);
+    paintShape(c, L, st, t);
+    c.restore();
+  }
+  c.globalAlpha = 1;
+  if (ls.clip) c.restore();
+}
+function typedCount(L, q) { const en = L.spec.enter; return q < en.at - 1e-9 ? 0 : typed(q, en.at, L.line.glyphs.length); }
+function drawTyped(c, L, t, q) {                   // typewriter small print: one character per frame, block cursor
+  const ln = L.line, en = L.spec.enter, wrapped = !!L.scene.wrap && t < L.scene.wrapEnd;
+  const st = copyState(L, L.tc, t);
+  if (!(st.op > 0.002) || Math.abs(st.sx) < 1e-4) return;
+  const n = wrapped ? ln.glyphs.length : typedCount(L, q);
+  c.save(); c.translate(st.x, st.y); c.rotate(st.rot); c.scale(st.sx, st.sy); c.translate(-L.px, -L.py);
+  setFont(c, ln.font);
+  for (let i = 0; i < n; i++) { const g = ln.glyphs[i]; if (!g.space) fillGlyph(c, g.ch, g.x, ln.baseline, L.fill, st.op, 0); }
+  const fc = Math.ceil((q - en.at) * FPS - 1e-6);
+  if (!wrapped && en.cursor !== false && q >= en.at - 1e-9 && fc <= ln.glyphs.length + 2) {
+    const g = ln.glyphs[Math.min(n, ln.glyphs.length - 1)], x = n < ln.glyphs.length ? g.x : ln.inkR + ln.trackPx + 2 * U;
+    const cw = 0.5625 * ln.size, ch = 0.8125 * ln.size;
+    c.globalAlpha = st.op; c.fillStyle = L.fill; c.fillRect(x, ln.baseline + 0.156 * ln.size - ch, cw, ch);
+  }
+  c.restore(); c.globalAlpha = 1;
+}
+function drawScene(c, Sc, t, q, cam) {
+  c.save(); camT(c, cam, Sc.world * W);           // scene coordinates: 0..W, 0..H in its own world
+  if (Sc.spec.bg) { c.globalAlpha = 1; c.fillStyle = col(Sc.spec.bg); c.fillRect(-2, -H, W + 4, 3 * H); }
+  for (const L of Sc.layers) drawLayer(c, L, t, q);
+  c.restore();
+}
+function drawBars(c, tr, t) {                      // cover by t0, then clear
+  const vert = tr.dir === 'up' || tr.dir === 'down', span = vert ? H : W, n = tr.n, thick = (vert ? W : H) / n;
+  c.save(); c.setTransform(1, 0, 0, 1, 0, 0); c.globalAlpha = 1; c.fillStyle = tr.color;
+  for (let k = 0; k < n; k++) {
+    const ts = tr.tStart + k * tr.st, tc = tr.t0 + k * tr.st;
+    const cov = Math.min(1, 1.08 * S(t - ts, tr.sp)), clr = Math.min(1, 1.08 * S(t - tc, tr.sp));
+    const lo = span * clr, hi = span * cov;       // along the sweep: [lo, hi] is covered
+    if (hi - lo < 0.01) continue;
+    const a = (k * thick) | 0, b = Math.ceil((k + 1) * thick);
+    if (tr.dir === 'up') c.fillRect(a, H - hi, b - a, hi - lo);
+    else if (tr.dir === 'down') c.fillRect(a, lo, b - a, hi - lo);
+    else if (tr.dir === 'left') c.fillRect(W - hi, a, hi - lo, b - a);
+    else c.fillRect(lo, a, hi - lo, b - a);
+  }
+  c.restore();
+}
+function drawFrame(c, t, q) {
+  const cam = camera(t);
+  for (const Sc of SCENES) {
+    if (!inWin(Sc, t)) continue;
+    const tr = Sc.tr;
+    if (tr.kind === 'circle' && t >= tr.t0 && t < tr.tEnd) {   // the incoming scene inside a growing circle
+      const r = tr.rMax * S(t - tr.t0, tr.sp);
+      if (r < 0.5) continue;
+      c.save(); c.beginPath(); c.arc(tr.x, tr.y, r, 0, TAU); c.clip();
+      c.fillStyle = col(Sc.spec.bg || 'bg'); c.fillRect(0, 0, W, H);
+      drawScene(c, Sc, t, q, cam);
+      c.restore();
+    } else drawScene(c, Sc, t, q, cam);
+  }
+  for (const Sc of SCENES) if (Sc.tr.kind === 'bars' && t >= Sc.tr.tStart && t < Sc.tr.tEnd) drawBars(c, Sc.tr, t);
+}
+
+/* ---------------- motion: how far anything moves across a shutter ---------------- */
+function disp(ta, tb) {
+  const ca = camera(ta), cb = camera(tb), z = Math.max(ca.z, cb.z);
+  let d = Math.abs(cb.x - ca.x) * z + Math.abs(cb.z - ca.z) * Math.hypot(CX, CY);
+  for (const Sc of SCENES) {
+    if (!inWin(Sc, ta) && !inWin(Sc, tb)) continue;
+    for (const L of Sc.layers) {
+      const R = L.kind === 'text' ? L.line.capH : L.R, len = L.kind === 'text' ? 0 : L.geoms[0].len;
+      const cps = L.typed ? [L.tc] : L.copies;
+      for (const cp of cps) {
+        const a = copyState(L, cp, ta), b = copyState(L, cp, tb);
+        if (a.op < 0.002 && b.op < 0.002) continue;
+        const s = Math.max(Math.abs(a.sx), Math.abs(b.sx), Math.abs(a.sy), Math.abs(b.sy));
+        let m = Math.hypot(b.x - a.x, b.y - a.y) + Math.abs(b.rot - a.rot) * R * s + (Math.abs(b.sx - a.sx) + Math.abs(b.sy - a.sy)) * R;
+        m += (Math.abs(b.ta - a.ta) + Math.abs(b.tb - a.tb) + Math.abs(b.sh - a.sh)) * len * s + Math.abs(b.mo - a.mo) * R * s;
+        d = Math.max(d, m * z);
+      }
+    }
+    const tr = Sc.tr;
+    if (tr.kind === 'circle' && tb >= tr.t0 && ta < tr.tEnd) d = Math.max(d, tr.rMax * Math.abs(S(tb - tr.t0, tr.sp) - S(ta - tr.t0, tr.sp)));
+    if (tr.kind === 'bars' && tb >= tr.tStart && ta < tr.tEnd) {
+      const span = tr.dir === 'up' || tr.dir === 'down' ? H : W;
+      for (let k = 0; k < tr.n; k++) for (const t0 of [tr.tStart + k * tr.st, tr.t0 + k * tr.st]) d = Math.max(d, span * 1.08 * Math.abs(S(tb - t0, tr.sp) - S(ta - t0, tr.sp)));
+    }
+  }
+  return d;
+}
+
+/* ---------------- analysis ---------------- */
+function visible(t) {
+  const cam = camera(t);
+  for (const Sc of SCENES) {
+    if (!inWin(Sc, t)) continue;
+    if (Sc.spec.bg && Sc.spec.bg !== 'bg' && col(Sc.spec.bg) !== PAL.bg) return true;
+    if (Sc.tr.kind === 'circle' && t >= Sc.tr.t0 && t < Sc.tr.tEnd) return true;
+    const ox = Sc.world * W;
+    for (const L of Sc.layers) {
+      const cps = L.typed ? (typedCount(L, frameOf(t) / FPS) > 0 || (L.scene.wrap && t < L.scene.wrapEnd) ? [L.tc] : []) : L.copies;
+      for (const cp of cps) {
+        const st = copyState(L, cp, t);
+        if (st.op < 0.5 || Math.abs(st.sx * st.sy) < 0.01) continue;
+        if (L.kind === 'shape' && L.stroke && !L.fill && clamp01(st.tb) - clamp01(st.ta) < 0.02) continue;
+        const R = (L.kind === 'text' ? (L.typed ? (L.box[2] - L.box[0]) / 2 : L.line.capH) : L.R) * Math.max(Math.abs(st.sx), Math.abs(st.sy));
+        const sx = CX + cam.z * (st.x + ox - CX - cam.x), sy = CY + cam.z * (st.y - CY);
+        if (sx + R > 0 && sx - R < W && sy + R > 0 && sy - R < H) return true;
+      }
+    }
+  }
+  for (const Sc of SCENES) if (Sc.tr.kind === 'bars' && t >= Sc.tr.tStart && t < Sc.tr.tEnd) return true;
+  return false;
+}
+function checks(add) {
+  for (const Sc of SCENES) {
+    const words = Sc.layers.reduce((s, L) => s + (L.words || 0), 0);
+    add(`words: ${Sc.id}`, words > 4 ? 'FAIL' : 'PASS', `${words} words of display type (at most 4 a beat)`);
+    const items = [];
+    for (const L of Sc.layers) {
+      if (L.kind === 'text') {
+        checkLiveArea(add, L.id, L.box, L.spec.bleed);
+        if (L.spec.y % UNIT) add(`grid: ${L.id}`, 'WARN', `baseline ${L.spec.y} is not on the ${UNIT} px grid`);
+        items.push({ id: L.id, b: L.box });
+        if (L.line.role === 'mono' && L.line.size < 24 * U) add(`small print: ${L.id}`, 'WARN', `${L.line.size} px is hard to read in a feed (24 px or more at 1080)`);
+      } else checkLiveArea(add, L.id, L.box, L.spec.bleed);
+      if (L.spec.loop && Sc.wrap && LOOP === 'hold') add(`hold: ${L.id}`, 'FAIL', 'a loop behaviour on the lockup keeps it moving through the still tail; use a cycle loop or move it to another scene');
+      if (L.kind === 'shape' && L.dash && L.spec.trim) add(`dash: ${L.id}`, 'WARN', 'a trim overrides the dash pattern while it draws');
+    }
+    checkSpacing(add, items);
+  }
+}
+function cycles() {
+  const out = [];
+  for (const Sc of SCENES) for (const L of Sc.layers) {
+    const B = L.spec.loop;
+    if (!B) continue;
+    for (const k of ['spin', 'sway', 'bob', 'pulse', 'orbit', 'march']) if (B[k] != null) { const n = Array.isArray(B[k]) ? B[k][0] : B[k]; if (n) out.push({ what: `${L.id} ${k}`, period: DUR / Math.abs(n) }); }
+  }
+  return out;
+}
+function lastChange(see) {
+  for (const Sc of SCENES) for (const L of Sc.layers) if (L.typed) { const en = L.spec.enter; see(en.at + (L.line.glyphs.length + (en.cursor !== false ? 3 : 1)) / FPS, `${L.id} finishes typing`); }
+}
+function stills(push) {
+  for (const Sc of SCENES) {
+    const lands = Sc.layers.flatMap((L) => (L.typed ? [L.spec.enter.at + L.line.glyphs.length / FPS] : L.copies.map((cp) => (cp.land != null ? cp.land + 0.25 : Sc.t0))));
+    const exits = Sc.layers.map((L) => (L.spec.exit || Sc.spec.exit ? (L.spec.exit || Sc.spec.exit).at : Infinity));
+    const landed = Math.max(Sc.t0, ...lands) + 0.1, end = Math.min(Sc.t1, ...exits) - 2 / FPS;
+    let rest = Math.min(landed, end);
+    if (Sc.punch && rest > Sc.punch.at - 2 / FPS) rest = Sc.punch.at - 2 / FPS >= landed - 0.1 - 1e-6 ? Sc.punch.at - 2 / FPS : Math.min(end, Sc.punch.at + settle(SP.PUNCH));
+    if (Sc.in !== 'none' && Sc.t0 > 0) push((Sc.tr.kind === 'bars' ? Sc.t0 - Sc.tr.cover : Sc.t0 + 0.1) * FPS, `${Sc.id}-in`, `${Sc.in} into ${Sc.id}`);
+    push(rest * FPS, `${Sc.id}-rest`, `${Sc.id} landed`);
+  }
+  const wrap = SCENES.find((s) => s.wrap);
+  if (wrap) push(Math.max(1, Math.round(wrap.wrap.exit * FPS + 6)), 'loop-out', `${wrap.id} leaving, the first scene arriving`);
+}
+function layout() {
+  const r = (v) => Math.round(v * 10) / 10;
+  return { layers: Object.values(LAYERS).map((L) => ({ id: L.id, scene: L.scene.id, shape: L.spec.shape, copies: L.typed ? 1 : L.copies.length, box: L.box.map(r),
+    ...(L.kind === 'text' ? { text: L.spec.text, size: r(L.line.size), capH: r(L.line.capH), capTop: r(L.line.capTop), baseline: L.line.baseline, trackEm: r(L.line.trackEm) } : { radius: r(L.R), length: r(L.geoms[0].len) }) })) };
+}
+
+function build() {
+  buildScenes();
+  for (const L of Object.values(LAYERS)) if (L.typed) {   // typed small print moves as one piece
+    L.tc = { ox: 0, oy: 0, orot: 0, osc: 1, P: {}, phase: 0 };
+    const Sc = L.scene;
+    for (const key of Object.keys(KEYS)) L.tc.P[key] = new Prop(KEYS[key], `${L.id}.${key}`);
+    if (Sc.wrap) { const w = Sc.wrap, v = stateVals(w.to || { scale: 0 }); for (const [k, x] of Object.entries(v)) L.tc.P[k].to(w.exit + (w.stagger ? noteSec(w.stagger) * L.li : 0), x, w.spring || 'EXIT'); for (const k of Object.keys(v)) L.tc.P[k].set(Sc.wrapEnd, KEYS[k]); }
+    const ex = L.spec.exit || Sc.spec.exit;
+    if (ex) for (const [k, x] of Object.entries(stateVals(ex.to))) L.tc.P[k].to(ex.at, x, springFor(k, ex.spring || 'EXIT'));
+  }
+}
+
+boot({
+  name: 'shapes',
+  springs: { POP: [0.45, 22], BOUNCE: [0.35, 18], SNAP: [0.8, 40], SWING: [0.55, 14], TRACE: [1, 14], FILL: [1, 8], GLIDE: [1, 12] },
+  build, draw: (c, t, q) => drawFrame(c, t, q), disp, checks, cycles, lastChange, stills, layout, visible,
+});
+})();
+</script>
+</body>
+</html>
