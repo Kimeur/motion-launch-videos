@@ -73,6 +73,14 @@ The core's springs (springs.md) plus these, which every act uses:
 - Limbs are ink tubes with a coloured core. Features are closed shapes; the mouth's tongue is clipped to it.
 - The boil moves every point of every line by a seeded amount that changes each drawing and repeats every three drawings, so a held drawing is still and the next one breathes.
 
+## Formats
+
+Positions are canvas pixels; the template is 1:1 (1080 x 1080). For another format move the stage and the cast together:
+
+- **9:16 (1080 x 1920).** `stage.ground` about 1400 (the character stands in the lower-middle, clear of the platform buttons below), the sunburst centred near y 900, titles between y 360 and 1560, the bubble above the head. The extra height is room for bigger hops.
+- **16:9 (1920 x 1080).** The character left or right of centre (`x` about 640 or 1280), the sign or bubble on the open side, titles on that side too.
+- Hop heights are pixels, so a hop that fits 1080 tall may be small in 1920: scale `h` with the frame.
+
 ## Adding something the vocabulary lacks
 
 A new part (ears, a hat, a tail) is a list of points in the character's own space, posed through the same transform (`rigAt(...).T`), boiled and drawn with `inked()` like the body. A new act compiles to events on the character's values (`ev(key, t, value, spring)`), so it stays pure and carries over the seam like the rest. Keep new parts simple closed shapes: fine detail boils into noise.
