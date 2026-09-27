@@ -9,6 +9,7 @@ Every template in this skill is one HTML file in three parts: the `FILM` block y
 - **Continuous motion reads the exact `t`; discrete state reads the quantised `q`.** `q` is the output frame's own time (`ceil(t x FPS) / FPS`, wrapped so the last subframes of the loop belong to frame 0). Typing, drawings held on twos, sprite frames, line boil, scramble glyphs and blinking cursors read `q`, so motion blur never averages two different drawings.
 - **Randomness is seeded**: `hash(a, b, c)` (three integers to a number in [0, 1)) and `mulberry32(seed)`. Key the hash by what it decides (particle index, frame, axis), never by call order.
 - **The canvas is pinned to the CPU** (`willReadFrequently: true` from the first call). Chrome otherwise moves a canvas to the GPU and back after repeated reads, and its antialiasing changes mid-render.
+- **The canvas has an alpha channel**, though every frame is filled opaque. On an opaque canvas Chromium draws text with LCD subpixel antialiasing, red and blue fringes on every glyph, whatever the command line says; with an alpha channel text is antialiased in grey, the same on every machine. An engine that draws into canvases of its own gives them an alpha channel too (the default).
 - **A cache is allowed only when it is a pure function of its key** (the blurred-glyph sprite cache is keyed by font, glyph, colour and quantised blur, so a hit and a miss give the same pixels).
 
 ## What the page exposes

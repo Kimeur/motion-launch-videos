@@ -8,7 +8,8 @@ Seven new styles, each its own skill in the same plugin, on a shared core.
 - **A shared core** (`shared/core.js`): closed-form springs and Props, periodic helpers that loop exactly (`cyc`, `wave`, `loopNoise`), seeded randomness, glyph-by-glyph type layout, SVG path measurement, motion blur, and the plumbing of the critique and the page's API. `tools/sync.mjs` copies it into every template; `tools/check.mjs` checks the repo and, with `--smoke`, every demo.
 - **Cycle loops.** Besides the hold loop (ending on a still copy of frame 0), a film can now keep moving through the seam: springs still settling at the end carry over it, periodic motion runs whole cycles, and `loopcheck` checks that the seam is as continuous as any other instant.
 - **Scripts** (the same in every skill): `fonts.mjs` fetches the faces the film's own `@font-face` tokens name; `render.mjs` reads each film's loop kind, an optional strict-palette gate (pixel art), GIF hints (frames per drawing, nearest-neighbour scaling), and checks the background of a film without a flat one on its most common colour; Chromium runs WebGL on SwiftShader when there is no GPU.
-- The kinetic-type skill, `motion-launch-videos`, is unchanged apart from the shared scripts; its films build and render as before.
+- **Fixes that reach every skill, the kinetic one included.** The film canvas has an alpha channel: on an opaque canvas Chromium drew text with red and blue LCD subpixel fringes whatever `--disable-lcd-text` said, so text is now antialiased in grey, the same on every machine. `fonts.mjs` fetches several weights of one family in one run (the second used to stop it). `--gif-colors N` gives N colours (ffmpeg's palettegen keeps one entry for transparency).
+- The kinetic-type skill, `motion-launch-videos`, keeps its own engine and docs; apart from the shared scripts and the canvas fix above, its films build and render as before.
 
 ## 1.0.3
 
