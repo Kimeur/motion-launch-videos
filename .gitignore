@@ -1,0 +1,8 @@
+.DS_Store
+node_modules/
+renders/
+frames/
+stills/
+fonts/
+package-lock.json
+/videos/
