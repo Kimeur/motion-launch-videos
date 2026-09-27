@@ -12,6 +12,7 @@ Everything runs on your machine, inside the project you are working in.
 - **Fetches three open-source fonts** (Archivo Black, Syne, IBM Plex Mono, SIL Open Font License) from the npm registry with `npm pack @fontsource/...`, and embeds them in the HTML file.
 - **Installs one npm package**, `playwright-core` 1.63.0, next to its scripts, to drive a local headless Chromium. If no Chromium is found, it can install Playwright's Chromium build (a download from Playwright's CDN). `render.mjs doctor` prints the exact command first.
 - **Runs your local ffmpeg and ffprobe** to encode and verify the MP4.
+- **Reads only local paths from the environment:** `CHROME_PATH`, `PLAYWRIGHT_BROWSERS_PATH`, `FFMPEG_PATH`, `FFPROBE_PATH` and `PATH`, to find programs already on your machine. It reads no credentials and needs no API keys.
 - **Sends nothing anywhere else.** No analytics, no accounts, no API keys, no data leaves your machine apart from the package and font downloads above.
 
 ## Requirements

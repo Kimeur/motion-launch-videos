@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 256 256">
+  <title>motion-launch-videos</title>
+  <rect width="256" height="256" rx="48" fill="#0A0A0A"/>
+  <g stroke-linecap="round" stroke-width="6" stroke="#B8FF00" opacity="0.9">
+    <line x1="26" y1="104" x2="48" y2="104"/>
+    <line x1="18" y1="128" x2="48" y2="128"/>
+    <line x1="30" y1="152" x2="48" y2="152"/>
+  </g>
+  <path d="M60 184V72h40l28 48 28-48h40v112h-32v-60l-26 44h-20l-26-44v60z" fill="#FF6900" transform="translate(-7 0)"/>
+  <path d="M60 184V72h40l28 48 28-48h40v112h-32v-60l-26 44h-20l-26-44v60z" fill="#B8FF00" transform="translate(7 0)"/>
+  <path d="M60 184V72h40l28 48 28-48h40v112h-32v-60l-26 44h-20l-26-44v60z" fill="#F5F5F5"/>
+  <rect x="60" y="202" width="136" height="6" fill="#B8FF00"/>
+</svg>
