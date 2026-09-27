@@ -8,7 +8,7 @@
 
 - **Node 20 or newer.**
 - **playwright-core**, resolved from the film folder (and the folders above it), then the working directory, then the skill folder. Install it once next to the scripts, `npm install --prefix <skill> --no-package-lock`, or add it to the user's project, `npm i -D playwright-core`, which survives a plugin update and serves every motion-* skill at once.
-- **A Chromium.** The script looks, in order, at `$CHROME_PATH`, playwright-core's own browser (after `node <playwright-core folder>/cli.js install chromium`; doctor prints the exact line), the newest `chromium-*` in the Playwright cache (`$PLAYWRIGHT_BROWSERS_PATH`, or the default cache folder), then a system Google Chrome or Chromium. Canvas `letterSpacing` and `ctx.filter` are Chromium features; Firefox and WebKit are not supported. A WebGL film (motion-3d) runs on the GPU when there is one and on SwiftShader, Chromium's software renderer, when there is not.
+- **A Chromium.** The script looks, in order, at `$CHROME_PATH`, playwright-core's own browser (after `node <playwright-core folder>/cli.js install chromium`; doctor prints the exact line), the newest `chromium-*` in the Playwright cache (`$PLAYWRIGHT_BROWSERS_PATH`, or the default cache folder), then a system Google Chrome or Chromium. Canvas `letterSpacing` and `ctx.filter` are Chromium features; Firefox and WebKit are not supported. A WebGL film (motion-3d) runs on the GPU when there is one and on SwiftShader, Chromium's software renderer, when there is not; `doctor` prints which (an INFO line, never a failure).
 - **ffmpeg and ffprobe** with libx264, from `$FFMPEG_PATH` / `$FFPROBE_PATH` or PATH (`brew install ffmpeg`, `apt install ffmpeg`).
 
 ## Modes

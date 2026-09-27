@@ -487,7 +487,7 @@ async function mp4frames({ page, meta }) {
 
 // once per machine: is everything the scripts need here?
 async function doctor() {
-  const rows = [];
+  const rows = [], info = [];
   const row = (ok, what, detail, fix) => rows.push({ ok, what, detail, fix });
   const major = Number(process.versions.node.split('.')[0]);
   row(major >= 20, 'node', `v${process.versions.node}`, 'install Node 20 or newer');
@@ -499,6 +499,16 @@ async function doctor() {
   const chromium = pw ? await loadPlaywright().catch(() => null) : null;
   try { chrome = findChrome(chromium || { executablePath: () => { throw new Error('no playwright-core'); } }); } catch { /* none */ }
   row(!!chrome, 'chromium', chrome || 'none found', `${installChromium()}   (or set CHROME_PATH to a Chrome or Chromium binary)`);
+  if (chrome && chromium) {                             // WebGL2 matters only to motion-3d: information, never a failure
+    let gl = null;
+    try {
+      const b = await chromium.launch({ executablePath: chrome, headless: true, args: ['--enable-unsafe-swiftshader'] });
+      const pg = await b.newPage();
+      gl = await pg.evaluate(() => { const g = document.createElement('canvas').getContext('webgl2'); if (!g) return null; const d = g.getExtension('WEBGL_debug_renderer_info'); return d ? g.getParameter(d.UNMASKED_RENDERER_WEBGL) : g.getParameter(g.RENDERER); });
+      await b.close();
+    } catch { /* no browser run */ }
+    info.push(`webgl2          ${gl ? `${gl}${/swiftshader/i.test(gl) ? '  (software: motion-3d renders, slowly)' : ''}` : 'not available: motion-3d cannot render here'}`);
+  }
   for (const bin of ['ffmpeg', 'ffprobe']) {
     let p = null; try { p = findBin(bin); } catch { /* missing */ }
     let ver = '';
@@ -514,6 +524,7 @@ async function doctor() {
     row(!!p, bin, p || 'not on PATH', `install ${bin}; fonts.mjs uses it to fetch the fonts`);
   }
   for (const r of rows) console.log(`${(r.ok ? 'OK' : 'MISSING').padEnd(7)}  ${r.what.padEnd(15)} ${r.detail}${r.ok ? '' : `\n         fix: ${r.fix}`}`);
+  for (const l of info) console.log(`INFO     ${l}`);
   const bad = rows.filter((r) => !r.ok).length;
   console.log(bad ? `DOCTOR ${bad} missing` : 'DOCTOR OK: fonts, stills, render and verify can all run here');
   if (bad) process.exitCode = 1;
