@@ -44,7 +44,7 @@ export function build(filmDir, srcRel = path.join('src', 'film.html')) {
   if (external) throw new Error(`${srcRel} loads something over the network (${external}); the film must be one self-contained file`);
 
   if (credits.length) {
-    const note = `<!-- Fonts embedded under the SIL Open Font License 1.1 (https://openfontlicense.org):\n     ${credits.join('\n     ')} -->\n`;
+    const note = `<!-- Fonts embedded under the SIL Open Font License 1.1:\n     ${credits.join('\n     ')} -->\n`;
     html = html.replace(/^(<!doctype html>\s*)/i, `$1${note}`);
   }
   const out = path.join(dir, `${name}.html`);

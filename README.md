@@ -103,7 +103,6 @@ examples/crux-launch/     the showcase: brief, spec, source, built HTML, MP4, GI
 
 ## Credits
 
-- The plugin-marketplace layout follows [Rieranthony/product-film-skill](https://github.com/Rieranthony/product-film-skill).
 - Fonts: [Archivo Black](https://github.com/Omnibus-Type/ArchivoBlack), [Syne](https://gitlab.com/bonjour-monde/fonderie/syne-typeface) and [IBM Plex Mono](https://github.com/IBM/plex), all under the SIL Open Font License 1.1, via [Fontsource](https://fontsource.org). The skill ships no font files: `fonts.mjs` fetches them for each film. The example's built HTML embeds them, and their licence texts are in [examples/crux-launch/OFL](examples/crux-launch/OFL).
 
 ## License
