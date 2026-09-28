@@ -4,7 +4,7 @@ Step 5 and the end of step 6. Nothing is rendered in full until the stills pass,
 
 ## Pre-pass: `render.mjs stills`
 
-It prints only the checks that did not pass (set `VERBOSE=1` to see all), writes one PNG per planned frame to `videos/<film>/stills/`, and a labelled `contact.png`. It exits non-zero when anything fails.
+Run it once per format you deliver (`--format 9:16`, `--format 16:9`; the square needs no flag): every check below is measured in that format. It prints only the checks that did not pass (set `VERBOSE=1` to see all), writes one PNG per planned frame to `videos/<film>/stills/`, and a labelled `contact.png`. It exits non-zero when anything fails.
 
 The planned frames: frame 0, the lockup leaving, the device landed, each tap (just after the press), each scroll, each push, expand and cut (mid-move and landed), each state change, toggle and tick, each toast, sheet and modal open, each focus zoom landed, each callout landed, the lockup coming back, every accent frame, and the last frame.
 
@@ -24,7 +24,9 @@ The planned frames: frame 0, the lockup leaving, the device landed, each tap (ju
 | grid (warn) | a callout or free text baseline is off the 8 px grid | move it to the grid |
 | live area | a callout, a free layer, or the device at rest leaves the margins | smaller, move it, or `bleed: true` for a device cropped on purpose |
 | clearance | a callout overlaps the device at rest (warn under 24 px), or the device runs under it while the camera moves | move the callout, or take it out before the zoom |
+| overlap | a callout sits on another callout, or on a free layer (a headline, the lockup), while both show | move one, or time them apart |
 | leader | a callout's element does not exist, is not on screen while the callout shows, or the leader ends off the screen or on its own words | point at something on the screen of that step; time the callout to it |
+| focus (warn) | a focus zoom's target is larger than the live area at its zoom (a target that fits is kept inside: the camera moves as little as it must, and the row says how far) | zoom less |
 | tap | the element is not on the screen on top, the pointer is not on it when it presses, or (warn) the pointer lands after the press | aim with `move` (and `point`) three 16ths before the tap |
 | crossfade | a button state or toggle crossfades two fills whose hues mix into a third | fade through a neutral, or use two tints of one hue |
 | scroll (warn) | a scroll heads outside the content (0 to its height minus the screen's) | scroll less, or make the content taller |
@@ -36,6 +38,7 @@ The planned frames: frame 0, the lockup leaving, the device landed, each tap (ju
 | loop closes (cycle) | a value ends somewhere other than where it starts | undo the action: pop, close, scroll back, toggle back, `clear` |
 | blank frames (warn) | 4 or more frames show nothing | overlap the device's exit and the lockup's entrance |
 | timeline (warn) | an event lies outside the loop | move it inside 0 to DUR |
+| composition | the ink in the review stills leans to one side: a warning past a lean of 20 % of the canvas on average, a failure past 30 % (core.md) | a patch for that format: move the device toward the centre, bring the callouts to the other side, pin what belongs at an edge |
 | palette gate | an accent frame (each tap, state change, toggle, tick and tab) has a patch of mixed ink | make overlapping inks opaque, or the overlay neutral |
 
 ### By eye, on the contact sheet and the full-size stills
@@ -46,12 +49,15 @@ The planned frames: frame 0, the lockup leaving, the device landed, each tap (ju
 - **The pointer** lands on the element (not its edge), lifts out between steps, and never covers a label while it changes.
 - **Transitions**: a card grows into its screen without a jump at the start (the card is the screen's top, scaled); a push shows both screens with the old one dimmed; sheets and modals have their scrim.
 - **The zoom** frames the device, not empty background; nothing the viewer needs is cut off at the frame's edge.
+- **Each format looks designed for itself**: in 9:16 a big phone with the words above it and leaders that do not cross other UI; in 16:9 the phone and the words together, not a square in the middle of a wide frame.
 - **Callouts** are level with what they name, the dot sits on it, the leader does not cross other text.
 - **The lockup** is complete and still in frame 0 and the last frame, and nothing of the device (or its shadow) shows in either.
 
 Fix, rebuild, and run stills again. Show the user the contact sheet next to their screenshots, and anything you changed on their brief.
 
 ## Before delivering
+
+Steps 1 to 4 run once per delivered format, with `--format`.
 
 1. `loopcheck`: every maximum channel difference is 0 (and, for a cycle loop, the seam continuity line passes).
 2. `render`: the full film, in the background.

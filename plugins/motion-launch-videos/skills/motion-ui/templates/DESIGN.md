@@ -10,6 +10,16 @@ The spec the film is built from. Numbers here and in the FILM config agree; when
 - Tempo 120 BPM: beat 0.5 s, 16th 0.125 s, bar 2 s. Every action starts on a 16th.
 - Device: <phone / tablet / browser>, screen <w> x <h> units (from the screenshots at <n>x), scale <s>, centre (<x>, <y>), box <x0, y0, x1, y1> on the canvas.
 
+## Formats
+
+Delivered: <1:1 / 9:16 / 16:9>. Positions below are in the 1080 x 1080 base; each other format is a patch in `FILM.formats` (engine.md, Formats). Say for each where the device and the words go, and what the patch changes.
+
+| Format | Canvas | Device (centre, scale, box) | Callouts (position, pin, leader side) | Other changes | Composition |
+|---|---|---|---|---|---|
+| 1:1 | 1080 x 1080 | (<x>, <y>), <s>, <box> | right column, leaders left | | <lean> |
+| 9:16 | 1080 x 1920 | (<x>, <y>), <s>, <box> | centred above the device, pin t, leaders down | <enter/exit offsets, zoom place, lockup size> | <lean> |
+| 16:9 | 1920 x 1080 | (<x>, <y>), <s>, <box> | the column beside the device | | <lean> |
+
 ## Palette
 
 | Role | Hex | Used for | Source (token, file or screenshot) | Contrast on its backdrop |

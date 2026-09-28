@@ -21,9 +21,9 @@ Default colours name the roles `ink`, `paper`, `line`, `muted`, `brand` and `tin
 | Field | Meaning |
 |---|---|
 | `kind` | `'phone'`, `'tablet'` or `'browser'` |
-| `x`, `y` | the device's centre on the canvas, px (default the canvas centre) |
+| `x`, `y`, `pin` | the device's centre on the canvas, px in the base format (default the canvas centre); `pin` as in Formats |
 | `screen` | `[w, h]` of the screen in units (phone 360 x 760, tablet 600 x 820, browser 880 x 560) |
-| `scale` | px per unit (default 1) |
+| `scale` | px per unit (default 1); a format patch sets a bigger one for a tall frame |
 | `radius`, `bezel` | the screen's corner radius and the frame around it, in units (phone 46 and 12, tablet 26 and 18, browser window 12 and 0) |
 | `body`, `edge` | roles: the frame (phone and tablet `ink`, browser `paper`) and an optional 2-unit outline that lifts it off the background |
 | `shadow` | `{ color, blur, dy, op }`: a soft shadow built from a palette role, blurred once and cached |
@@ -83,7 +83,7 @@ Every layer takes these fields; each type adds its own.
 | `sheet` | `h radius fill grabber scrim scrimOp children` | a bottom sheet (half the screen, 28-unit top corners) that rises over a `scrim` (`ink` at 0.32) |
 | `modal` | `w h x y radius fill scrim scrimOp children` | a centred card that scales up from 0.92 and fades in over a scrim |
 
-Free layers (the lockup and `FILM.layers`) are in canvas px and take `rect card image group text bars icon path avatar button`. They are drawn behind the device unless `front: true`. A free text layer with `enter: { at, typed: true }` types in one character per frame with a block cursor (small print); one with a `stagger` moves glyph by glyph.
+Free layers (the lockup and `FILM.layers`) are in canvas px (a top-level one takes a `pin`, see Formats) and take `rect card image group text bars icon path avatar button`. They are drawn behind the device unless `front: true`. A free text layer with `enter: { at, typed: true }` types in one character per frame with a block cursor (small print); one with a `stagger` moves glyph by glyph.
 
 ## Motion: enter, keys, exit
 
@@ -131,21 +131,69 @@ Any layer, the device and free layers move on springs. A **state** names some va
 | `clear: id` | `every` | backspaces what was typed |
 | `blur: id` | | the caret stops (it also stops when the input's screen leaves) |
 | `open: id`, `close: id` | `spring` | shows or hides a toast (TOAST), sheet or modal (SHEET); `close` on CLOSE |
-| `focus: target` | `z place spring` | the camera frames the target at zoom `z` (1.4), putting it at `place: [fx, fy]` of the frame (the centre) on ZOOM; `focus: false` returns to rest. A target may also be a box `[x0, y0, x1, y1]` in device units |
-| `camera: { x, y, z }` | `spring` | the camera centres canvas point (x, y) at zoom z; `camera: 'rest'` returns |
+| `focus: target` | `z place spring` | the camera frames the target at zoom `z` (1.4), putting it at `place: [fx, fy]` of the frame (the centre) on ZOOM; `focus: false` returns to rest. A target may also be a box `[x0, y0, x1, y1]` in device units. The camera moves as little as it must to keep the target inside the live area, in every format |
+| `camera: { x, y, z, pin }` | `spring` | the camera centres canvas point (x, y) at zoom z; `camera: 'rest'` returns |
+
+Any action may carry an `id`; it changes nothing, but lets a format patch re-aim or retime that one action (Formats).
 
 ## Callouts
 
-`FILM.callouts`: `[{ id, text, x, y, anchor, font, size | cap, track, pairs, space, color, on, to, point, in, out, from, leave, stagger, spring, line, width, dot, ring, gap, lead }]`.
+`FILM.callouts`: `[{ id, text, x, y, pin, anchor, font, size | cap, track, pairs, space, color, on, to, point, side, in, out, from, leave, stagger, spring, line, width, dot, ring, gap, lead }]`.
 
-- The words sit at `x`, `y` on the canvas (anchor and baseline), in `font` (`display`) and `color` (`ink`), at most 4 words.
+- The words sit at `x`, `y` on the canvas (anchor and baseline, `pin` as in Formats), in `font` (`display`) and `color` (`ink`), at most 4 words.
 - `to` is the element they name (an id, or `[x, y]` in device units) and `point` the spot on it. The leader leaves the side of the words that faces it, `gap` px away (24), `width` px thick (4) in `line` (the text colour), draws on from the words `lead` s after `in` (0.125, LEAD), and a `dot` (`brand`) with a `ring` (`paper`) pops where it lands (POP). It follows the element as it scrolls or the camera moves.
+- The side: when the element is left or right of the words, the leader leaves that side at the cap-height middle; when it is below or above them (a callout over a tall frame's device), it leaves the bottom or top edge, straight above the element. `side: 'l'`, `'r'`, `'t'` or `'b'` forces one.
 - `in` and `out` are times. The glyphs rise from `from` (`{ dy: 28, op: 0, blur: 6 }`) a 32nd apart on LAND, and leave to `leave` (`{ dy: -20, op: 0 }`); the leader retracts toward the element.
 - Put the baseline so the cap-height middle is level with the target point: the leader runs level.
 
 ## Lockup and free layers
 
 `FILM.lockup: { wrap: { exit, to, spring, stagger }, layers }`, for the hold loop: its layers are on screen at rest at t = 0, leave at `wrap.exit` (staggered by layer), are hidden once gone, and come back with their own `enter`. `FILM.layers` holds any other free layers (a headline over the device, a background shape), with their own `enter`, `keys`, `exit`.
+
+## Formats
+
+The film is authored in its base format (1080 x 1080) and renders at 9:16 (1080 x 1920) or 16:9 (1920 x 1080) with `render.mjs <mode> videos/<film> --format 9:16`; core.md, Formats, has the contract. The engine maps every canvas position through the core's `fmtX`/`fmtY`:
+
+| What | Mapped | Pin field |
+|---|---|---|
+| the device's centre (`device.x`, `device.y`) and its `scale` | position; the scale times `FMT.s` | `device.pin` |
+| the device's `enter`, `keys` and `exit` offsets | times `FMT.s` | |
+| callouts: position, `size` / `cap`, leader `width` and `gap`, the dot | position; sizes times `FMT.s` | `pin` on each callout |
+| free layers (the lockup, `FILM.layers`) | a top-level layer and its children as one piece | `pin` on the top-level layer |
+| `camera: { x, y }` | position | `camera.pin` |
+
+- **No pin** keeps an element's offset from the centre, so a film with no patch stays centred in any frame. `'t'`, `'b'`, `'l'`, `'r'` (and `'tl'`, `'br'`, ...) keep its distance from those edges.
+- **Screen content is not mapped**: it lives in screen units, and the device scale carries it. The pointer, `move` targets and `focus` boxes are in device units too.
+- **The base format is left alone**: every map is skipped at 1:1, so a film's square renders are the same pixels with or without `formats`.
+- **A patch per format** (`FILM.formats['9:16']`) changes what the ratio needs: a bigger device, callouts moved above it, the lockup resized. Callouts, lockup layers and script actions merge by `id`, so a patch names only what changes. Values in a patch are in the base format, like everything else.
+- **What to change per format.** A square fits the phone at 70 % of the height with callouts in a side column. A tall frame (an app store preview, a Reel) takes a much bigger phone (scale 1.5 to 1.7) with the callouts centred above it and their leaders dropping straight down; point each leader at something near the top of the screen, or it crosses the UI on its way. A wide frame (a landing-page hero) keeps the phone at full height on one side of the centre and the callouts (or a headline) in the column beside it, or fills the frame with a browser window.
+- **Check every format you deliver**: `stills`, `loopcheck`, `render` and `verify` with `--format`. The clearance, overlap, leader, focus and composition rows are measured in that format.
+
+The template's own patches, a worked example:
+
+```js
+formats: {
+  '9:16': {
+    device: { x: 540, y: 580, scale: 1.6, enter: { from: { dy: 1760 } }, exit: { to: { dy: 1760 } } },
+    callouts: [
+      { id: 'PLAN', x: 540, y: 248, pin: 't', anchor: 'C', cap: 64, to: 'KYOTO', point: [0.62, 0.5] },
+      { id: 'SEE', x: 540, y: 248, pin: 't', anchor: 'C', cap: 64, point: [0.6, 0.5] },
+      { id: 'KEEP', x: 540, y: 248, pin: 't', anchor: 'C', cap: 64 },
+    ],
+    script: [{ id: 'ZOOM', place: [0.5, 0.78] }],
+    lockup: { layers: [
+      { id: 'ICON', y: 308, scale: 1.25 }, { id: 'NAME', y: 664, cap: 88 }, { id: 'URL', y: 752, size: 40 }, { id: 'DEMO', y: 904 },
+    ] },
+  },
+  '16:9': {
+    device: { x: 460 },
+    callouts: [{ id: 'PLAN', x: 720, cap: 60 }, { id: 'SEE', x: 720, cap: 60 }, { id: 'KEEP', x: 720, cap: 60 }],
+  },
+},
+```
+
+- **9:16.** The phone's centre (540, 580) maps to (540, 1000); at scale 1.6 it spans 233 to 847 by 373 to 1627, and it enters from 1760 px down so that it and its shadow start below the frame (the `device seam` row checks it). The callouts, pinned to the top, sit on the baseline 248 px from the top edge, centred, with the leader dropping onto the element under them. PLAN names the Kyoto card at this format: the Lisbon card sits under it, and a leader to Lisbon would cross Kyoto. The zoom puts the Save button lower in the tall frame, and the lockup grows to fill it.
+- **16:9.** With no pin the phone's x of 460 keeps its offset from the centre: 960 + (460 - 540) = 880, so the phone spans 688 to 1072, and the callouts at 720 map to 1140, 68 px clear of it. The phone and the callouts together sit in the middle of the frame (a 2 % lean).
 
 ## Springs
 

@@ -112,9 +112,20 @@ Each baseline puts the cap-height middle level with its target, so the leaders r
 - The phone waits at dy 1160 before it rises and leaves to the same place, so neither it nor its shadow shows at frame 0 or at the end (the `device seam` check).
 - The last change is at 10.475 s (the icon's POP settling); loopcheck finds the last 98 frames identical to frame 0.
 
+## Formats
+
+The positions above are the 1:1 base. `FILM.formats` patches the two other ratios (engine.md, Formats); `poster-9x16.png` and `poster-16x9.png` are their frames at 4.25 s.
+
+| Format | Device | Callouts | Other changes | Composition |
+|---|---|---|---|---|
+| 9:16, 1080 x 1920 | centre (540, 580), mapped to (540, 1000); scale 1.6: 233 to 847 by 373 to 1627 | cap 64, centred at x 540, baseline 248 from the top (pin t); leaders drop straight down. PLAN names the Kyoto card at (0.62, 0.5), since a leader to Lisbon would cross Kyoto; SEE the picture at (0.6, 0.5); KEEP the toast | enters from and leaves to dy 1760; the zoom places Save 78 % down the frame; the lockup grows (icon scale 1.25, name cap 88, domain 40) | 2 % top to bottom, 0 % left to right |
+| 16:9, 1920 x 1080 | x 460, mapped to 880: 688 to 1072 by 148 to 932, scale 1 | cap 60 at x 720, mapped to 1140, 68 px clear of the phone; leaders left, level | none: the lockup and the zoom stay centred | 0 % top to bottom, 2 % left to right |
+
+At both formats the stills critique passes all 59 checks with no warning, and loopcheck finds every difference 0. The square is untouched by all this: the engine skips every format map at the base format, so the 1:1 stills are byte-identical to the template's before `formats` existed.
+
 ## Checks
 
-- Stills critique: 54 checks, all pass (text size, contrast against each text's own backdrop, overflow, collisions, words, leaders, clearance, taps, the crossfade, the device seam, palette roles, the loop tail). Palette gate: 15 accent frames, no mixed ink.
+- Stills critique: 59 checks, all pass (text size, contrast against each text's own backdrop, overflow, collisions, words, leaders, clearance, callout overlap, the zoom's framing, taps, the crossfade, the device seam, palette roles, the loop tail, composition). Palette gate: 15 accent frames, no mixed ink.
 - Loopcheck: every maximum channel difference 0; the last 98 frames equal frame 0.
 - Verify: H.264 High, yuv420p, 1080 x 1080, 60/1, 720 frames, 12.000 s, BT.709 tags, faststart; decoded frame 0 at 44.8 dB PSNR against the canvas; the background decodes to (237.0, 241.0, 247.0) for #EEF1F6 (238, 241, 246).
 - mp4frames: 19 review frames decoded, lowest PSNR 41.7 dB (the camera settling on Save).

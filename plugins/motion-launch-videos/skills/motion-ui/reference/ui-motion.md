@@ -65,16 +65,19 @@ One step per two bars at 120 BPM is a comfortable pace. More steps make a slides
 ## Callouts
 
 - **At most 4 words**, the product's own, one on screen at a time. They are the film's copy; the UI is not.
-- **Beside the device, level with what they name.** Put the baseline so the cap-height middle is level with the target point; the leader then runs level into the device and ends on the element with a dot.
+- **Beside the device, level with what they name.** Put the baseline so the cap-height middle is level with the target point; the leader then runs level into the device and ends on the element with a dot. In a tall frame they sit above the device instead, straight over the point they name, and the leader drops onto it.
 - **In after the thing they name has landed**, out before the next step or the zoom. A callout that talks about a screen that has already gone is a mistake the critique catches (`leader`).
 - **Big enough to read in a feed**: cap height 44 to 56 px at 1080 in the display face, dark on a light background or the reverse, 3:1 at least.
 - **Tight display faces need word space**: `space: 60` to `100` opens the gap between words that Inter Tight closes at display sizes.
 
 ## Composition
 
+One film renders at every ratio (engine.md, Formats): author the square, then write a patch for each other format you deliver.
+
 - **Square (1080 x 1080).** The phone a little left of centre, 70 % of the height; callouts in the right third. Or the phone centred and callouts above and below it.
-- **Wide (1920 x 1080).** A browser window left or centre, 1100 to 1300 px wide; callouts in the free column.
-- **Tall (1080 x 1920).** The phone centred, larger; callouts above it.
+- **Tall (1080 x 1920): an app store preview, a Reel, a Story.** The phone centred and much bigger (scale 1.5 to 1.7, about two thirds of the height); callouts centred above it, their leaders dropping straight down onto an element near the top of the screen. A leader that has to cross other UI to reach its element reads as clutter: point it at something higher up, or put the callout below the phone. The lockup grows with the frame.
+- **Wide (1920 x 1080): a landing-page hero.** A phone at full height on one side of the centre, callouts or a headline in the column beside it; or a browser window, 1100 to 1300 px wide, filling most of the frame. Keep the phone and the words together in the middle: the composition check reads a phone alone in a side third as a lean.
+- **The zoom** keeps its target inside the live area in every format; a tall frame may place it lower (`place: [0.5, 0.78]`) so the phone, not background, fills the bottom.
 - **The device inside the live area** at rest, with its shadow bleeding softly. A device deliberately cropped by the frame sets `bleed: true`.
 - **Background**: the brand's lightest neutral or its darkest, flat. The device shadow is a darker tint of the background, so nothing on screen is a colour the palette does not have.
 

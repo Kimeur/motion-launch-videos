@@ -8,13 +8,13 @@ The showcase for the motion-ui skill, and the demo its template runs as. **Acme 
 |---|---|
 | Product | Acme Trips, example.com (a reserved domain): no live site, a fictional travel planner |
 | Style | UI promo (motion-ui): a phone, a finger, callouts, a lockup |
-| Format | 1080 x 1080 (1:1) |
+| Format | 1080 x 1080 (1:1); the same film also renders at 9:16 (1080 x 1920, an app store preview) and 16:9 (1920 x 1080, a landing-page hero) |
 | Duration | 12 s, hold loop (720 frames) |
 | Frame rate | 60 fps |
 | Tempo grid | 120 BPM: a beat is 0.5 s, a bar is 2 s, a 16th is 0.125 s |
 | Sound | none (a muted loop; every beat has to work muted) |
 | Where it plays | the README gallery of this repo |
-| Deliverables | `ui-acme-trips.mp4` (H.264, BT.709), `preview.gif` (480 px), `poster.png`, `ui-acme-trips.html` |
+| Deliverables | `ui-acme-trips.mp4` (H.264, BT.709), `preview.gif` (480 px), `poster.png`, `ui-acme-trips.html`; `poster-9x16.png` and `poster-16x9.png` show the other formats |
 
 ## Facts
 
