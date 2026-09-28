@@ -24,7 +24,9 @@ canvas{display:block;max-width:100vw;max-height:100vh;width:auto;height:auto}
  * FILM: the part you edit. Everything below ENGINE stays as it is.
  *
  * Times are seconds; beat(n) and bar(n) put them on the tempo grid.
- * Positions are canvas pixels. Colours are palette role names.
+ * Positions are canvas pixels of the base format (W x H); FILM.formats, at the
+ * end, re-lays them for other aspect ratios. Colours are palette role names.
+ * A line, rule or crumb without x starts at the measure's edge (grid.margin).
  * Units: track and pairs in 1/1000 em, stagger as a note value (16 = a 16th).
  * The film must end where it began: frame 0 shows the lockup at rest, and the
  * last scene (wrap) rebuilds it and holds, so the loop is seamless.
@@ -63,7 +65,7 @@ const FILM = {
           enter: { at: beat(12.75), from: -128, spring: 'LAND', blur: 12, stagger: 32 }, clipBelow: 608 },
       ],
       rules: [
-        { id: 'RULE', x0: 104, x1: 976, y: 600, h: 8, color: 'accent', draw: { at: beat(12.5), spring: 'DRAW' } },
+        { id: 'RULE', y: 600, h: 8, color: 'accent', draw: { at: beat(12.5), spring: 'DRAW' } },
       ],
     },
     // Hook: two lines slam up from below, smear behind them, misregistration on the landing.
@@ -90,7 +92,7 @@ const FILM = {
           enter: { at: beat(5.5), from: 96, spring: 'LAND', blur: 12, stagger: 32 } },
       ],
       crumbs: [
-        { id: 'DEMO', text: 'DEMO COPY, FICTIONAL PRODUCT', at: beat(7), x: 104, baseline: 880, color: 'accent2' },
+        { id: 'DEMO', text: 'DEMO COPY, FICTIONAL PRODUCT', at: beat(7), baseline: 880, color: 'accent2' },
       ],
     },
     // Mask wipe: the next scene opens through MORNING.'s own letterforms.
@@ -103,6 +105,32 @@ const FILM = {
       ],
     },
   ],
+  // One film, several formats: render.mjs --format 9:16 (or 16:9) re-sizes the canvas, keeping the short side,
+  // and merges the patch for that key (scenes, lines, rules and crumbs merge by id). Positions in a patch are
+  // authored in the base 1080 x 1080 frame and mapped by their pin: none keeps the offset from the centre,
+  // 't', 'b', 'l', 'r' keep the distance from that edge. Baselines stay on the grid.
+  //   9:16  the square measure, each pair of lines centred with a little more leading, slams from below the
+  //         frame, the lockup thrown clear of the top, the crumb pinned 320 px above the bottom edge.
+  //   16:9  a 1504 px measure, so every line grows by 1.72 and each pair fills the height, centred.
+  formats: {
+    '9:16': {
+      scenes: [
+        { id: 'lockup', wrap: { dy: -1480 } },
+        { id: 'hook', lines: [{ id: 'NOTES', baseline: 488, enter: { from: 1100 } }, { id: 'SORTED', baseline: 744, enter: { from: 1100 } }] },
+        { id: 'every', lines: [{ id: 'EVERY', baseline: 504 }, { id: 'MORNING', baseline: 736 }], crumbs: [{ id: 'DEMO', baseline: 760, pin: 'b' }] },
+        { id: 'ready', lines: [{ id: 'READY', baseline: 496 }, { id: 'TODAY', baseline: 744 }] },
+      ],
+    },
+    '16:9': {
+      grid: { measure: 1504 },
+      scenes: [
+        { id: 'lockup', wrap: { dy: -960 }, lines: [{ id: 'ACME', baseline: 560 }, { id: 'URL', baseline: 864, clipBelow: 644 }], rules: [{ id: 'RULE', y: 632, h: 12 }] },
+        { id: 'hook', lines: [{ id: 'NOTES', baseline: 480 }, { id: 'SORTED', baseline: 864 }] },
+        { id: 'every', lines: [{ id: 'EVERY', baseline: 512 }, { id: 'MORNING', baseline: 856 }], crumbs: [{ id: 'DEMO', baseline: 960 }] },
+        { id: 'ready', lines: [{ id: 'READY', baseline: 488, pairs: { EA: 6 } }, { id: 'TODAY', baseline: 872 }] },
+      ],
+    },
+  },
 };
 
 /* ==========================================================================
@@ -113,12 +141,53 @@ const FILM = {
  * t; discrete state (typing, scramble, cursor) reads the quantised q, so every
  * subframe of one output frame agrees on it.
  * ========================================================================== */
+
+/* ---------------- formats: one film, several aspect ratios ---------------- */
+// This block mirrors the "formats" block of the shared core (shared/core.js), with the same names and
+// semantics; keep the two in step. ?format=9x16 (the scripts pass --format 9:16) re-sizes the film before
+// anything reads FILM. A key of FILM.formats patches any field for that format (objects merge, arrays of
+// items with an id merge by id, anything else is replaced). Without W and H in the patch, the standard ratios
+// keep the film's short side: 1:1, 4:5, 9:16, 16:9. Positions stay authored in the base format; the engine
+// maps them with fmtX/fmtY/fmtPos, which keep an element's offset from the centre (the default) or from the
+// edge its pin names.
+const BW = FILM.W, BH = FILM.H;
+const FORMAT = (() => { const m = /[?&]format=(\d+)[x:](\d+)/.exec(location.search); return m ? `${m[1]}:${m[2]}` : null; })();
+function mergeInto(a, b) {
+  for (const [k, v] of Object.entries(b)) {
+    const o = a[k];
+    if (Array.isArray(v) && Array.isArray(o) && v.every((x) => x && x.id != null)) {
+      for (const it of v) { const t = o.find((x) => x && x.id === it.id); if (t) mergeInto(t, it); else o.push(it); }
+    } else if (v && typeof v === 'object' && !Array.isArray(v) && o && typeof o === 'object' && !Array.isArray(o)) mergeInto(o, v);
+    else a[k] = v;
+  }
+  return a;
+}
+if (FORMAT) {
+  const patch = (FILM.formats || {})[FORMAT] || {};
+  const [ra, rb] = FORMAT.split(':').map(Number), short = Math.min(BW, BH);
+  if (!(ra > 0 && rb > 0)) throw new Error(`bad format ${FORMAT}`);
+  const size = ra === rb ? [short, short] : ra < rb ? [short, Math.round(short * rb / ra / 2) * 2] : [Math.round(short * ra / rb / 2) * 2, short];
+  mergeInto(FILM, { W: size[0], H: size[1], ...patch });
+}
 const { W, H, FPS, DUR } = FILM;
 const CX = W / 2, CY = H / 2;
 const PAL = FILM.palette;
 const col = (k) => PAL[k] || k;
 const U = Math.min(W, H) / 1080;             // scale for the few built-in pixel constants
-const MARGIN = FILM.grid.margin, MEASURE = W - 2 * MARGIN;
+const FS = Math.min(W, H) / Math.min(BW, BH);      // base px -> this format's px
+const FMT = { key: FORMAT || `${BW}x${BH}`, W, H, BW, BH, s: FS, aspect: W === H ? 'square' : W < H ? 'vertical' : 'horizontal' };
+// pin: 'l' or 'r' keeps the distance from that edge, 't' or 'b' likewise; otherwise the offset from the centre
+const fmtX = (x, pin = '') => /l/.test(pin) ? x * FS : /r/.test(pin) ? W - (BW - x) * FS : W / 2 + (x - BW / 2) * FS;
+const fmtY = (y, pin = '') => /t/.test(pin) ? y * FS : /b/.test(pin) ? H - (BH - y) * FS : H / 2 + (y - BH / 2) * FS;
+const fmtPos = (x, y, pin = '') => [fmtX(x, pin), fmtY(y, pin)];
+const fmtSz = (v) => v * FS;
+// The live area and the measure. Lines with fit: true fill the measure, which is centred in the frame:
+// W - 2 x margin unless grid.measure narrows it (a horizontal format sets one, so big type stays in the height).
+const MARGIN = FILM.grid.margin, UNIT = FILM.grid.unit;
+const MEASURE = FILM.grid.measure != null ? fmtSz(FILM.grid.measure) : W - 2 * MARGIN;
+const ML = (W - MEASURE) / 2, MR = ML + MEASURE;   // the measure's left and right edges
+// a baseline (or a rule's y) in this format: mapped with its pin, then kept on the baseline grid when it was authored on it
+const gridY = (y, pin) => { const v = fmtY(y, pin); return UNIT && y % UNIT === 0 ? Math.round(v / UNIT) * UNIT : v; };
 const SHUTTER = 0.75;                        // 270 degrees, trailing
 const MIN_SAMPLES = 4, MAX_SAMPLES = 64, PX_PER_SAMPLE = 5;    // Uint16 sums hold up to 257 x 255
 
@@ -272,19 +341,20 @@ function measureLine(o, size) {
 }
 function layoutLine(o) {
   const role = o.font || 'display';
-  let size = o.size != null ? o.size : o.cap != null ? o.cap / capRatio(role) : 100;
-  const width = o.fit ? (o.fit === true ? MEASURE : o.fit) : null;
+  let size = o.size != null ? fmtSz(o.size) : o.cap != null ? fmtSz(o.cap) / capRatio(role) : fmtSz(100);
+  const width = o.fit ? (o.fit === true ? MEASURE : fmtSz(o.fit)) : null;
   if (width) for (let k = 0; k < 3; k++) {                 // ink width is linear in size; converge
     const m = measureLine(o, size), T = (o.track || 0) / 1000 * size;
     size *= width / m.inkW(m.pens(T));
   }
   const m = measureLine(o, size);
   const { ch, n, met } = m;
-  const T = o.justify != null && n > 1 ? (o.justify - m.inkW(m.pens(0))) / (n - 1) : (o.track || 0) / 1000 * size;
+  const T = o.justify != null && n > 1 ? (fmtSz(o.justify) - m.inkW(m.pens(0))) / (n - 1) : (o.track || 0) / 1000 * size;
   const x = m.pens(T);
   const inkL0 = x[0] - met[0].actualBoundingBoxLeft, inkR0 = x[n - 1] + met[n - 1].actualBoundingBoxRight;
   const anchor = o.anchor || 'L';
-  const ax = o.x != null ? o.x : anchor === 'R' ? W - MARGIN : anchor === 'C' ? CX : MARGIN;
+  const ax = o.x != null ? fmtX(o.x, o.pin) : anchor === 'R' ? MR : anchor === 'C' ? CX : ML;
+  const base = gridY(o.baseline, o.pin);
   const shift = anchor === 'R' ? ax - inkR0 : anchor === 'C' ? ax - (inkL0 + inkR0) / 2 : ax - inkL0;
   let slot = 0;
   const glyphs = ch.map((c, i) => {
@@ -301,10 +371,10 @@ function layoutLine(o) {
   const capH = mctx.measureText('H').actualBoundingBoxAscent;
   const ink = glyphs.filter((g) => !g.space);
   return {
-    id: o.id, text: o.text, role, font: m.font, size, baseline: o.baseline, glyphs, slots: slot,
+    id: o.id, text: o.text, role, font: m.font, size, baseline: base, glyphs, slots: slot,
     trackPx: T, trackEm: T / size * 1000, inkL: inkL0 + shift, inkR: inkR0 + shift,
-    capTop: o.baseline - capH, capH,
-    top: o.baseline - Math.max(...ink.map((g) => g.asc)), bottom: o.baseline + Math.max(...ink.map((g) => g.desc)),
+    capTop: base - capH, capH,
+    top: base - Math.max(...ink.map((g) => g.asc)), bottom: base + Math.max(...ink.map((g) => g.desc)),
   };
 }
 
@@ -330,7 +400,8 @@ function buildScenes() {
     // lines
     (spec.lines || []).forEach((ls, li) => {
       const Ln = layoutLine(ls);
-      Object.assign(Ln, { spec: ls, scene: Sc, color: ls.color || 'fg', clipY: ls.clipY, clipBelow: ls.clipBelow, mis: [], seedBase: (SCENES.length * 64 + li) * 256 });
+      Object.assign(Ln, { spec: ls, scene: Sc, color: ls.color || 'fg', mis: [], seedBase: (SCENES.length * 64 + li) * 256,
+        clipY: ls.clipY != null ? gridY(ls.clipY, ls.pin) : undefined, clipBelow: ls.clipBelow != null ? gridY(ls.clipBelow, ls.pin) : undefined });
       if (LINES[Ln.id]) throw new Error(`duplicate line id ${Ln.id}`);
       LINES[Ln.id] = Ln;
       const v0 = shown || !ls.enter ? 1 : 0;
@@ -341,7 +412,8 @@ function buildScenes() {
     });
     // rules: rects with a draw-on progress
     for (const rs of spec.rules || []) {
-      const R = { spec: rs, id: rs.id, scene: Sc, x0: rs.x0, x1: rs.x1, y: rs.y, h: rs.h || 8 * U, color: rs.color || 'accent', from: (rs.draw && rs.draw.from) || 'L', mis: [] };
+      const R = { spec: rs, id: rs.id, scene: Sc, x0: rs.x0 != null ? fmtX(rs.x0, rs.pin) : ML, x1: rs.x1 != null ? fmtX(rs.x1, rs.pin) : MR,
+        y: gridY(rs.y, rs.pin), h: rs.h ? fmtSz(rs.h) : 8 * U, color: rs.color || 'accent', from: (rs.draw && rs.draw.from) || 'L', mis: [] };
       const on = shown || !rs.draw ? 1 : 0;
       R.sx = new Prop(on, `${R.id}.sx`); R.dy = new Prop(0, `${R.id}.dy`); R.op = new Prop(1, `${R.id}.op`);
       Sc.rules.push(R);
@@ -349,8 +421,8 @@ function buildScenes() {
     // crumbs: typed mono small print
     for (const cs of spec.crumbs || []) {
       const n = Array.from(cs.text).length, w = monoW(n), anchor = cs.anchor || 'L';
-      const x = cs.x != null ? cs.x : anchor === 'R' ? W - MARGIN : anchor === 'C' ? CX : MARGIN;
-      const C = { spec: cs, id: cs.id, scene: Sc, text: cs.text, n, w, at: cs.at, baseline: cs.baseline, color: cs.color || 'accent2',
+      const x = cs.x != null ? fmtX(cs.x, cs.pin) : anchor === 'R' ? MR : anchor === 'C' ? CX : ML;
+      const C = { spec: cs, id: cs.id, scene: Sc, text: cs.text, n, w, at: cs.at, baseline: gridY(cs.baseline, cs.pin), color: cs.color || 'accent2',
         x: anchor === 'R' ? x - w : anchor === 'C' ? x - w / 2 : x, cursor: cs.cursor !== false, clear: cs.clear, blink: cs.blink };
       C.dy = new Prop(0, `${C.id}.dy`); C.op = new Prop(1, `${C.id}.op`);
       Sc.crumbs.push(C);
@@ -366,7 +438,7 @@ function buildTimeline() {
   for (const Sc of SCENES) {
     // 1. wrap: the scene is on screen at rest at t 0 (the end of the previous loop) and leaves at wrap.exit
     if (Sc.wrap) {
-      const ex = Sc.wrap.exit, dy = Sc.wrap.dy, spr = Sc.wrap.spring || 'EXIT', gone = Sc.wrapEnd;
+      const ex = Sc.wrap.exit, dy = fmtSz(Sc.wrap.dy), spr = Sc.wrap.spring || 'EXIT', gone = Sc.wrapEnd;
       for (const Ln of Sc.lines) {
         if (!offCanvasY(Ln.top, Ln.bottom, dy)) WARN.push(`wrap exit of ${Ln.id} does not leave the canvas (dy ${dy})`);
         for (const g of Ln.glyphs) if (!g.space) { g.y.to(ex, dy, spr); g.op.set(gone, 0); }
@@ -384,7 +456,7 @@ function buildTimeline() {
           const k = e.order === 'reverse' ? Ln.slots - 1 - g.slot : g.slot;
           const ts = e.at + st * k;
           g.tArr = ts;
-          g.y.set(ts, e.from != null ? e.from : 96).to(ts, 0, spr);
+          g.y.set(ts, fmtSz(e.from != null ? e.from : 96)).to(ts, 0, spr);
           if (e.pop) g.op.set(ts, 1);                   // no fade-in: for a line that must be on screen at a cut
           else g.op.set(ts, 0).to(ts, 1, 'FADE');
           const blur = e.blur != null ? e.blur : 12;
@@ -409,12 +481,12 @@ function buildTimeline() {
       for (const g of Ln.glyphs) {
         if (g.space) continue;
         const te = x.at + st * g.slot;
-        g.y.to(te, g.y.last + x.dy, spr);
-        if (offCanvasY(Ln.top, Ln.bottom, x.dy)) g.op.set(te + settle(SP[spr]), 0);
+        g.y.to(te, g.y.last + fmtSz(x.dy), spr);
+        if (offCanvasY(Ln.top, Ln.bottom, fmtSz(x.dy))) g.op.set(te + settle(SP[spr]), 0);
       }
     }
-    for (const R of Sc.rules) { const x = R.spec.exit; if (x) { R.dy.to(x.at, x.dy, x.spring || 'EXIT'); if (offCanvasY(R.y, R.y + R.h, x.dy)) R.op.set(x.at + settle(SP[x.spring || 'EXIT']), 0); } }
-    for (const C of Sc.crumbs) { const x = C.spec.exit; if (x) { C.dy.to(x.at, x.dy, x.spring || 'EXIT'); if (offCanvasY(C.baseline - MONO.cap, C.baseline, x.dy)) C.op.set(x.at + settle(SP[x.spring || 'EXIT']), 0); } }
+    for (const R of Sc.rules) { const x = R.spec.exit; if (x) { const dy = fmtSz(x.dy); R.dy.to(x.at, dy, x.spring || 'EXIT'); if (offCanvasY(R.y, R.y + R.h, dy)) R.op.set(x.at + settle(SP[x.spring || 'EXIT']), 0); } }
+    for (const C of Sc.crumbs) { const x = C.spec.exit; if (x) { const dy = fmtSz(x.dy); C.dy.to(x.at, dy, x.spring || 'EXIT'); if (offCanvasY(C.baseline - MONO.cap, C.baseline, dy)) C.op.set(x.at + settle(SP[x.spring || 'EXIT']), 0); } }
     // 4. misregistration on the frame the accented element actually lands
     const misTimes = (m, el) => {
       const list = Array.isArray(m) ? m : [m];
@@ -479,7 +551,7 @@ function buildTimeline() {
     if (!Ln) throw new Error(`${Sc.id}: mask.line "${m.line}" is not a line id`);
     if (Ln.scene.world !== Sc.world) throw new Error(`${Sc.id}: the mask line must be in the same world`);
     const spr = SP[m.spring || 'MASK'];
-    const [ax, ay, r] = m.anchor ? [m.anchor[0], m.anchor[1], m.radius || 12] : thickestInk(Ln);
+    const [ax, ay, r] = m.anchor ? [...fmtPos(m.anchor[0], m.anchor[1], m.pin), fmtSz(m.radius || 12)] : thickestInk(Ln);
     const cam = camera(Sc.t0 + 0.3), ox = Sc.world * W;
     const sx = CX + cam.z * (ax + ox - CX - cam.x), sy = CY + cam.z * (ay - CY);
     const far = Math.max(Math.hypot(sx, sy), Math.hypot(W - sx, sy), Math.hypot(sx, H - sy), Math.hypot(W - sx, H - sy));
@@ -721,7 +793,7 @@ function drawCrumb(c, C, t, q, wrapped) {
 }
 
 // custom scene hooks get this kit; they must stay pure functions of (t, q)
-const KIT = { W, H, FPS, DUR, col, rect, fillGlyph, monoText, setFont, fontStr, S, SP, frameOf, typed, mulberry32 };
+const KIT = { W, H, FPS, DUR, col, rect, fillGlyph, monoText, setFont, fontStr, S, SP, frameOf, typed, mulberry32, FMT, fmtX, fmtY, fmtPos, fmtSz, MARGIN, MEASURE };
 
 function drawScene(c, Sc, t, q, nq, cam) {
   const wrapped = !!Sc.wrap && t < Sc.t0;
@@ -862,7 +934,7 @@ function renderFrame(n) {
 function layoutTable() {
   const r = (v) => Math.round(v * 10) / 10;
   return {
-    film: { W, H, FPS, DUR, frames: Math.round(DUR * FPS), bpm: FILM.BPM, margin: MARGIN, measure: MEASURE },
+    film: { W, H, FPS, DUR, frames: Math.round(DUR * FPS), bpm: FILM.BPM, format: FMT.key, aspect: FMT.aspect, margin: MARGIN, measure: MEASURE },
     lines: Object.values(LINES).map((l) => ({ id: l.id, scene: l.scene.id, text: l.text, font: l.font, size: r(l.size), trackEm: r(l.trackEm), inkL: r(l.inkL), inkR: r(l.inkR), capTop: r(l.capTop), baseline: l.baseline, top: r(l.top), bottom: r(l.bottom) })),
     crumbs: SCENES.flatMap((s) => s.crumbs.map((c) => ({ id: c.id, scene: s.id, text: c.text, x: r(c.x), w: r(c.w), baseline: c.baseline }))),
     masks: SCENES.filter((s) => s.mask).map((s) => ({ scene: s.id, line: s.mask.line.id, anchor: [r(s.mask.ax), r(s.mask.ay)], inkRadius: r(s.mask.r), scale: r(s.mask.sEnd), covers: r(s.mask.need), dur: Math.round(s.mask.dur * 1000) / 1000 })),
@@ -963,7 +1035,7 @@ function critique() {
     add(`words: ${Sc.id}`, words.length > 4 ? 'FAIL' : 'PASS', `${words.length} (${words.join(' ')})`);
   }
   // live area and baseline grid
-  const unit = FILM.grid.unit;
+  const unit = UNIT;
   for (const Ln of Object.values(LINES)) {
     const out = [];
     if (!Ln.spec.bleed) {
@@ -1031,7 +1103,51 @@ function critique() {
   for (const [a, b] of emptyRuns()) if (b - a + 1 >= minRun)
     add('blank frames', 'WARN', `frames ${a}-${b} (t ${(a / FPS).toFixed(3)}-${(b / FPS).toFixed(3)}, ${b - a + 1} frames) show nothing at half opacity: start the next entrance sooner, or pop it in at the cut`);
   for (const w of WARN) add('timeline', 'WARN', w);
+  compositionCheck(add);
   return checks;
+}
+
+// Composition: where the ink sits in the review stills. Copied from the shared core (inkBox, compositionCheck)
+// and adapted to this engine: a still is draw(ctx, t), sharp, and ink is any pixel away from bg and from the
+// roles listed in FILM.backdrop (a panel a custom draw hook paints across the frame). The lean on an axis is
+// the difference between the empty margins on its two sides, or twice the ink's centre of mass off the middle
+// (a small crumb stretches the box but barely moves the mass), whichever is larger. An average lean past a
+// fifth of the canvas warns, past 30 % fails: lines authored for a square left in the top of a 9:16 frame,
+// or the left of a 16:9 one.
+function inkBox(isBg, step) {
+  const d = ctx.getImageData(0, 0, W, H).data;
+  let x0 = W, y0 = H, x1 = -1, y1 = -1, n = 0, sx = 0, sy = 0;
+  for (let y = 0; y < H; y += step) for (let x = 0; x < W; x += step) {
+    const i = (y * W + x) * 4;
+    if (isBg(d[i], d[i + 1], d[i + 2])) continue;
+    if (x < x0) x0 = x; if (x > x1) x1 = x; if (y < y0) y0 = y; if (y > y1) y1 = y;
+    n++; sx += x; sy += y;
+  }
+  return x1 < 0 ? null : { box: [x0, y0, x1 + step, y1 + step], cx: sx / n, cy: sy / n };
+}
+function compositionCheck(add) {
+  const bgs = [PAL.bg, ...(FILM.backdrop || []).map((r) => PAL[r] || r)].map(rgbOf);
+  const isBg = (r, g, b) => bgs.some((c) => Math.abs(r - c[0]) + Math.abs(g - c[1]) + Math.abs(b - c[2]) < 36);
+  const pick = (a, b) => Math.abs(a) >= Math.abs(b) ? a : b;
+  const rows = [];
+  for (const { frame } of stillsPlan()) {
+    draw(ctx, frame / FPS);
+    const ink = inkBox(isBg, Math.max(2, Math.round(3 * U)));
+    if (!ink) continue;
+    const b = ink.box, top = b[1] / H, bottom = (H - b[3]) / H, left = b[0] / W, right = (W - b[2]) / W;
+    if (top + bottom > 0.9 || left + right > 0.9) continue;         // a speck: nothing to balance
+    rows.push({ v: pick(bottom - top, 2 * (0.5 - ink.cy / H)), h: pick(right - left, 2 * (0.5 - ink.cx / W)) });
+  }
+  if (!rows.length) { add('composition', 'PASS', 'no still with measurable ink off the background'); return; }
+  const mean = (k) => rows.reduce((a, r) => a + r[k], 0) / rows.length;
+  const v = mean('v'), h = mean('h');
+  const lean = (x, a, b) => `${x > 0 ? a : b} (a lean of ${Math.round(Math.abs(x) * 100)} %)`;
+  const verdict = (x) => Math.abs(x) > 0.3 ? 'FAIL' : Math.abs(x) > 0.2 ? 'WARN' : 'PASS';
+  const worst = Math.abs(v) >= Math.abs(h) ? ['v', v] : ['h', h];
+  const st = verdict(worst[1]);
+  add('composition', st, st === 'PASS'
+    ? `${rows.length} stills balanced: a lean of ${Math.round(Math.abs(v) * 100)} % top to bottom, ${Math.round(Math.abs(h) * 100)} % left to right on average`
+    : `the stills lean to the ${worst[0] === 'v' ? lean(v, 'top', 'bottom') : lean(h, 'left', 'right')}, over ${rows.length} stills (${FMT.key}): centre the content or pin elements to the edges they belong to`);
 }
 
 // the last moment anything on screen can change: spring settles, active windows, and discrete state
@@ -1127,7 +1243,8 @@ function stillsPlan() {
 }
 
 window.DURATION = DUR; window.FPS = FPS; window.WIDTH = W; window.HEIGHT = H;
-window.FILM_META = { title: FILM.title, poster: FILM.poster || 0, bg: FILM.palette.bg, palette: FILM.palette };
+window.FILM_META = { title: FILM.title, poster: FILM.poster || 0, bg: FILM.palette.bg, palette: FILM.palette,
+  format: FMT.key, aspect: FMT.aspect, formats: Object.keys(FILM.formats || {}) };
 window.seek = seek;
 window.renderFrame = renderFrame;
 window.motionAt = motionAt;

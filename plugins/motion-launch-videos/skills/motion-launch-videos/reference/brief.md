@@ -4,15 +4,15 @@ Steps 1 and 2 of the workflow. The output is `videos/<film>/BRIEF.md`, filled fr
 
 ## Intake: ask little, default the rest
 
-A bumper needs five things: the product, the message, the palette, the format and the duration. Read before you ask. The product's live site usually answers the first three.
+A bumper needs five things: the product, the message, the palette, the formats and the duration. Read before you ask. The product's live site usually answers the first three.
 
 1. **Read the product first.** Fetch the live home page and the pages it links to (about, how it works, pricing, FAQ). Use `curl -sL` or WebFetch. Note the product name as the site writes it, what it does, who it is for, and the call to action on its buttons.
 2. **Ask at most one round of questions**, and only what the site cannot answer. Use AskUserQuestion, and build each option from something you read on the site rather than a stock choice:
    - the one message the film must land (offer 2 or 3 lines taken from the site's own headlines)
-   - format: 1:1 (1080 x 1080, the default), 9:16 (1080 x 1920) or 16:9 (1920 x 1080)
+   - formats, one or several (multi-select): 1:1 (1080 x 1080, the default), 9:16 (1080 x 1920, for stories and reels) and 16:9 (1920 x 1080, for a landing page or a screen). One FILM renders all of them: the film is authored at 1:1 and each other format gets a patch and its own checks and render (design-spec.md, "Formats"), so each extra format costs a review pass and a render, not a second film. Write every format into the Format row of BRIEF.md
    - duration: 8, 12 (default) or 15 seconds
    - palette: the brand colours you found, or the skill default
-3. **If the user says "go" or does not answer, use the defaults** and say which ones you used: 1080 x 1080, 12 s, 60 fps, 120 BPM, muted, the brand colours from the site's CSS (or the default palette), the skill's three fonts. When nobody can answer at all (you are a subagent or a scripted run), use the brief as given plus these defaults, and record every choice under "Open questions" in BRIEF.md.
+3. **If the user says "go" or does not answer, use the defaults** and say which ones you used: 1080 x 1080 only, 12 s, 60 fps, 120 BPM, muted, the brand colours from the site's CSS (or the default palette), the skill's three fonts. When nobody can answer at all (you are a subagent or a scripted run), use the brief as given plus these defaults, and record every choice under "Open questions" in BRIEF.md.
 
 ## No live site: a demo, a fictional or an unreleased product
 
