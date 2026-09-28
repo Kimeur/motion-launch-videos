@@ -23,4 +23,6 @@ ffmpeg -i videos/buffett-pixel/renders/buffett-pixel.mp4 -i videos/buffett-pixel
   -map 0:v -map 1:a -c:v copy -c:a aac -b:a 192k -movflags +faststart videos/buffett-pixel/renders/buffett-pixel-sound.mp4
 ```
 
+The GIF in this folder was re-encoded from the render's own GIF at 12 fps to stay under 4 MB (`ffmpeg -i preview.gif -vf "fps=12,split[a][b];[a]palettegen=max_colors=17:stats_mode=full[p];[b][p]paletteuse=dither=none" out.gif`); it holds exactly the 16 palette colours. The MP4 here is the render with the soundtrack muxed in; the picture tells the whole story muted.
+
 `assemble.mjs` finds the template through `../../..`, so keep this folder two levels below the repo root (`videos/<film>/dev` or `examples/<film>/dev`).
