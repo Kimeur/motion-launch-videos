@@ -4,7 +4,8 @@ The spec the film is built from. Numbers here and in the FILM config agree; when
 
 ## Canvas and grid
 
-- 1080 x 1080, 60 fps, 12.000 s = 720 frames, seamless loop.
+- 1080 x 1080 (the base format), 60 fps, 12.000 s = 720 frames, seamless loop.
+- Formats delivered: 1:1 (add 9:16 and 16:9 when the brief asks; see Formats).
 - Live area 104 to 976 on both axes (margin 104). Display measure 872.
 - Baseline unit 8 px: every baseline and rule edge is a multiple of 8.
 - Tempo 120 BPM: beat 0.5 s, 16th 0.125 s, bar 2 s. Every entrance starts on a 16th; every accent lands on a frame the springs compute.
@@ -62,6 +63,22 @@ The spec the film is built from. Numbers here and in the FILM config agree; when
 - The last spring settles at <t> s; frames <n> to <N-1> are a static hold equal to frame 0.
 - The camera ends in the world it starts in, at z = 1.
 
+## Formats
+
+One FILM, a patch per extra format (`FILM.formats`). Positions in a patch are base-format px, mapped by their pin (none: offset from the centre; `t` `b` `l` `r`: distance from that edge). Settle each format's baselines from `render.mjs layout videos/<film> --format <ratio>`. Delete the rows you do not deliver.
+
+| Format | Canvas | Measure | Stacks | Pinned | Motion changes | Critique, loopcheck |
+|---|---|---|---|---|---|---|
+| 1:1 | 1080 x 1080 | 872 (full) | as the beat sheet | | | |
+| 9:16 | 1080 x 1920 | 872 (full) | centred, leading + <n> px per line | crumbs `b` | slams from 1100, wrap dy -1480 | |
+| 16:9 | 1920 x 1080 | <1504> (`grid.measure`) | lines x <1.72>, each stack centred on the height | | wrap dy -960 | |
+
+Per format, the baselines that change (base-format px; at 16:9 they are the canvas values):
+
+| Line / rule / crumb | 1:1 | 9:16 | 16:9 |
+|---|---|---|---|
+| | | | |
+
 ## Review stills
 
-Written by `render.mjs stills`: each scene in, each scene at rest, each accent frame, frame 0 and the last frame, plus `stills/contact.png`.
+Written by `render.mjs stills`: each scene in, each scene at rest, each accent frame, frame 0 and the last frame, plus `stills/contact.png` (`stills/9x16/`, `stills/16x9/` for the other formats).

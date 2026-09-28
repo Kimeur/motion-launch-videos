@@ -4,7 +4,7 @@ Step 3, finished in step 4. The output is `videos/<film>/DESIGN.md`, filled from
 
 ## Canvas and grid
 
-- **Format.** 1080 x 1080 by default. For 9:16 use 1080 x 1920; for 16:9 use 1920 x 1080. The engine takes any W and H; see "Wide and tall formats" for sizing type in them.
+- **Format.** Author the film at 1080 x 1080, the base format, and deliver 9:16 (1080 x 1920) and 16:9 (1920 x 1080) from the same FILM with `--format` and a patch per format; see "Formats". A film that only ever plays at one ratio may set `W` and `H` to it directly.
 - **Live area.** A margin of 104 px at 1080 (about 9.6 %) on every side keeps type clear of platform crops and rounded corners. The display measure is `W - 2 x margin` (872 at 1080).
 - **Baseline unit 8 px.** Every baseline, rule y and crumb baseline is a multiple of 8. The critique warns about any that is not.
 - **Tempo grid.** Pick a BPM (120 is the default: beat 0.5 s, 16th 0.125 s, bar 2 s). Scene boundaries land on beats, ideally on bars or half-bars. Entrances start on 16ths. Write times as `beat(n)` and `bar(n)` in the config so they stay on the grid.
@@ -39,13 +39,15 @@ The build copies `palette.bg` into the page's CSS, so the preview does not flash
 
 Track display type tight (-20 to -60 thousandths of an em) and let the ink-gap gate tell you when a pair is too close (under 0.037 em). Fix a close pair with an optical pair entry (`pairs: { XA: 40 }`), never by loosening the whole line.
 
-## Wide and tall formats
+## Formats: one film, several ratios
 
-`fit: true` sizes a line so its ink spans the whole measure (`W - 2 x margin`). That is right at 1:1 and 9:16, but at 16:9 the measure is 1712 px, and a fitted 4-letter word gets a cap height of about 430 px (STAY, measured): two such lines cannot stack inside the 872 px live height.
+`render.mjs <mode> videos/<film> --format 9:16` renders the film at 1080 x 1920 and `--format 16:9` at 1920 x 1080; the page re-sizes the canvas, keeps the short side, and merges `FILM.formats['9:16']` over the film (engine.md, "Formats"). Without a patch, every position keeps its offset from the centre: nothing is cropped and a centred stack stays centred, but big type does not re-flow by itself. Design each format you deliver:
 
-- **16:9.** Size the stack by height first. For k stacked display lines, keep each cap height under about `live height / (k x 1.3)`, which leaves room for the gaps (about 335 px for two lines at 1080 tall). Then give every line of the stack the same `fit: <px>` width that lands near that cap: in Archivo Black, `fit: 1400` gives 4- and 5-letter words caps of about 305 to 325 px, and `fit: 1200` about 230 px. Or use `cap: <px>` with `anchor: 'C'` when the lines should not share a width. A single-line beat can still use `fit: true`.
-- **9:16.** The measure is 872 px and the live height 1712 px: fitted lines stay the right size, and there is room for stacks of 3 or 4 lines. Keep crumbs inside the middle two thirds of the height, clear of platform UI at the top and bottom.
-- `grid.margin` is one value for both axes; the live height is `H - 2 x margin`.
+- **16:9: a wider measure, larger lines, the stack sized by the height.** At 1920 wide the full measure is 1712 px, and `fit: true` there gives a 4-letter word a cap of about 430 px: two lines no longer fit in the 872 px live height. Set `grid.measure` so the tallest stack fits, then centre each stack on the height. For k stacked lines keep each cap under about `live height / (k x 1.3)` (about 335 px for two lines). The template's 16:9 patch uses `measure: 1504`: every line grows by 1.72 against the square, ACME's cap is 340 px, the other lines' 190 to 295 px, and each pair of lines spans 640 to 680 px, centred. The margins left and right (208 px) then match the space above and below.
+- **9:16: the narrow measure, the stack using the height.** The measure stays 872 px, so fitted lines keep their square sizes and are already as large as the width allows; one word per line is the vertical setting. Centre each stack (unpinned baselines do this), open the leading a little (a few grid units per line), pin small print to the edge it belongs to (the template's crumb: `pin: 'b'`, baseline 760, which lands 320 px above the bottom), and let the motion use the height: slams from below the frame (`enter.from` about 1100) and a `wrap.dy` that clears the top (about -1480; -880 leaves the lockup on screen and the critique warns). Keep crumbs inside the middle two thirds of the height, clear of the platform UI at the top and bottom.
+- **Positions in a patch are base-format pixels**, mapped by their pin like the base film's. At 16:9 unpinned baselines keep their values (the height is the same); at 9:16 they move down by 424.
+- **Rules and crumbs follow the measure** when they have no `x0`, `x1` or `x`, so a lockup rule stays as wide as the lines above it.
+- **Re-measure per format.** Run `render.mjs layout videos/<film> --format 16:9` for the sizes and cap tops at that format, and settle its baselines on the grid from them, as for the base film. Letter gaps are raster measurements: a pair that passes at one size can fail at another, and the critique's `pairs` value goes into that format's patch.
 
 ## Vertical rhythm
 

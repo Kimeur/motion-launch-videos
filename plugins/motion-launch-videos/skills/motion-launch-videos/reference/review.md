@@ -6,6 +6,8 @@ Step 5 and the end of step 6. Nothing is rendered in full until the stills pass,
 
 It prints only the checks that did not pass (set `VERBOSE=1` to see all), writes one PNG per planned frame to `videos/<film>/stills/`, and a labelled `contact.png`. It exits non-zero when anything fails.
 
+With `--format 9:16` (or `16:9`) it checks the film at that format and writes to `stills/9x16/`. Every check below runs at the format being checked, so run `stills` once per format you deliver, and read each contact sheet.
+
 The planned frames: frame 0, the loop start (the lockup leaving and the first scene arriving), each transition just after it starts, each scene at rest (before its punch-in, or after the punch settles, never inside its zoom blur), each accent frame (every `mis` landing and each mask wipe's first frame), and the last frame.
 
 ### Automated checks
@@ -25,6 +27,7 @@ The planned frames: frame 0, the loop start (the lockup leaving and the first sc
 | loop tail | anything still changes in the last frame's shutter: a spring, a crumb typing or its cursor blinking, a scramble, an accent | end the lockup sooner, stop the blink earlier, or lengthen the film. The hold it prints is a lower bound; loopcheck counts identical pixels and often finds a few more |
 | blank frames (warn) | 4 or more frames (1/15 s) in a row show nothing at half opacity: a flash between the lockup's exit and the hook, or after a cut | start the next entrance sooner, or `enter.pop` at a cut |
 | timeline (warn) | the camera does not return, a punch is never reset, a wrap exit stays on canvas | see motion-blur-loop.md |
+| composition | the ink of the review stills leans to one side: the average lean passes 20 % of the canvas (warn) or 30 % (fail). The lean on an axis is the difference between the empty margins on its two sides, or twice the ink's centre of mass off the middle, whichever is larger | centre the stacks for that format, or pin elements to the edges they belong to (design-spec.md, "Formats"). It catches lines authored for a square left in the top of a 9:16 frame or the left of a 16:9 one |
 | palette gate | an accent frame (a landing or a mask wipe's first frame) has a patch of mixed ink (two hues blended into a third) | check `misPair` and the element colours (techniques.md) |
 
 ### By eye, on the contact sheet and the full-size stills
@@ -41,16 +44,19 @@ Open `stills/contact.png` first, then every full-size still that looks off. For 
 - **The loop start**: the lockup leaves and the hook arrives with no empty frame between them.
 - **The first frame after each cut** shows something: a cut onto one faint glyph reads as a glitch.
 - **Frame 0 and the last frame** look identical, and the lockup is complete in both.
+- **Each format looks designed for its frame.** At 16:9 the stacks fill the height and sit centred, not a square's layout floating in a wide frame; at 9:16 they sit in the middle of the height, with the small print clear of the top and bottom edges.
 
 Fix, rebuild, and run stills again. Show the user the contact sheet and anything you changed on their brief.
 
 ## Before delivering
 
+For each format you deliver (add `--format 9:16` or `--format 16:9` to every command):
+
 1. `loopcheck`: every maximum channel difference is 0.
 2. `render`: the full film, in the background.
 3. `verify`: every check passes. The encoded seam and the GIF size are information and warnings.
-4. **Extract and look**: `mp4frames` decodes the planned frames from the MP4 into `stills/mp4/` with a contact sheet and each frame's PSNR against the canvas. Read the sheet and at least the accent, mask, pan and lockup frames full size. Confirm they match the stills.
-5. Report: the files with sizes, what verify said, the loopcheck line, the lowest mp4frames PSNR, and anything you could not check.
+4. **Extract and look**: `mp4frames` decodes the planned frames from the MP4 into `stills/mp4/` (`stills/9x16/mp4/` at 9:16) with a contact sheet and each frame's PSNR against the canvas. Read the sheet and at least the accent, mask, pan and lockup frames full size. Confirm they match the stills.
+5. Report, per format: the files with sizes, what verify said, the loopcheck line, the lowest mp4frames PSNR, and anything you could not check.
 
 ## What never ships
 

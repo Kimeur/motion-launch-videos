@@ -34,7 +34,15 @@ node <skill>/scripts/render.mjs frame     videos/<film> 150 390         # motion
 node <skill>/scripts/render.mjs layout    videos/<film>      # measured layout as JSON
 ```
 
-Every film mode rebuilds `<film>.html` first, so what you check is what you ship.
+Every film mode takes `--format 9:16` (or `16:9`, `4:5`, `1:1`): the film at that aspect ratio, with `FILM.formats` applied (engine.md, "Formats"), its outputs suffixed: `stills/9x16/`, `renders/<film>-9x16.mp4`, `preview-9x16.gif`, `poster-9x16.png`. Without it the film renders at its base size, to the unsuffixed names. Run `stills`, `loopcheck`, `render`, `verify` and `mp4frames` once per format you deliver:
+
+```bash
+node <skill>/scripts/render.mjs stills    videos/<film> --format 9:16   # stills/9x16/
+node <skill>/scripts/render.mjs render    videos/<film> --format 9:16   # renders/<film>-9x16.mp4, preview-9x16.gif, poster-9x16.png
+node <skill>/scripts/render.mjs verify    videos/<film> --format 9:16   # checks renders/<film>-9x16.mp4
+```
+
+Every film mode rebuilds `<film>.html` first, so what you check is what you ship. The built file holds every format; `?format=9x16` in its URL previews one.
 
 ## How pixels leave the browser
 
