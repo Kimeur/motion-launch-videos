@@ -28,6 +28,8 @@ node <skill>/scripts/render.mjs frame     videos/<film> 150 390         # motion
 node <skill>/scripts/render.mjs layout    videos/<film>      # measured layout as JSON
 ```
 
+Every film mode takes `--format 9:16` (or `16:9`, `4:5`, `1:1`): the film at that aspect ratio (core.md, Formats), its outputs suffixed: `stills/9x16/`, `renders/<film>-9x16.mp4`, `preview-9x16.gif`, `poster-9x16.png`. Run `stills`, `loopcheck`, `render` and `verify` once per format you deliver.
+
 Every film mode rebuilds `<film>.html` first, so what you check is what you ship. `fonts.mjs` fetches the faces the film's `@font-face` tokens name; `build.mjs` embeds them and refuses a page that would load anything over the network.
 
 ## How pixels leave the browser

@@ -261,6 +261,31 @@ const FILM = {
  * its end, so an engine can name its own functions freely.
  * ========================================================================== */
 const CORE = (() => {
+/* ---------------- formats: one film, several aspect ratios ---------------- */
+// ?format=9x16 (the scripts pass --format 9:16) re-sizes the film before anything reads FILM. A key of
+// FILM.formats patches any field for that format (objects merge, arrays of items with an id merge by id,
+// anything else is replaced). Without W and H in the patch, the standard ratios keep the film's short side:
+// 1:1, 4:5, 9:16, 16:9. Positions stay authored in the base format; an engine maps them with fmtX/fmtY/fmtPos,
+// which keep an element's offset from the centre (the default) or from the edge its pin names.
+const BW = FILM.W, BH = FILM.H;
+const FORMAT = (() => { const m = /[?&]format=(\d+)[x:](\d+)/.exec(location.search); return m ? `${m[1]}:${m[2]}` : null; })();
+function mergeInto(a, b) {
+  for (const [k, v] of Object.entries(b)) {
+    const o = a[k];
+    if (Array.isArray(v) && Array.isArray(o) && v.every((x) => x && x.id != null)) {
+      for (const it of v) { const t = o.find((x) => x && x.id === it.id); if (t) mergeInto(t, it); else o.push(it); }
+    } else if (v && typeof v === 'object' && !Array.isArray(v) && o && typeof o === 'object' && !Array.isArray(o)) mergeInto(o, v);
+    else a[k] = v;
+  }
+  return a;
+}
+if (FORMAT) {
+  const patch = (FILM.formats || {})[FORMAT] || {};
+  const [ra, rb] = FORMAT.split(':').map(Number), short = Math.min(BW, BH);
+  if (!(ra > 0 && rb > 0)) throw new Error(`bad format ${FORMAT}`);
+  const size = ra === rb ? [short, short] : ra < rb ? [short, Math.round(short * rb / ra / 2) * 2] : [Math.round(short * ra / rb / 2) * 2, short];
+  mergeInto(FILM, { W: size[0], H: size[1], ...patch });
+}
 const { W, H, FPS, DUR } = FILM;
 const NFR = Math.round(DUR * FPS);                 // output frames in the loop
 const CX = W / 2, CY = H / 2;
@@ -273,6 +298,13 @@ const GRID = FILM.grid || {};
 const MARGIN = GRID.margin != null ? GRID.margin : Math.round(104 * U);
 const UNIT = GRID.unit || 8;
 const MEASURE = W - 2 * MARGIN;
+const FS = Math.min(W, H) / Math.min(BW, BH);      // base px -> this format's px
+const FMT = { key: FORMAT || `${BW}x${BH}`, W, H, BW, BH, s: FS, aspect: W === H ? 'square' : W < H ? 'vertical' : 'horizontal' };
+// pin: 'l' or 'r' keeps the distance from that edge, 't' or 'b' likewise; otherwise the offset from the centre
+const fmtX = (x, pin = '') => /l/.test(pin) ? x * FS : /r/.test(pin) ? W - (BW - x) * FS : W / 2 + (x - BW / 2) * FS;
+const fmtY = (y, pin = '') => /t/.test(pin) ? y * FS : /b/.test(pin) ? H - (BH - y) * FS : H / 2 + (y - BH / 2) * FS;
+const fmtPos = (x, y, pin = '') => [fmtX(x, pin), fmtY(y, pin)];
+const fmtSz = (v) => v * FS;
 const LOOP = FILM.loop || 'hold';                  // 'hold': ends on a still copy of frame 0; 'cycle': periodic, continuous over the seam; 'none'
 const BLUR = FILM.blur !== false;                  // false: one sample per frame (cartoon, pixel art)
 const SHUTTER = 0.75;                              // 270 degrees, trailing
@@ -754,7 +786,49 @@ function critique() {
       add('blank frames', 'WARN', `frames ${a}-${b} (t ${(a / FPS).toFixed(3)}-${(b / FPS).toFixed(3)}) show nothing: start the next entrance sooner, or pop it in at the cut`);
   }
   for (const w of WARN) add('timeline', 'WARN', w);
+  compositionCheck(add);
   return checks;
+}
+// Composition: where the ink sits in the review stills. Ink is any pixel away from the background and from
+// the colours of the roles an engine lists as backdrop (a stage, a sky). The lean on an axis is the difference
+// between the empty margins on its two sides, or twice the ink's centre of mass off the middle (a small footer
+// stretches the box but barely moves the mass), whichever is larger. An average lean past a fifth of the
+// canvas warns, past 30 % fails: content authored for a square left in the top of a 9:16 frame, or the left
+// of a 16:9 one.
+function inkBox(isBg, step) {
+  const d = ctx.getImageData(0, 0, W, H).data;
+  let x0 = W, y0 = H, x1 = -1, y1 = -1, n = 0, sx = 0, sy = 0;
+  for (let y = 0; y < H; y += step) for (let x = 0; x < W; x += step) {
+    const i = (y * W + x) * 4;
+    if (isBg(d[i], d[i + 1], d[i + 2])) continue;
+    if (x < x0) x0 = x; if (x > x1) x1 = x; if (y < y0) y0 = y; if (y > y1) y1 = y;
+    n++; sx += x; sy += y;
+  }
+  return x1 < 0 ? null : { box: [x0, y0, x1 + step, y1 + step], cx: sx / n, cy: sy / n };
+}
+function compositionCheck(add) {
+  const bgs = [PAL.bg, ...(ENGINE.backdrop || []).map((r) => PAL[r] || r)].map(rgbOf);
+  const isBg = (r, g, b) => bgs.some((c) => Math.abs(r - c[0]) + Math.abs(g - c[1]) + Math.abs(b - c[2]) < 36);
+  const pick = (a, b) => Math.abs(a) >= Math.abs(b) ? a : b;
+  const rows = [];
+  for (const { frame } of stillsPlan()) {
+    draw(ctx, frame / FPS);
+    const ink = inkBox(isBg, Math.max(2, Math.round(3 * U)));
+    if (!ink) continue;
+    const b = ink.box, top = b[1] / H, bottom = (H - b[3]) / H, left = b[0] / W, right = (W - b[2]) / W;
+    if (top + bottom > 0.9 || left + right > 0.9) continue;         // a speck: nothing to balance
+    rows.push({ v: pick(bottom - top, 2 * (0.5 - ink.cy / H)), h: pick(right - left, 2 * (0.5 - ink.cx / W)) });
+  }
+  if (!rows.length) { add('composition', 'PASS', 'no still with measurable ink off the background'); return; }
+  const mean = (k) => rows.reduce((a, r) => a + r[k], 0) / rows.length;
+  const v = mean('v'), h = mean('h');
+  const lean = (x, a, b) => `${x > 0 ? a : b} (a lean of ${Math.round(Math.abs(x) * 100)} %)`;
+  const verdict = (x) => Math.abs(x) > 0.3 ? 'FAIL' : Math.abs(x) > 0.2 ? 'WARN' : 'PASS';
+  const worst = Math.abs(v) >= Math.abs(h) ? ['v', v] : ['h', h];
+  const st = verdict(worst[1]);
+  add('composition', st, st === 'PASS'
+    ? `${rows.length} stills balanced: a lean of ${Math.round(Math.abs(v) * 100)} % top to bottom, ${Math.round(Math.abs(h) * 100)} % left to right on average`
+    : `the stills lean to the ${worst[0] === 'v' ? lean(v, 'top', 'bottom') : lean(h, 'left', 'right')}, over ${rows.length} stills (${FMT.key}): centre the content or pin elements to the edges they belong to`);
 }
 // review stills: the engine's plan (each scene in and at rest, each transition) plus every accent frame
 function stillsPlan() {
@@ -782,7 +856,8 @@ function boot(E) {
   for (const [k, v] of Object.entries(SP)) if (!(v[0] > 0 && v[0] <= 1 && v[1] > 0)) throw new Error(`spring ${k}: zeta must be in (0, 1] and omega > 0`);
   window.DURATION = DUR; window.FPS = FPS; window.WIDTH = W; window.HEIGHT = H;
   window.FILM_META = { title: FILM.title, poster: FILM.poster || 0, bg: PAL.bg, palette: PAL, loop: LOOP, blur: BLUR,
-    engine: E.name, strictPalette: !!E.strictPalette, seamCut: !!E.seamCut, gif: E.gif || null };
+    engine: E.name, strictPalette: !!E.strictPalette, seamCut: !!E.seamCut, gif: E.gif || null,
+    format: FMT.key, aspect: FMT.aspect, formats: Object.keys(FILM.formats || {}) };
   Object.assign(window, { seek, renderFrame, motionAt, layoutTable, critique, stillsPlan, textByFace, accentFrames, misFrames: accentFrames, offPalette });
   const roles = Object.keys(FILM.fonts || {}), sample = filmChars();
   window.ready = Promise.all(roles.map((r) => document.fonts.load(fontStr(r, 100), sample)))
@@ -822,7 +897,8 @@ function boot(E) {
     rgbOf, hexOf, mix, hueChroma, hueDist, lum, contrast, inksClash,
     face, fontStr, setFont, capRatio, useText, measureRun, layoutText, blurQ, glyphSprite, fillGlyph, drawText,
     svgPath, CUTS, ACTIVE, ACCENTS, WARN, CONTRAST, cutAt, activeIn, accentAt, needContrast,
-    checkLiveArea, checkSpacing, seek, boot };
+    checkLiveArea, checkSpacing, seek, boot,
+    FMT, fmtX, fmtY, fmtPos, fmtSz };
 })();
 const { W, H, FPS, DUR, NFR, CX, CY, U, PAL, col, role, GRID, MARGIN, UNIT, MEASURE, LOOP, BLUR, SHUTTER, TAU,
   canvas, ctx, mkCanvas, mk2d, mctx,
@@ -832,7 +908,8 @@ const { W, H, FPS, DUR, NFR, CX, CY, U, PAL, col, role, GRID, MARGIN, UNIT, MEAS
   rgbOf, hexOf, mix, hueChroma, hueDist, lum, contrast, inksClash,
   face, fontStr, setFont, capRatio, useText, measureRun, layoutText, blurQ, glyphSprite, fillGlyph, drawText,
   svgPath, CUTS, ACTIVE, ACCENTS, WARN, CONTRAST, cutAt, activeIn, accentAt, needContrast,
-  checkLiveArea, checkSpacing, seek, boot } = CORE;
+  checkLiveArea, checkSpacing, seek, boot,
+  FMT, fmtX, fmtY, fmtPos, fmtSz } = CORE;
 /* ===== CORE END ===== */
 
 /* ==========================================================================

@@ -42,6 +42,33 @@ Open the built file in Chrome to preview it: it plays in real time, Space pauses
 | `springs` | optional extra springs, `{ NAME: [zeta, omega] }` |
 | `poster` | time of the poster frame |
 
+## Formats: one film, several aspect ratios
+
+A film is authored in its base format (`W`, `H`, usually 1080 x 1080) and renders at any other ratio with `--format`:
+
+```bash
+node <skill>/scripts/render.mjs stills videos/<film> --format 9:16     # stills/9x16/
+node <skill>/scripts/render.mjs render videos/<film> --format 16:9     # renders/<film>-16x9.mp4, preview-16x9.gif, poster-16x9.png
+```
+
+- The page reads `?format=9x16` before anything else and re-sizes the film, keeping the short side: 1:1, 4:5 (1080 x 1350), 9:16 (1080 x 1920), 16:9 (1920 x 1080).
+- `FILM.formats` patches any field for one format: `formats: { '9:16': { titles: [{ id: 'HOOK', y: 420 }] } }`. Objects merge; an array whose items all carry an `id` merges item by item (so a patch moves one title without repeating the others); anything else is replaced. A patch may set `W` and `H` itself.
+- Positions stay authored in the base format. The engine maps them with the helpers below and a **pin**: with no pin an element keeps its offset from the centre (content stays centred in any frame); `t` or `b` keeps its distance from the top or bottom edge, `l` or `r` from the left or right. `'tl'`, `'b'`, `'r'` combine as expected. Sizes scale with the short side (`fmtSz`), which is 1 between the standard formats of a 1080 film.
+- Backgrounds and stages fill the whole canvas (`W` x `H`), whatever the format.
+- The critique runs at the format being checked, including the composition row (below), so check every format you deliver.
+
+| Helper | Maps |
+|---|---|
+| `FMT` | `{ key, W, H, BW, BH, s, aspect }`: the format in use, the base size, the scale, and `'square'`, `'vertical'` or `'horizontal'` |
+| `fmtX(x, pin)`, `fmtY(y, pin)`, `fmtPos(x, y, pin)` | an authored position to this format's canvas |
+| `fmtSz(v)` | an authored size |
+
+**Composition** (a core check): the critique draws every review still and measures where the ink sits, against the background and the roles an engine lists as `backdrop` (a stage or a sky that fills the frame). The lean on an axis is the difference between the empty margins on its two sides, or twice the ink's centre of mass off the middle (a small footer stretches the box but barely moves the mass), whichever is larger. When the average lean over the stills passes a fifth of the canvas, it warns; past 30 %, it fails. It catches content authored for a square left in the top of a 9:16 frame or the left of a 16:9 one.
+
+## Assets: the user's own images and audio
+
+`build.mjs` replaces every `__ASSET:<path>__` token with a data URL of `videos/<film>/<path>`: PNG, JPEG, WebP, GIF and SVG images, MP3, M4A, AAC, WAV and OGG audio, SRT, VTT, JSON and text. Keep them under `videos/<film>/assets/`. The path must stay inside the film folder. An engine loads an image in `build()` (after `await img.decode()`), never while drawing. Only embed what the user owns or may use, and say where each asset came from in BRIEF.md.
+
 ## Helpers an engine (or a custom `draw` hook) may use
 
 | Helper | What it does |
@@ -59,11 +86,11 @@ Open the built file in Chrome to preview it: it plays in real time, Space pauses
 | `cutAt(t)`, `activeIn(a, b)`, `accentAt(t, what)`, `needContrast(id, fg, bg, min)` | tell the core about a hard cut (motion blur stops at it), a window where something moves outside the Props, an accent frame (stills and palette gate), text that must read |
 | `checkLiveArea(add, id, box)`, `checkSpacing(add, items)` | box checks for an engine's critique |
 
-`W H FPS DUR NFR CX CY U MARGIN UNIT MEASURE LOOP BLUR TAU PAL SP` are constants. `U` is `min(W, H) / 1080`, the scale for built-in pixel constants.
+`W H FPS DUR NFR CX CY U MARGIN UNIT MEASURE LOOP BLUR TAU PAL SP` are constants (for the format being rendered). `U` is `min(W, H) / 1080`, the scale for built-in pixel constants.
 
 ## Engine hooks
 
-An engine ends with `boot({ name, springs, build, draw, disp, checks, cycles, lastChange, stills, layout, visible, always, minSamples, seamCut, strictPalette, gif, accumulate })`:
+An engine ends with `boot({ name, springs, build, draw, disp, checks, cycles, lastChange, stills, layout, visible, always, backdrop, minSamples, seamCut, strictPalette, gif, accumulate })`:
 
 | Hook | Called | Must |
 |---|---|---|
@@ -75,6 +102,7 @@ An engine ends with `boot({ name, springs, build, draw, disp, checks, cycles, la
 | `lastChange(see)` | in a hold loop | report discrete changes the Props do not know about (typing, blinking) |
 | `stills(push)`, `layout()`, `visible(t)` | stills plan, layout table, blank-frame check | |
 | `always` | | `true` when something moves on every frame (a cycle loop's drift); otherwise the core decides from the Props and `activeIn` windows |
+| `backdrop` | | palette roles that fill the frame behind the content (a stage, a sky): the composition check treats them as background |
 | `minSamples` | | the fewest subframes a moving frame gets (4 by default). An engine whose every subframe is costly (WebGL) may allow 2; the rule of one subframe per 5 px of movement still holds |
 | `seamCut`, `strictPalette`, `gif` | | a film that deliberately cuts at the loop point; a pixel-art gate that every pixel is exactly a palette colour; GIF settings (`fps`, `width`, `colors`, `scale: 'neighbor'`, `dither: 'none'`) |
 | `accumulate(ctx, times)` | by `renderFrame` | optional: render and average the subframes itself (for an engine that can do it faster than the core) |
