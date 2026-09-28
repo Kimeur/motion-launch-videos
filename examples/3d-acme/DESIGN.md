@@ -57,6 +57,14 @@ Sway: 1 cycle per loop, 10 degrees of yaw.
 - The camera's dolly back (DOLLY, 5 s) is still settling at 10 s and carries over the seam.
 - Cycles: ring orbit 1, orbs orbit -1 and bob 4, cube spin 1, camera sway 1.
 
+## Formats
+
+The same FILM renders at 9:16 and 16:9 (`--format`); `poster-9x16.png` and `poster-16x9.png` are frame 6.0 s of each.
+
+- **9:16 (1080 x 1920).** The camera pulls back by itself so ACME keeps its width, and further (`contain: ['RING', 'ORB']`) so the ring and the orbs' orbit stay whole and centred through the loop; ACME's cap is about 84 px. The patch looks down more steeply (pitch 30) so the ring opens into a tall ellipse round the word, aims a little lower (target y -0.3) so the scene sits above the middle, lets the orbs bob higher (rest y 1.2, bob 0.8), and puts the labels under the ring (1272 and 1336).
+- **16:9 (1920 x 1080).** The height frames it as at 1:1. The camera comes closer (dist 14, dolly to 13, target y 0.15), so the ring spans about two thirds of the width; the labels stay where they are.
+- Stills critique at each format: 19 checks, all pass, the composition row included (the floor's shadows count as background). Loopcheck passes at each. A partial render of frames 0 to 119 at 9:16 verified (H.264, 1080 x 1920, BT.709, PSNR 41.6 dB and up) before the ring was contained.
+
 ## Checks
 
 - The ring lies just above the floor so its near arc always passes below the word, never across it: a ring at mid-height sliced through the letters whenever its tilt turned toward the camera.

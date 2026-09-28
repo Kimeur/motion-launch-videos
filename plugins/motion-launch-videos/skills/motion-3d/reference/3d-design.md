@@ -31,10 +31,13 @@ The floor is a shadow catcher: drawn in the background colour and darkened only 
 
 ## Formats
 
-The field of view is vertical, so a format change keeps the height of the view and changes its width.
+The camera frames the other formats by itself (engine.md, Formats): in a narrower frame it pulls back until the hero keeps its width; in a wider one it keeps the height. That keeps the hero inside the live area. Designing the format is still yours:
 
-- **9:16 (1080 x 1920).** The frame is narrow: move the camera back (about 1.8 times the 1:1 distance) or make the type smaller, and move the flat labels to y 1400 to 1560. The critique fails 3D type that leaves the live area at any sampled moment, which is how a too-close camera shows up.
-- **16:9 (1920 x 1080).** The frame is wide: bring the camera closer or add supporting objects to the sides; place labels under the hero as at 1:1.
+- **9:16 (1080 x 1920).** The hero fills the width, and the height is spare. A ring or an orbit wider than the hero would be cut at one side and not the other, which reads as a mistake: name it in `camera.contain` so it stays whole. Look down more steeply (pitch 25 to 35) so a ring or a floor pattern opens into a tall shape, let supporting objects rise and fall through the extra height, and keep the labels with the hero, under it (no pin), rather than at the bottom edge, where platform captions sit and where the scene would lean.
+- **16:9 (1920 x 1080).** The hero keeps its height and the frame gains width. Bring the camera closer (dist 10 to 20 % less) so the scene spans half to two thirds of the width, or give the sides something to do: orbits that swing wide, a second object. Labels under the hero as at 1:1.
+- **4:5 (1080 x 1350).** The fit alone is usually enough.
+
+Check every format you deliver with `stills --format`: the type must stay in the live area, and the composition row balanced.
 
 ## Motion with weight
 

@@ -50,6 +50,15 @@ Sway: <1> cycle per loop, <10> degrees.
 - Springs still settling at the end: <the camera's dolly back>, which carries over the seam.
 - Cycles: <ring orbit 1, orbs orbit -1 and bob 4, cube spin 1, camera sway 1>.
 
+## Formats
+
+Delivered: <1:1, 9:16, 16:9>. The camera fits the hero to each frame's narrower side by itself; the patch in `FILM.formats` redesigns the rest (positions in 1:1 terms).
+
+| Format | Camera | Objects | Labels |
+|---|---|---|---|
+| 9:16 (1080 x 1920) | <pitch 30, target y -0.3, contain the ring and the orbs> | <orbs bob higher: rest y 1.2, bob 0.8> | <under the ring: y 848 and 912, no pin> |
+| 16:9 (1920 x 1080) | <dist 14, dolly to 13> | | <as at 1:1> |
+
 ## Review stills
 
-Written by `render.mjs stills`: each key move, each camera landing, the midpoint, frame 0 and the last frame, plus `stills/contact.png`.
+Written by `render.mjs stills` (and `--format 9:16`, into `stills/9x16/`): each key move, each camera landing, the midpoint, frame 0 and the last frame, plus `contact.png`.

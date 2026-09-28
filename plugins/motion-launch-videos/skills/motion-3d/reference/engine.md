@@ -17,7 +17,7 @@ Shading keeps hue: a surface is its palette colour times a light level, plus whi
 
 ## Camera
 
-`camera: { fov, target: [x, y, z], dist, yaw, pitch, sway: [n, degrees], orbit: n, keys: [...] }`: an orbit camera looking at `target` from `dist` units, turned `yaw` degrees round the vertical and `pitch` degrees above the horizon. `sway` swings the yaw back and forth n times per loop; `orbit` turns it a whole n times per loop. `keys: [{ at, yaw, pitch, dist, fov, target, spring }]` move it on springs (DOLLY by default); the last key must return every value to where it started.
+`camera: { fov, target: [x, y, z], dist, yaw, pitch, sway: [n, degrees], orbit: n, keys: [...] }`: an orbit camera looking at `target` from `dist` units, turned `yaw` degrees round the vertical and `pitch` degrees above the horizon. `sway` swings the yaw back and forth n times per loop; `orbit` turns it a whole n times per loop. `keys: [{ at, yaw, pitch, dist, fov, target, spring }]` move it on springs (DOLLY by default); the last key must return every value to where it started. `fit` and `subject` set how the camera frames other formats (below).
 
 ## Objects
 
@@ -42,7 +42,25 @@ A text object is one solid per glyph, so every glyph is a copy with its own spri
 
 ### Flat labels
 
-`labels: [{ id, text, font, size or cap, track, anchor, x, y, color, on, enter: { at }, exit: { at } }]`: sharp 2D type drawn over the picture, for small print and the call to action. Canvas pixels, on the 8 px grid, faded in and out on FADE.
+`labels: [{ id, text, font, size or cap, track, anchor, x, y, pin, color, on, enter: { at }, exit: { at } }]`: sharp 2D type drawn over the picture, for small print and the call to action. Canvas pixels of the base format, on the 8 px grid, faded in and out on FADE. `pin` says how a label follows another format (below).
+
+## Formats
+
+One FILM renders at 1:1, 4:5, 9:16 and 16:9 with `--format` (core.md, Formats). The engine adapts three things by itself:
+
+- **Framing.** The field of view is vertical, so a frame narrower than the base (4:5, 9:16) would crop the sides of a scene framed for a square. The camera pulls back until the subject's bounding sphere fills the same share of the frame's narrower side as it did in the base format: the word keeps its width, and the taller frame shows more floor above and below it. The subject is every `text` and `path` object at rest (`camera.subject: ['ACME']` names others); the pull-back multiplies `dist` at every moment, keys included. A frame wider than the base keeps the height of the view and shows more of the world at the sides. `camera.contain: ['RING', 'ORB']` names objects whose whole sweep must stay in the frame (an orbit or a spin about the vertical axis sweeps a disc, a bob adds height), with half a margin to spare at the camera's closest key: the camera pulls back further when the word's fit would crop them. `camera.fit: false` turns all of this off and takes the camera as written.
+- **The floor and the background.** The shadow catcher and the far plane grow with the pull-back, so the floor still reaches past the edge of every frame, and the background fills the canvas. The floor in full shadow counts as background for the composition check (the engine declares it as a `backdrop`), so shadows do not weigh on the balance.
+- **Labels.** Each label's `x` and `y` go through `fmtX` and `fmtY` with its `pin`: none keeps its offset from the centre (it stays with the hero), `'b'` its distance from the bottom edge, `'t'`, `'l'`, `'r'` likewise, `'bl'` both. A baseline moved by the format moves by whole grid units, so it stays on the 8 px grid.
+
+Then design each format with a patch, `formats: { '9:16': {...}, '16:9': {...} }`, whose values are in the same terms as the base (world units, base-format pixels): objects and labels merge by `id`, `camera.keys` is replaced whole. The demo's patches:
+
+| | 9:16 (1080 x 1920) | 16:9 (1920 x 1080) |
+|---|---|---|
+| camera | pitch 30 (the ring opens into a tall ellipse), target y -0.3 (the scene sits a little above the middle), `contain: ['RING', 'ORB']`: pulled back until the ring and the orbs' orbit stay whole and centred | dist 14, dolly to 13: closer, the ring spans two thirds of the width; target y 0.15 |
+| ORB | rest y 1.2, bob 0.8: the orbs rise through the extra height | as at 1:1 |
+| labels | URL y 848, DEMO y 912 (1272 and 1336 in the tall frame), under the ring | as at 1:1 |
+
+Run `stills` and `loopcheck` with `--format` for every format you deliver: the live-area row catches type the framing lost, the composition row a scene that sits to one side.
 
 ## Springs
 
@@ -57,7 +75,7 @@ The core's springs (springs.md) plus these:
 
 ## The renderer
 
-- A shadow pass renders depth from the light (2048 px, orthographic over `shadowBox`), sampled with 25 filtered taps for soft edges.
+- A shadow pass renders depth from the light (1024 px, orthographic over `shadowBox`), sampled with 4 filtered taps (16 depth tests) spread by `soft` for soft edges.
 - The main pass draws into a 4x multisampled buffer, resolved and drawn onto the film's canvas, then the flat labels on top.
 - Colours are converted from sRGB to linear for lighting and back to sRGB exactly.
 - Motion blur is the core's: each subframe is a full render, averaged.
