@@ -4,7 +4,7 @@ The spec the film is built from. Numbers here and in the FILM config agree; when
 
 ## Pixel grid
 
-- Logical canvas 180 x 180 at x6 = 1080 x 1080 (16:9: 320 x 180; 9:16: 180 x 320). The scale is a whole, even number.
+- Logical canvas 180 x 180 at x6 = 1080 x 1080 (16:9: 320 x 180; 9:16: 180 x 320, from the same film with `--format`). The scale is a whole, even number.
 - 60 fps, 10.000 s = 600 frames, cycle loop. Motion blur off.
 - Live area: margin 8 logical px (8 to 172 on both axes). Text stays inside it; the world bleeds.
 - Tempo 120 BPM: beat 0.5 s, 16th 0.125 s, bar 2 s. Entrances, hops and blinks sit on the grid.
@@ -44,6 +44,19 @@ Nothing unique on a layer shows twice: speed x DUR is at least the screen width 
 | DEMO | DEMO COPY, FICTIONAL PRODUCT | 1 | | 42 px | | none | , : 1 |
 
 At most 4 words of display type (scale 2 and up) on screen at once.
+
+## Formats
+
+Every position above is on the base canvas. Each layer's `pin` maps it into the other formats; each delivered format has a patch in `FILM.formats` (engine.md, Formats).
+
+| Format | Logical canvas | Patch | Staging |
+|---|---|---|---|
+| 1:1 | 180 x 180 | none: the base | <as above> |
+| 9:16 | 180 x 320 | <titles a scale up, higher drops> | <140 rows more sky; the title fills it> |
+| 16:9 | 320 x 180 | <far layers at 30 px/s, 300 px repeat; title lower> | <140 columns more world; nothing unique shows twice> |
+
+- Pins: <world layers 'b', clouds 't', title and sparkles centred>.
+- Composition at each format (from `render.mjs stills --format`): <1:1 x %, 9:16 x %, 16:9 x %>.
 
 ## Timeline
 

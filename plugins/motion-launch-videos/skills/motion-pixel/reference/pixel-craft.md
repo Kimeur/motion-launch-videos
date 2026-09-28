@@ -4,7 +4,7 @@ Step 3. What makes pixel art look deliberate rather than low-resolution. The eng
 
 ## Resolution and scale
 
-- **The logical canvas is the design.** 180 x 180 at x6 makes 1080 x 1080: close to a handheld console's screen, big chunky pixels that read in a feed. 270 x 270 at x4 gives finer detail, 135 x 135 at x8 a bolder, simpler look. 16:9 is 320 x 180 at x6, 9:16 is 180 x 320 at x6.
+- **The logical canvas is the design.** 180 x 180 at x6 makes 1080 x 1080: close to a handheld console's screen, big chunky pixels that read in a feed. 270 x 270 at x4 gives finer detail, 135 x 135 at x8 a bolder, simpler look. 16:9 is 320 x 180 at x6, 9:16 is 180 x 320 at x6: `--format` gives the film that canvas, and the layers' pins place the world on it (engine.md, Formats).
 - **Even scales.** The MP4 is yuv420p: colour is stored once per 2 x 2 output pixels. At an even scale every chroma block sits inside one logical pixel and edges stay crisp; at an odd scale they straddle two colours and soften.
 - **One pixel size in the whole frame.** A sprite drawn at 2x next to 1x scenery reads as a mistake. Scale up only what is meant to be chunky: titles (the bitmap font at 3x or 4x), a giant boss, a close-up.
 - **The GIF divides evenly.** The engine writes it at a whole fraction of the output (540 px for 1080: 3 GIF pixels per logical pixel), nearest neighbour, no dither, the exact palette.
