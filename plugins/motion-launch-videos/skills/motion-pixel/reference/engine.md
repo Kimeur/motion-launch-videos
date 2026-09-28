@@ -11,7 +11,7 @@ The engine draws into an indexed framebuffer of `px.w x px.h` logical pixels, ea
 | Field | Meaning |
 |---|---|
 | `W`, `H` | the output size: `px.w x px.scale` by `px.h x px.scale` |
-| `px` | `{ w, h, scale, margin }`: the logical canvas, a whole (and even) scale, and the live-area inset in logical px (default 8) |
+| `px` | `{ w, h, scale, margin }`: the logical canvas, a whole (and even) scale, and the live-area inset in logical px (default 8). In another format the logical canvas follows the frame (Formats, below) |
 | `blur` | `false`: one sample per frame. Blur would average pixels into colours outside the palette |
 | `loop` | `'cycle'` (the template): the world keeps moving through the seam. `'hold'` works too, for a sting that ends still (every scroll, cycle and blink must stop first) |
 | `palette` | `{ role: '#RRGGBB' }`, at most 16 roles. `bg` is the page background and fills any pixel nothing draws (in a scene with a sky, make it the sky's top) |
@@ -20,6 +20,8 @@ The engine draws into an indexed framebuffer of `px.w x px.h` logical pixels, ea
 | `shake` | `[{ at, px, dur, hz }]` or `on: '<layer>'` instead of `at` (its first landing): a whole-pixel screen shake that decays over `dur` s, a new offset `hz` times a second (30) |
 | `layers` | what is drawn, back to front, below |
 | `gif` | `{ fps, width }` overrides the GIF hints (20 fps, the widest crisp width up to 720 px) |
+| `backdrop` | the roles the composition row treats as background. By default the roles of every `sky`, `ridge` and `tiles` layer |
+| `formats` | `{ '9:16': { ... }, '16:9': { ... } }`: a patch per format (Formats, below) |
 | `poster` | the time of the poster frame |
 
 `fonts` and `grid` are not used: text is the built-in bitmap font, and the live area is `px.margin`.
@@ -50,6 +52,7 @@ Every layer has an `id` and a `kind`. These fields work on any layer where they 
 
 | Field | Meaning |
 |---|---|
+| `pin` | how the layer's positions map into another format: none keeps their offset from the centre, `'t'`, `'b'`, `'l'`, `'r'` their distance from that edge (Formats, below) |
 | `show` | `[t0, t1]`: drawn only from t0 until t1 (t0 after t1 wraps round the seam) |
 | `shake` | `false` keeps the layer still when the screen shakes (sky and fill never shake) |
 | `blink` | `[period, duty]`: on for `duty x period` of every period, counted from `show[0]`. The period must divide DUR |
@@ -133,9 +136,55 @@ Hops, shakes, glints, dust and bursts are one-shots placed in the loop; each wra
 
 5 x 7 caps: A to Z, 0 to 9, space and `. , : ; ! ? ' ’ " - – + = / ( ) [ ] < > & # % * _ @ $ €`, plus `♥ ★ → ← ▶ ·`. Most glyphs are 5 px wide; I, 1 and most punctuation are narrower (proportional). A glyph advances by its width plus `track`. There is no lowercase: a character outside the font fails the `glyphs` check, and `FILM.glyphs` adds it. A text layer's caps are `7 x scale` logical px, `7 x scale x px.scale` output px: at x6, scale 1 is 42 px, legible in a feed; the critique fails anything under 35.
 
+## Formats
+
+The film is authored on its base canvas (180 x 180 at x6) and renders at 9:16 or 16:9 with `--format` (core.md, Formats). The core sizes the output by the short side (1080 x 1920, 1920 x 1080), and the logical canvas follows it at the same scale: 180 x 320 and 320 x 180 at x6 (4:5 is 180 x 225). A format's patch may set `px: { w, h }` itself; keep `px.scale` the same in every format.
+
+Positions stay in the base canvas's logical px and map by each layer's `pin`, rounded to whole pixels:
+
+| `pin` | x | y |
+|---|---|---|
+| none | keeps its offset from the centre | keeps its offset from the centre |
+| `'l'`, `'r'` | keeps its distance from that edge | |
+| `'t'`, `'b'` | | keeps its distance from that edge |
+
+What maps: the sky's band edges, a strip's placed `y`s, a ridge's `y`, a tile map's `y`, a sprite's `x` and `y`, an items layer's `line` and numeric `y`, a text's `x` and `y`, a sparkles `box`. Positions along a scrolling layer (a strip's placed `x`s, a ridge's bumps, a tile map's `x`) are places in the world, not on the screen: they do not map, and every scrolling layer fills whatever width the frame has. Motion (`enter`, `keys`, `exit`, hops) is relative and does not map either.
+
+The template pins the world to the bottom (sky, castle, hills, ground, plants, the hero: `pin: 'b'`), hangs the clouds from the top (`'t'`), and leaves the title and its sparkles centred, so a tall frame gains sky above the world and a wide one gains world on both sides. The engine lists the sky's, the hills' and the ground's roles as backdrop, so the composition row measures what stands in front of them: the title, the hero, the coins, the clouds and the props.
+
+Pins keep the square layout intact; a patch in `FILM.formats` uses the new space. The template's:
+
+```js
+formats: {
+  '9:16': {
+    layers: [
+      { id: 'ACME', scale: 4, x: 90, y: 0, enter: { from: { dy: -120 } } },
+      { id: 'QUEST', scale: 5, x: 90, y: 34, enter: { from: { dy: -160 } } },
+      { id: 'TWINKLE', box: [12, -10, 168, 84] },
+      { id: 'START', y: 88 }, { id: 'URL', y: 88 },
+    ],
+  },
+  '16:9': {
+    layers: [
+      { id: 'CASTLE', width: 300, speed: 30, place: [['castle', 70, 90]] },
+      { id: 'FAR', width: 300, speed: 30, bumps: [[18, 64, 14], [78, 90, 26], [160, 70, 20], [236, 84, 16]] },
+      { id: 'ACME', y: 28 }, { id: 'QUEST', y: 56 },
+      { id: 'TWINKLE', box: [16, 20, 164, 96] },
+      { id: 'START', y: 96 }, { id: 'URL', y: 96 },
+    ],
+  },
+},
+```
+
+- **9:16.** 140 more rows, all sky. The title goes up a scale (ACME x4, QUEST x5: 147 px wide in a live width of 164) and fills the open sky; centred, base y 0, 34 and 88 land at 70, 104 and 158. A drop is relative: 96 px above a title that now rests at y 104 is on screen, so the letters drop from 160 px up instead.
+- **16:9.** 140 more columns. A layer at 20 px/s repeats every 200 px, so across 320 px the castle would show twice most of the time: the far hills and the castle move to 30 px/s (a 300 px repeat), where both copies are on screen only while one leaves at the left edge and the other enters at the right, 1.2 s a loop. The castle is placed to stand clear of both edges at the poster frame. The title sits lower, over the hills, which also balances the composition.
+- Patch numbers are base-canvas px too, mapped by the same pins; `layers` merge by `id`, and any array without ids (`bumps`, `place`) is replaced whole.
+
+Check every format you deliver: `render.mjs stills videos/<film> --format 9:16` runs the critique at that format (the pixel grid, the live area on the new canvas, the composition row) and writes `stills/9x16/`.
+
 ## The GIF
 
-The engine asks the render for a nearest-neighbour GIF with no dither, at the widest multiple of `px.w` that divides the output evenly and is at most 720 px (180 wide at x6: 540 px, 3 GIF pixels per logical pixel), 20 fps, and exactly `palette size` colours (the render adds the entry ffmpeg's palettegen keeps for transparency, so no two palette colours merge into a third).
+The engine asks the render for a nearest-neighbour GIF with no dither, at the widest multiple of `px.w` that divides the output evenly and is at most 720 px (180 wide at x6: 540 px, 3 GIF pixels per logical pixel; 320 wide in 16:9: 640 px), 20 fps, and exactly `palette size` colours (the render adds the entry ffmpeg's palettegen keeps for transparency, so no two palette colours merge into a third).
 
 ## Adding something the vocabulary lacks
 

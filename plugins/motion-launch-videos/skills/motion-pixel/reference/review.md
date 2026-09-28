@@ -4,7 +4,7 @@ Step 5 and the end of step 6. Nothing is rendered in full until the stills pass,
 
 ## Pre-pass: `render.mjs stills`
 
-It prints only the checks that did not pass (set `VERBOSE=1` to see all), writes one PNG per planned frame to `videos/<film>/stills/`, and a labelled `contact.png`. It exits non-zero when anything fails. It takes a few seconds: the whole film is drawn into the small framebuffer several times over.
+It prints only the checks that did not pass (set `VERBOSE=1` to see all), writes one PNG per planned frame to `videos/<film>/stills/`, and a labelled `contact.png`. It exits non-zero when anything fails. Run it at every format you deliver: `--format 9:16` checks that cut on its own logical canvas and writes `stills/9x16/`. It takes a few seconds: the whole film is drawn into the small framebuffer several times over.
 
 The planned frames: frame 0, each text's first landing and its rest, each exit under way, each `show` window opening, the first glint, the first hop's apex and landing, the first pickup, the shake, the poster, each accent, and the last frame.
 
@@ -12,7 +12,7 @@ The planned frames: frame 0, each text's first landing and its rest, each exit u
 
 | Check | Fails when | Fix |
 |---|---|---|
-| pixel grid | W x H is not `px.w x px.scale` by `px.h x px.scale`, or the scale is not whole (warns on an odd scale: yuv420p softens its edges) | set W, H from `px`; use an even scale |
+| pixel grid | W x H is not `px.w x px.scale` by `px.h x px.scale`, or the scale is not whole (warns on an odd scale: yuv420p softens its edges). In another format the logical canvas follows the frame, unless the patch sets `px.w` and `px.h` | set W, H from `px`; use an even scale; in a format patch, leave `px` out or keep it consistent |
 | motion blur | `blur` is not `false` | `blur: false` |
 | palette size | more than 256 colours (warns above 16, and when two roles share a hex) | merge roles; 16 is plenty |
 | sprite | its frames or rows differ in size, or it uses a character that is not in its key (warns when no layer uses it) | redraw the row; add the character to the key or use `'.'` |
@@ -41,6 +41,7 @@ The planned frames: frame 0, each text's first landing and its rest, each exit u
 | cycle | a scroll, sprite cycle, blink, palette cycle, bob or twinkle does not repeat a whole number of times per loop |
 | loop tail (hold) | anything still changes in the last frame's shutter: a spring, a scroll, an animation, a blink |
 | blank frames (warn) | 4 or more frames show nothing but `bg` |
+| composition | averaged over the review stills, what stands in front of the sky, the hills and the ground (the title, the hero, the coins, the clouds, the props) leaves more of the frame empty on one side than the other, or sits off-centre, by more than 30 % of the frame (warns past 20 %). A big title high in the frame weighs more than a small hero low in it. Fix: in another format, pin the world to the bottom and patch the title into the new space (engine.md, Formats); `FILM.backdrop` changes which roles count as background |
 
 ### The gates
 
@@ -57,6 +58,7 @@ The planned frames: frame 0, each text's first landing and its rest, each exit u
 - **Pickups and hops.** Items vanish at the hero's front edge with a twinkle; hops land with dust on the beat.
 - **Dissolve.** Chunky blocks in the text's own pixel size, not a 1 px crawl.
 - **The seam.** The last frame and frame 0 are one ordinary step apart.
+- **Each format** (`stills/9x16/contact.png`, `stills/16x9/contact.png`): the world stands on the bottom edge, the title uses the new space, nothing drops in from inside the frame, and nothing unique on a slow layer shows twice across the wider frame.
 
 Fix, rebuild, and run stills again. Show the user the contact sheet and anything you changed on their brief.
 

@@ -108,6 +108,18 @@ Something moves on every beat: the run cycle (two steps a beat), the coins' spin
 - The title dissolves before the end and drops in again: each letter's Props start where they end (invisible), so nothing pops.
 - The film drawn on to t = 10 s is frame 0, pixel for pixel (the critique's `seam` row).
 
+## Formats
+
+The same `src/film.html` renders at 9:16 and 16:9 with `--format`: the logical canvas becomes 180 x 320 or 320 x 180 at x6. The world (sky, castle, hills, ground, plants, hero) is pinned to the bottom, the clouds to the top, and the title stays centred; `FILM.formats` re-stages each. Posters: `poster-9x16.png`, `poster-16x9.png` (5.0 s).
+
+| Format | Patch | Staging | Composition |
+|---|---|---|---|
+| 1:1 | none | as above | 22 % top to bottom: a warning (the big title outweighs the small hero; kept, since the 1:1 frames are unchanged) |
+| 9:16 (180 x 320) | ACME at x4, QUEST at x5, both dropping from further up (120 and 160 px); START and EXAMPLE.COM under them | 140 rows more sky; the title fills it at logical y 70 to 166, the world stands on the bottom edge | 14 % top to bottom, 6 % left to right |
+| 16:9 (320 x 180) | the far hills and the castle at 30 px/s on a 300 px repeat, the castle re-placed; the title 6 px lower | 140 columns more world; the castle shows twice only while one copy leaves at the left edge and the other enters at the right (1.2 s a loop); the GIF is 640 px wide | 17 % top to bottom, 1 % left to right |
+
+Critique at 9:16 and 16:9: 74 checks, all pass, the strict palette gate included. Loopcheck passes at each, seam continuity 0 px.
+
 ## Checks
 
 - Stills critique: 73 checks, 73 pass. Strict palette gate: 19 frames, every pixel a palette colour. Palette gate: 10 accent frames.

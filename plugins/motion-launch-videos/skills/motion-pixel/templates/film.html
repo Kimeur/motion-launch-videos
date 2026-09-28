@@ -22,7 +22,9 @@ canvas{display:block;max-width:100vw;max-height:100vh;width:auto;height:auto;ima
  *
  * Pixel art on a small logical canvas (px.w x px.h), scaled up by the whole
  * number px.scale with no smoothing: W = px.w x scale, H = px.h x scale.
- * Every position is in logical px, top-left origin, whole numbers. Colours are
+ * Every position is in logical px, top-left origin, whole numbers, on the
+ * base canvas: other formats map it by the layer's pin, and FILM.formats
+ * re-stages each format (reference/engine.md, Formats). Colours are
  * palette role names; every pixel of every frame is exactly one of them.
  * Sprites are ASCII art: one character per pixel, `key` maps characters to
  * roles, '.' is transparent. `sheet` rows hold every frame side by side, one
@@ -199,19 +201,19 @@ const FILM = {
   shake: [{ on: 'QUEST', px: 2, dur: 0.2 }],
   layers: [
     // The world, back to front: sky; clouds, castle and far hills at 20 px/s; near hills at 30; ground, plants and coins at 60.
-    { id: 'SKY', kind: 'sky', bands: [[0, 'bg'], [64, 'sky2'], [100, 'haze']], dither: 6 },
-    { id: 'CLOUDS', kind: 'strip', width: 200, speed: 20, place: [['cloudBig', 14, 20], ['cloudSmall', 92, 50], ['cloudMid', 146, 8]] },
-    { id: 'CASTLE', kind: 'strip', width: 200, speed: 20, place: [['castle', 142, 90]] },
-    { id: 'FAR', kind: 'ridge', width: 200, speed: 20, y: 128, bumps: [[22, 70, 20], [84, 64, 14], [150, 90, 26]], fill: 'far', edge: 'haze' },
-    { id: 'NEAR', kind: 'ridge', width: 300, speed: 30, y: 142, bumps: [[30, 70, 16], [100, 90, 24], [170, 60, 12], [240, 100, 20]], fill: 'leaf', edge: 'grass' },
-    { id: 'GROUND', kind: 'tiles', y: 142, speed: 60, extend: 'soil',
+    { id: 'SKY', kind: 'sky', pin: 'b', bands: [[0, 'bg'], [64, 'sky2'], [100, 'haze']], dither: 6 },
+    { id: 'CLOUDS', kind: 'strip', pin: 't', width: 200, speed: 20, place: [['cloudBig', 14, 20], ['cloudSmall', 92, 50], ['cloudMid', 146, 8]] },
+    { id: 'CASTLE', kind: 'strip', pin: 'b', width: 200, speed: 20, place: [['castle', 142, 90]] },
+    { id: 'FAR', kind: 'ridge', pin: 'b', width: 200, speed: 20, y: 128, bumps: [[22, 70, 20], [84, 64, 14], [150, 90, 26]], fill: 'far', edge: 'haze' },
+    { id: 'NEAR', kind: 'ridge', pin: 'b', width: 300, speed: 30, y: 142, bumps: [[30, 70, 16], [100, 90, 24], [170, 60, 12], [240, 100, 20]], fill: 'leaf', edge: 'grass' },
+    { id: 'GROUND', kind: 'tiles', pin: 'b', y: 142, speed: 60, extend: 'soil',
       tiles: { G: 'grassA', H: 'grassB', D: 'dirtA', E: 'dirtB', S: 'deep' },
       map: ['GHGGHGGGHGGHGGG', 'DEDDEDDDEDDEDDE', 'SSSSSSSSSSSSSSS'] },
-    { id: 'PLANTS', kind: 'strip', width: 600, speed: 60, place: [
+    { id: 'PLANTS', kind: 'strip', pin: 'b', width: 600, speed: 60, place: [
       ['sign', 16, 136], ['flower', 70, 140], ['tuft', 96, 143], ['daisy', 150, 140], ['tuft', 206, 143], ['flower', 250, 140],
       ['daisy', 262, 140], ['sign', 372, 136], ['tuft', 410, 143], ['flower', 450, 140], ['tuft', 520, 143], ['daisy', 572, 140]] },
     // The hero runs in place while the world goes by, and hops once a bar through an arc of three coins.
-    { id: 'HERO', kind: 'sprite', sprite: 'hero', x: 36, y: 126, air: 'hop', dust: { sprite: 'dust', speed: 60 },
+    { id: 'HERO', kind: 'sprite', pin: 'b', sprite: 'hero', x: 36, y: 126, air: 'hop', dust: { sprite: 'dust', speed: 60 },
       jumps: JUMPS.map((at) => ({ at, h: 26, dur: beat(1) })) },
     { id: 'COINS', kind: 'items', sprite: 'coin', by: 'HERO', speed: 60, pickup: true, burst: 'spark', y: 'path',
       at: JUMPS.flatMap((t) => [t + 0.1, t + 0.25, t + 0.4]) },
@@ -232,8 +234,30 @@ const FILM = {
       blink: [beat(1), 0.6], show: [beat(5), beat(11)] },
     { id: 'URL', kind: 'text', text: 'EXAMPLE.COM', anchor: 'C', x: 90, y: 80, fill: 'gold', outline: 'ink',
       cycle: { of: 'gold', roles: ['gold', 'gold', 'gold', 'gold', 'gold', 'cream', 'white', 'cream'], fps: 12, band: 3 }, show: [beat(11), beat(17)] },
-    { id: 'DEMO', kind: 'text', text: 'DEMO COPY, FICTIONAL PRODUCT', anchor: 'C', x: 90, y: 165, fill: 'white', on: 'soil' },
+    { id: 'DEMO', kind: 'text', text: 'DEMO COPY, FICTIONAL PRODUCT', anchor: 'C', x: 90, y: 165, pin: 'b', fill: 'white', on: 'soil' },
   ],
+  // Other formats (render.mjs --format 9:16): the logical canvas follows the frame (180 x 320, 320 x 180 at x6).
+  // Positions above stay on the 180 x 180 canvas and map by each layer's pin: the world stands on the bottom
+  // edge, the clouds hang from the top, the title keeps its offset from the centre. These patches re-stage it.
+  formats: {
+    '9:16': {                                  // a taller title in the open sky; the letters drop from off screen
+      layers: [
+        { id: 'ACME', scale: 4, x: 90, y: 0, enter: { from: { dy: -120 } } },
+        { id: 'QUEST', scale: 5, x: 90, y: 34, enter: { from: { dy: -160 } } },
+        { id: 'TWINKLE', box: [12, -10, 168, 84] },
+        { id: 'START', y: 88 }, { id: 'URL', y: 88 },
+      ],
+    },
+    '16:9': {                                  // the title lower, over the hills; the far hills and the castle at
+      layers: [                                // 30 px/s, so across 320 px the castle's 300 px repeat shows it once
+        { id: 'CASTLE', width: 300, speed: 30, place: [['castle', 70, 90]] },
+        { id: 'FAR', width: 300, speed: 30, bumps: [[18, 64, 14], [78, 90, 26], [160, 70, 20], [236, 84, 16]] },
+        { id: 'ACME', y: 28 }, { id: 'QUEST', y: 56 },
+        { id: 'TWINKLE', box: [16, 20, 164, 96] },
+        { id: 'START', y: 96 }, { id: 'URL', y: 96 },
+      ],
+    },
+  },
 };
 
 /* ===== CORE BEGIN: shared/core.js, synced by tools/sync.mjs. Do not edit it here. ===== */
@@ -924,7 +948,18 @@ const { W, H, FPS, DUR, NFR, CX, CY, U, PAL, col, role, GRID, MARGIN, UNIT, MEAS
  * ========================================================================== */
 const PXS = FILM.px || {};
 const K = Math.max(1, Math.round(PXS.scale || 1));             // output px per logical px
-const PW = PXS.w || Math.floor(W / K), PH = PXS.h || Math.floor(H / K);
+// Formats: in another aspect ratio the logical canvas follows the output (180 x 180 at x6 becomes 180 x 320 for
+// 9:16, 320 x 180 for 16:9) unless that format's patch sets px.w and px.h itself. Layer positions stay authored
+// on the base canvas; lx and ly map them in logical px, whole pixels, by the layer's `pin` (as fmtX and fmtY do).
+const PPATCH = (((FILM.formats || {})[FMT.key] || {}).px) || {};
+const RESIZED = W !== FMT.BW || H !== FMT.BH;
+const PW = RESIZED && PPATCH.w == null ? Math.floor(W / K) : PXS.w || Math.floor(W / K);
+const PH = RESIZED && PPATCH.h == null ? Math.floor(H / K) : PXS.h || Math.floor(H / K);
+const BPW = Math.round(FMT.BW / K), BPH = Math.round(FMT.BH / K);   // the base format's logical canvas
+const LS = Math.min(PW, PH) / Math.min(BPW, BPH);                // 1 between the standard formats
+const MAPS = PW !== BPW || PH !== BPH;
+const lx = (x, pin = '') => !MAPS ? x : /l/.test(pin) ? Math.round(x * LS) : /r/.test(pin) ? PW - Math.round((BPW - x) * LS) : Math.round(PW / 2 + (x - BPW / 2) * LS);
+const ly = (y, pin = '') => !MAPS ? y : /t/.test(pin) ? Math.round(y * LS) : /b/.test(pin) ? PH - Math.round((BPH - y) * LS) : Math.round(PH / 2 + (y - BPH / 2) * LS);
 const PM = PXS.margin != null ? PXS.margin : 8;                // live-area inset, logical px
 const ROLES = Object.keys(PAL);
 const IDX = Object.fromEntries(ROLES.map((r, i) => [r, i]));
@@ -1118,7 +1153,7 @@ function blinkOn(L, q) {
 
 // sky: horizontal bands of colour, each change dithered over `dither` rows
 BUILD.sky = (L) => {
-  const b = L.spec.bands.map(([y, r]) => [y, ix(r)]).sort((p, q) => p[0] - q[0]), d = L.spec.dither != null ? L.spec.dither : 4;
+  const b = L.spec.bands.map(([y, r]) => [ly(y, L.pin), ix(r)]).sort((p, q) => p[0] - q[0]), d = L.spec.dither != null ? L.spec.dither : 4;
   L.a = new Int16Array(PH); L.b = new Int16Array(PH); L.op = new Float32Array(PH);
   for (let y = 0; y < PH; y++) {
     let i = 0;
@@ -1127,7 +1162,7 @@ BUILD.sky = (L) => {
     const nx = b[i + 1];
     if (nx && d > 0 && y >= nx[0] - d) { L.b[y] = nx[1]; L.op[y] = (y - (nx[0] - d) + 1) / (d + 1); }
   }
-  for (const [y] of b) if (!whole(y)) ODD.push(`${L.id} band ${y}`);
+  for (const [y] of L.spec.bands) if (!whole(y)) ODD.push(`${L.id} band ${y}`);
 };
 DRAW.sky = (L) => {
   for (let y = 0; y < PH; y++) {
@@ -1144,7 +1179,7 @@ DRAW.fill = (L, q) => {
 };
 // strip: sprites placed along a band `width` px long that scrolls left at `speed` px/s and repeats
 BUILD.strip = (L) => {
-  L.items = (L.spec.place || []).map(([name, x, y], i) => { for (const v of [x, y]) if (!whole(v)) ODD.push(`${L.id} place ${i}`); return { sp: sprite(name, L.id), x, y }; }).filter((p) => p.sp);
+  L.items = (L.spec.place || []).map(([name, x, y], i) => { for (const v of [x, y]) if (!whole(v)) ODD.push(`${L.id} place ${i}`); return { sp: sprite(name, L.id), x, y: ly(y, L.pin) }; }).filter((p) => p.sp);
   L.width = L.spec.width;
 };
 DRAW.strip = (L, q, sx, sy) => {
@@ -1160,7 +1195,7 @@ BUILD.ridge = (L) => {
   for (let x = 0; x < w; x++) {
     let hm = 0;
     for (const [cx, bw, bh] of s.bumps) for (const c of [cx - w, cx, cx + w]) { const r = (x + 0.5 - c) / (bw / 2); if (Math.abs(r) < 1) hm = Math.max(hm, bh * Math.sqrt(1 - r * r)); }
-    tops[x] = s.y - Math.round(hm);
+    tops[x] = ly(s.y, L.pin) - Math.round(hm);
   }
   L.tops = tops; L.width = w; L.fill = ix(s.fill); L.edge = s.edge ? ix(s.edge) : -1;
   for (const v of [s.y, ...s.bumps.flat()]) if (!whole(v)) ODD.push(`${L.id} ${v}`);
@@ -1183,6 +1218,7 @@ BUILD.tiles = (L) => {
   L.tw = any ? any.w : 8; L.th = any ? any.h : 8;
   L.width = L.cols * L.tw;
   L.ext = s.extend ? ix(s.extend) : -1;
+  L.y = ly(s.y, L.pin);
   L.errs = [];
   for (const [ch, sp] of Object.entries(L.tile)) if (sp.w !== L.tw || sp.h !== L.th) L.errs.push(`tile "${ch}" (${sp.name}) is ${sp.w} x ${sp.h}, not ${L.tw} x ${L.th}`);
   s.map.forEach((r, i) => { if (r.length !== L.cols) L.errs.push(`map row ${i} is ${r.length} tiles, not ${L.cols}`); for (const ch of r) if (ch !== '.' && ch !== ' ' && !L.tile[ch]) L.errs.push(`map character "${ch}" has no tile`); });
@@ -1191,13 +1227,13 @@ BUILD.tiles = (L) => {
 DRAW.tiles = (L, q, sx, sy) => {
   const s = L.spec, off = mod(offAt(s.speed || 0, q), L.width), x0 = (s.x || 0) + sx - (off % L.tw), c0 = Math.floor(off / L.tw);
   L.map.forEach((row, r) => {
-    const y = s.y + r * L.th + sy;
+    const y = L.y + r * L.th + sy;
     for (let m = -1; m * L.tw + x0 < PW; m++) {
       const sp = L.tile[row[mod(c0 + m, L.cols)]];
       if (sp) blit(pick(sp, q), x0 + m * L.tw, y);
     }
   });
-  if (L.ext >= 0) { const y0 = Math.max(0, s.y + L.map.length * L.th + sy); if (y0 < PH) FB.fill(L.ext, y0 * PW, PH * PW); }
+  if (L.ext >= 0) { const y0 = Math.max(0, L.y + L.map.length * L.th + sy); if (y0 < PH) FB.fill(L.ext, y0 * PW, PH * PW); }
 };
 // sprite: a character or prop at (x, y) (top-left), animated at its fps, with hops, dust and springs
 BUILD.sprite = (L) => {
@@ -1206,6 +1242,7 @@ BUILD.sprite = (L) => {
   const du = typeof s.dust === 'string' ? { sprite: s.dust } : s.dust;
   L.dust = du ? sprite(du.sprite, L.id) : null; L.dustSpeed = du && du.speed || 0;
   L.k = Math.max(1, Math.round(s.scale || 1));
+  L.x = lx(s.x, L.pin); L.y = ly(s.y, L.pin);
   L.M = motion(L.id, s, () => 0);
   L.jumps = (s.jumps || []).map((j) => ({ at: j.at, h: j.h != null ? j.h : 16, dur: j.dur || 60 / (FILM.BPM || 120) }));
   L.map = s.cycle ? colourMap(s.cycle) : null;
@@ -1218,7 +1255,7 @@ function hopAt(L, q) {                                     // height above the g
 const bobAt = (b, q, i = 0) => (b ? Math.round(b[1] * Math.sin(cyc(q, b[0]) - i * (b[2] || 0))) : 0);   // [cycles per loop, px, lag per glyph]
 function spriteBox(L, q) {                                 // where the sprite is at q, in logical px
   const e = stateAt(L.M, q), sp = L.sp, jy = Math.round(hopAt(L, q));
-  return { x: L.spec.x + e.dx, y: L.spec.y + e.dy - jy + bobAt(L.spec.bob, q), w: sp.w * L.k, h: sp.h * L.k, e, air: jy > 0 };
+  return { x: L.x + e.dx, y: L.y + e.dy - jy + bobAt(L.spec.bob, q), w: sp.w * L.k, h: sp.h * L.k, e, air: jy > 0 };
 }
 DRAW.sprite = (L, q, sx, sy) => {
   if (!L.sp || (L.spec.blink && !blinkOn(L, q))) return;
@@ -1226,7 +1263,7 @@ DRAW.sprite = (L, q, sx, sy) => {
   if (!(b.e.op > 0.002)) return;
   if (L.dust) for (const j of L.jumps) {                    // a puff where the feet land, left behind at the ground's speed
     const tau = mod(q - j.at - j.dur, DUR), f = drawing(tau, L.dust.fps || 12);
-    if (f < L.dust.n) blit(L.dust.frames[f], L.spec.x + b.e.dx + Math.floor((b.w - L.dust.w) / 2) - offAt(L.dustSpeed, tau) + sx, L.spec.y + b.e.dy + b.h - L.dust.h + sy);
+    if (f < L.dust.n) blit(L.dust.frames[f], L.x + b.e.dx + Math.floor((b.w - L.dust.w) / 2) - offAt(L.dustSpeed, tau) + sx, L.y + b.e.dy + b.h - L.dust.h + sy);
   }
   const sp = b.air && L.air ? L.air : L.sp, map = L.map;
   blit(pick(sp, q, L.spec.phase || 0, L.spec.fps), b.x + sx, b.y + sy, { k: L.k, flip: L.spec.flip, op: b.e.op, map: map && ((c, i, j) => cycled(map, c, i + j, q)) });
@@ -1238,15 +1275,15 @@ function linkItems(L) {                                    // after every layer 
   if (s.by && !(by && by.kind === 'sprite')) ERR.push(`${L.id}: by "${s.by}" is not a sprite layer`);
   L.by = by && by.sp ? by : null;
   // the line where an item's centre is when it is collected: by default it touches the collector's front edge
-  L.line = s.line != null ? s.line : L.by && L.sp ? L.by.spec.x + L.by.sp.w * L.by.k - 2 + Math.floor(L.sp.w / 2) : Math.floor(PW / 3);
+  L.line = s.line != null ? lx(s.line, L.pin) : L.by && L.sp ? L.by.x + L.by.sp.w * L.by.k - 2 + Math.floor(L.sp.w / 2) : Math.floor(PW / 3);
   L.len = Math.round((s.speed || 0) * DUR);                 // the world is one loop long: each item passes the line once
   if (!L.sp) { L.items = []; return; }
   L.items = (s.at || []).map((t, i) => {
     const X = Math.round((s.speed || 0) * t), tq = s.speed ? X / s.speed : t;
     let y = Array.isArray(s.y) ? s.y[i] : s.y;
     if (s.y === 'path' && L.by) { const b = spriteBox(L.by, tq); y = b.y + Math.floor((b.h - L.sp.h) / 2); }
+    else if (typeof y === 'number') { if (!whole(y)) ODD.push(`${L.id} item ${i} y ${y}`); y = ly(y, L.pin); }
     if (typeof y !== 'number') { ERR.push(`${L.id}: item ${i} has no y`); y = 0; }
-    if (!whole(y)) ODD.push(`${L.id} item ${i} y ${y}`);
     return { i, t, tq, X, y };
   });
 }
@@ -1280,8 +1317,9 @@ BUILD.text = (L) => {
   for (const ch of chars) { const f = FONT[ch]; if (!f) continue; gl.push({ ch, f, x: pen * k }); pen += f.w + track; }
   L.w = Math.max(0, pen - track) * k; L.h = FONT_H * k;
   const anchor = s.anchor || 'L';
-  L.x0 = anchor === 'C' ? s.x - Math.floor(L.w / 2) : anchor === 'R' ? s.x - L.w : s.x;
-  L.y0 = s.y;
+  const ax = lx(s.x, L.pin);
+  L.x0 = anchor === 'C' ? ax - Math.floor(L.w / 2) : anchor === 'R' ? ax - L.w : ax;
+  L.y0 = ly(s.y, L.pin);
   const fills = [].concat(s.fill || 'white');
   L.rowIdx = Array.from({ length: FONT_H }, (_, r) => ix(fills[Math.min(fills.length - 1, Math.floor(r * fills.length / FONT_H))]));
   L.fillRoles = [...new Set(fills)];
@@ -1380,11 +1418,15 @@ DRAW.text = (L, q, sx, sy) => {
   });
 };
 // sparkles: one-shot twinkles at seeded spots in a box, n of them spread over each `every` seconds
-BUILD.sparkles = (L) => { L.sp = sprite(L.spec.sprite, L.id); for (const v of L.spec.box) if (!whole(v)) ODD.push(`${L.id} box ${v}`); };
+BUILD.sparkles = (L) => {
+  const b = L.spec.box;
+  L.sp = sprite(L.spec.sprite, L.id); for (const v of b) if (!whole(v)) ODD.push(`${L.id} box ${v}`);
+  L.box = [lx(b[0], L.pin), ly(b[1], L.pin), lx(b[2], L.pin), ly(b[3], L.pin)];
+};
 DRAW.sparkles = (L, q, sx, sy) => {
   const s = L.spec, sp = L.sp;
   if (!sp) return;
-  const every = s.every || 1, n = s.n || 3, laps = Math.max(1, Math.round(DUR / every)), [x0, y0, x1, y1] = s.box;
+  const every = s.every || 1, n = s.n || 3, laps = Math.max(1, Math.round(DUR / every)), [x0, y0, x1, y1] = L.box;
   for (let j = 0; j < n; j++) {
     const tt = mod(q - every * j / n, DUR), c = Math.floor(tt / every + 1e-9), f = drawing(tt - c * every, sp.fps || 20);
     if (f >= sp.n) continue;
@@ -1421,7 +1463,7 @@ const qOf = (t) => (frameOf(wrapT(t)) % NFR) / FPS;
 function build() {
   for (const [name, s] of Object.entries(FILM.sprites || {})) compileSprite(name, s);
   (FILM.layers || []).forEach((spec, n) => {
-    const L = { spec, id: spec.id || `${spec.kind}${n}`, kind: spec.kind, n };
+    const L = { spec, id: spec.id || `${spec.kind}${n}`, kind: spec.kind, n, pin: spec.pin || '' };
     if (!BUILD[spec.kind]) { ERR.push(`${L.id}: unknown kind "${spec.kind}"`); return; }
     if (BYID[L.id]) ERR.push(`duplicate layer id ${L.id}`);
     BYID[L.id] = L; LAYERS.push(L);
@@ -1597,7 +1639,7 @@ function layout() {
     layers: LAYERS.map((L) => ({ id: L.id, kind: L.kind,
       ...(L.kind === 'text' ? { text: L.spec.text, scale: L.k, box: L.box, width: L.w, capPx: FONT_H * L.k * K } : {}),
       ...(L.spec.speed ? { speed: L.spec.speed, repeat: L.kind === 'items' ? L.len : L.width, pxPerFrame: L.spec.speed / FPS } : {}),
-      ...(L.kind === 'sprite' && L.sp ? { box: [L.spec.x, L.spec.y, L.spec.x + L.sp.w * L.k, L.spec.y + L.sp.h * L.k], hops: L.jumps.length } : {}),
+      ...(L.kind === 'sprite' && L.sp ? { box: [L.x, L.y, L.x + L.sp.w * L.k, L.y + L.sp.h * L.k], hops: L.jumps.length } : {}),
       ...(L.kind === 'items' ? { line: L.line, items: L.items.map((it) => ({ t: +it.t.toFixed(3), x: it.X, y: it.y })) } : {}) })),
     shakes: SHAKES.map((e) => ({ at: +e.at.toFixed(3), px: e.px, dur: e.dur })),
   };
@@ -1611,8 +1653,14 @@ const GIF = (() => {
   return { scale: 'neighbor', dither: 'none', colors: Math.max(3, Math.min(255, ROLES.length)), width: g.width || PW * m, fps: g.fps || 20 };
 })();
 
+// composition: the sky, the hills and the ground fill the frame, so the check weighs what stands in front of them
+// (FILM.backdrop lists the roles instead)
+const BACKDROP = FILM.backdrop || [...new Set((FILM.layers || []).flatMap((s) =>
+  s.kind === 'sky' ? (s.bands || []).map((b) => b[1]) : s.kind === 'ridge' ? [s.fill, s.edge]
+    : s.kind === 'tiles' ? [s.extend, ...Object.values(s.tiles || {}).flatMap((n) => Object.values(((FILM.sprites || {})[n] || {}).key || {}))] : []).filter(Boolean))];
+
 boot({
-  name: 'pixel',
+  name: 'pixel', backdrop: BACKDROP,
   springs: { DROP: [0.4, 11], HOP: [0.5, 18], DISSOLVE: [1, 12], SLIDE: [1, 14] },
   build, draw: (c, t, q) => { renderFB(q); present(c); },
   disp: () => 0,                                           // blur is off: one sample per frame, nothing to measure
