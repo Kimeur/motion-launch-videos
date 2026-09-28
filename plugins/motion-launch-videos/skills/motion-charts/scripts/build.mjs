@@ -4,7 +4,8 @@
 //   node <skill>/scripts/build.mjs <filmDir> [--src src/film.html]
 //
 // Reads <filmDir>/src/film.html, replaces every __FONT:<file>__ token with the base64 of
-// <filmDir>/fonts/<file>, adds a comment crediting each embedded font under its OFL, and writes
+// <filmDir>/fonts/<file> and every __ASSET:<path>__ token with a data: URL of <filmDir>/<path>
+// (images, audio, subtitles), adds a comment crediting each embedded font under its OFL, and writes
 // <filmDir>/<name>.html, where <name> is the folder's name. It fails when a font file is missing,
 // when a token is left over, or when the page would load anything over the network.
 // It also copies FILM.title, FILM.palette.bg and FILM.W x FILM.H into the page's <title>, its CSS
@@ -33,7 +34,18 @@ export function build(filmDir, srcRel = path.join('src', 'film.html')) {
     return fs.readFileSync(f).toString('base64');
   });
 
-  const left = html.match(/__FONT[^_]*__/);
+  // __ASSET:<path>__ becomes a data: URL of <filmDir>/<path> (images, audio, subtitles, JSON): the user's own
+  // screenshots, photos, voice-over or music, embedded like the fonts so nothing loads at runtime
+  html = html.replace(/__ASSET:([A-Za-z0-9._\/-]+)__/g, (_, rel) => {
+    const f = path.resolve(dir, rel);
+    if (!f.startsWith(dir + path.sep)) throw new Error(`asset ${rel} is outside the film folder`);
+    if (!fs.existsSync(f)) throw new Error(`missing asset ${rel} (put it in ${dir})`);
+    const mime = ASSET_TYPES[path.extname(f).slice(1).toLowerCase()];
+    if (!mime) throw new Error(`asset ${rel}: unknown type (${Object.keys(ASSET_TYPES).join(', ')})`);
+    return `data:${mime};base64,${fs.readFileSync(f).toString('base64')}`;
+  });
+
+  const left = html.match(/__(?:FONT|ASSET)[^_]*__/);
   if (left) throw new Error(`unreplaced token ${left[0]} in ${srcRel}`);
   const external = [
     /<(?:script|link|img|iframe|video|audio|source)\b[^>]*\b(?:src|href)\s*=\s*["']?(?:https?:)?\/\//i,
@@ -51,6 +63,10 @@ export function build(filmDir, srcRel = path.join('src', 'film.html')) {
   fs.writeFileSync(out, html);
   return out;
 }
+
+const ASSET_TYPES = { png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg', webp: 'image/webp', gif: 'image/gif', svg: 'image/svg+xml',
+  mp3: 'audio/mpeg', m4a: 'audio/mp4', aac: 'audio/aac', wav: 'audio/wav', ogg: 'audio/ogg', opus: 'audio/ogg',
+  json: 'application/json', srt: 'text/plain', vtt: 'text/vtt', txt: 'text/plain' };
 
 // the static head follows FILM: <title>, the page background and the canvas size
 function syncHead(html) {

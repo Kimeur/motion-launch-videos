@@ -25,6 +25,9 @@
 //   frame 150 390 ...   motion-blurred renderFrame(n) stills to stills/debug/
 //   layout              print the measured layout table as JSON
 //
+// Any film mode takes --format 9:16 (or 16:9, 4:5, 1:1): the film at that aspect ratio, with its outputs
+// suffixed (stills/9x16/, renders/<name>-9x16.mp4, preview-9x16.gif, poster-9x16.png)
+//
 // Needs Node >= 20, playwright-core (resolved from <filmDir>, the working directory, then the skill
 // folder), a Chromium, and ffmpeg + ffprobe for render and verify. Chromium is found in this order:
 // $CHROME_PATH, playwright-core's own browser, the newest chromium-* in the Playwright cache
@@ -52,6 +55,12 @@ const NAME = path.basename(FILM_DIR);
 const rest = argv.slice(2);
 const opt = (k, d) => { const i = rest.indexOf(`--${k}`); return i >= 0 ? rest[i + 1] : d; };
 const ensure = (d) => { fs.mkdirSync(d, { recursive: true }); return d; };
+// --format 9:16 renders the film at another aspect ratio (FILM.formats may patch it): the page gets
+// ?format=9x16 and every output carries the suffix (stills/9x16/, renders/<film>-9x16.mp4, preview-9x16.gif)
+const FORMAT = opt('format', null);
+if (FORMAT && !/^\d+[:x]\d+$/.test(FORMAT)) throw new Error(`--format ${FORMAT}: use a ratio such as 9:16, 16:9, 4:5 or 1:1`);
+const FKEY = FORMAT ? FORMAT.replace(':', 'x') : '', SUF = FKEY ? `-${FKEY}` : '';
+const STILLS = FKEY ? path.join('stills', FKEY) : 'stills';
 
 /* ---------------- tools ---------------- */
 const SKILL_DIR = path.dirname(HERE);
@@ -136,7 +145,7 @@ async function openFilm() {
   const errors = [];
   page.on('pageerror', (e) => errors.push(String(e)));
   page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
-  await page.goto(pathToFileURL(htmlPath).href + '?capture=1');
+  await page.goto(pathToFileURL(htmlPath).href + '?capture=1' + (FKEY ? `&format=${FKEY}` : ''));
   try { await page.evaluate(() => window.ready); }
   catch (e) { await browser.close(); throw new Error(`the film failed to start: ${e.message}\n${errors.join('\n')}`); }
   const meta = await page.evaluate(() => ({ W: window.WIDTH, H: window.HEIGHT, FPS: window.FPS, DUR: window.DURATION, ...window.FILM_META }));
@@ -194,7 +203,7 @@ async function stills({ page, meta }) {
     if (bad.length) failed = true;
   }
 
-  const out = ensure(path.join(FILM_DIR, 'stills'));
+  const out = ensure(path.join(FILM_DIR, STILLS));
   for (const f of fs.readdirSync(out)) if (/\.png$/.test(f)) fs.unlinkSync(path.join(out, f));
   const plan = await page.evaluate(() => window.stillsPlan());
   plan.unshift({ frame: 0, name: 'frame-0000', what: 'frame 0 (the loop point)' });
@@ -286,8 +295,8 @@ async function render({ page, meta }) {
   if (!(a >= 0 && b <= meta.N && a < b)) throw new Error(`bad --range ${a}:${b} (0..${meta.N})`);
   const full = a === 0 && b === meta.N;
   const outDir = ensure(path.join(FILM_DIR, 'renders'));
-  const mp4 = path.join(outDir, full ? `${NAME}.mp4` : `${NAME}-f${a}-${b}.mp4`);
-  const gif = path.join(outDir, 'preview.gif');
+  const mp4 = path.join(outDir, full ? `${NAME}${SUF}.mp4` : `${NAME}${SUF}-f${a}-${b}.mp4`);
+  const gif = path.join(outDir, `preview${SUF}.gif`);
   const gh = meta.gif || {};                                  // an engine's hints: pixel art scales by nearest neighbour, undithered
   const crf = opt('crf', '16'), gfps = opt('gif-fps', String(gh.fps || 20)), gw = opt('gif-width', String(gh.width || 480)), gcol = opt('gif-colors', String(gh.colors || 64));
   const gscale = gh.scale === 'neighbor' ? 'neighbor' : 'lanczos', gdither = gh.dither === 'none' ? 'dither=none' : 'dither=bayer:bayer_scale=4';
@@ -328,8 +337,8 @@ async function render({ page, meta }) {
     console.log(`wrote ${gif} (${(fs.statSync(gif).size / 1e6).toFixed(2)} MB)${fs.statSync(gif).size > 4e6 ? '  over 4 MB: try --gif-fps 15 or --gif-colors 32' : ''}`);
     const pf = Math.min(meta.N - 1, Math.round((meta.poster || 0) * meta.FPS));
     await page.evaluate((n) => window.renderFrame(n), pf);
-    fs.writeFileSync(path.join(outDir, 'poster.png'), await png(page));
-    console.log(`wrote ${path.join(outDir, 'poster.png')} (frame ${pf})`);
+    fs.writeFileSync(path.join(outDir, `poster${SUF}.png`), await png(page));
+    console.log(`wrote ${path.join(outDir, `poster${SUF}.png`)} (frame ${pf})`);
   }
 }
 
@@ -372,7 +381,7 @@ function compare(a, b) {
 // which render to check, and which film frames it holds: renders/<name>.mp4 is the whole film;
 // renders/<name>-f<a>-<b>.mp4 (a --range render) holds frames a..b-1
 function mp4Target(meta) {
-  const mp4 = path.resolve(opt('mp4', path.join(FILM_DIR, 'renders', `${NAME}.mp4`)));
+  const mp4 = path.resolve(opt('mp4', path.join(FILM_DIR, 'renders', `${NAME}${SUF}.mp4`)));
   if (!fs.existsSync(mp4)) throw new Error(`no ${mp4}; run render first`);
   const m = /-f(\d+)-(\d+)\.mp4$/.exec(path.basename(mp4));
   const [a, b] = m ? [Number(m[1]), Number(m[2])] : [0, meta.N];
@@ -428,7 +437,7 @@ async function verify({ page, meta }) {
   const size = Number(info.format.size);
   check('mp4 size', true, `${(size / 1e6).toFixed(2)} MB, ${(Number(info.format.bit_rate) / 1e6).toFixed(2)} Mb/s`);
   if (full) {
-    const gif = path.join(FILM_DIR, 'renders', 'preview.gif'), poster = path.join(FILM_DIR, 'renders', 'poster.png');
+    const gif = path.join(FILM_DIR, 'renders', `preview${SUF}.gif`), poster = path.join(FILM_DIR, 'renders', `poster${SUF}.png`);
     if (fs.existsSync(gif)) {
       const g = probe(ffprobe, gif).streams[0];
       check('preview gif', fs.statSync(gif).size < 4e6, `${g.width}x${g.height}, ${g.nb_read_frames} frames, ${(fs.statSync(gif).size / 1e6).toFixed(2)} MB (limit 4 MB)`, true);
@@ -455,7 +464,7 @@ async function mp4frames({ page, meta }) {
   }
   plan = [...new Map(plan.filter((p) => Number.isInteger(p.frame) && p.frame >= a && p.frame < b).map((p) => [p.frame, p])).values()].sort((x, y) => x.frame - y.frame);
   if (!plan.length) throw new Error(`no frames to decode in ${a}..${b - 1}`);
-  const out = ensure(path.join(FILM_DIR, 'stills', 'mp4'));
+  const out = ensure(path.join(FILM_DIR, STILLS, 'mp4'));
   for (const f of fs.readdirSync(out)) if (/\.png$/.test(f)) fs.unlinkSync(path.join(out, f));
   const dec = decodeFrames(ffmpeg, mp4, plan.map((p) => p.frame - a), meta.W, meta.H);
   const cols = 4, cw = Math.round(meta.W / cols / 1.5), ch = Math.round(cw * meta.H / meta.W), rows = Math.ceil(plan.length / cols);
@@ -535,7 +544,7 @@ async function doctor() {
 }
 
 async function debugStills({ page }, kind) {
-  const out = ensure(path.join(FILM_DIR, 'stills', 'debug'));
+  const out = ensure(path.join(FILM_DIR, STILLS, 'debug'));
   for (const a of rest.filter((x) => !x.startsWith('--'))) {
     const v = Number(a);
     const k = kind === 'at' ? await page.evaluate((x) => window.seek(x), v) && 1 : await page.evaluate((x) => window.renderFrame(x), v);
