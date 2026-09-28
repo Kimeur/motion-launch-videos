@@ -89,6 +89,15 @@ The reform starts a quarter note after the burst, while the particles are still 
 
 - 480 px, 12 fps, 16 colours, no dither (the engine's hints): 3.46 MB. The same film at the render's defaults (20 fps, 64 colours, Bayer dither) is 7.9 MB.
 
+## Formats
+
+The same FILM renders at 9:16 and 16:9 (`--format`); `poster-9x16.png` and `poster-16x9.png` are frame 3.25 s of each. The field fills either frame; the formations keep their offset from the centre; the patches redesign them for the frame's shape.
+
+- **9:16 (1080 x 1920).** 7400 particles, so the dust is as dense as at 1:1. ACME stacks into AC over ME at a 330 px cap (baselines 920 and 1336), spacing 6 and dot 1.9 so it averages to the same light at feed size (4402 particles). The burst stretches tall (`[1, 1.5]`, out to 1300 px); the mark's arcs turn to the top and bottom at r 360 round a ring of r 196; EXAMPLE.COM stays one line; the crumb sits under the stack at 1496.
+- **16:9 (1920 x 1080).** 7400 particles. ACME at a 216 px cap, spacing 4.6; the burst stretches wide (`[1.9, 1]`); the mark gains a second, thinner pair of arcs at r 430; EXAMPLE.COM is fitted to 1120 px.
+- Stills critique at each format: 44 checks, all pass, the composition row (a lean of 2 % at most) and the particle-level seam row included; the palette gate passes. Loopcheck passes at each.
+- A full render at 9:16 verifies: H.264, 1080 x 1920, 720 frames, BT.709, PSNR 43.2 dB and up; the MP4 is 29.8 MB (the extra particles and area), the preview GIF 3.7 MB at 320 px wide (the engine narrows a vertical preview; at 480 px it was 6.7 MB).
+
 ## Checks
 
 - Stills critique: 43 checks, all pass. Palette gate: 20 accent frames, no mixed ink.

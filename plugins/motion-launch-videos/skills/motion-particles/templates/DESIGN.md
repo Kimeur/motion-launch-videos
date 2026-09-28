@@ -76,6 +76,15 @@ One chromatic accent (glow and overlap add inks; two chromatic inks would mix in
 
 - 480 px, 12 fps, 16 colours, no dither: <size> MB (under 4).
 
+## Formats
+
+Delivered: <1:1, 9:16, 16:9>. The field fills every frame; formations keep their offset from the centre unless pinned. The patch in `FILM.formats` (positions in 1:1 pixels, merged by `id`):
+
+| Format | Swarm | Formations | Small print |
+|---|---|---|---|
+| 9:16 (1080 x 1920) | <n 7400> | <acme stacked 'AC\nME', cap 330, spacing 6, dot 1.9; mark's arcs to top and bottom, r 360; burst stretch [1, 1.5]> | <y 1072, under the stack> |
+| 16:9 (1920 x 1080) | <n 7400> | <acme cap 216; mark with a second pair of arcs at r 430; burst stretch [1.9, 1]; url fit 1120> | <as at 1:1> |
+
 ## Review stills
 
-Written by `render.mjs stills`: each move under way, each formation fully formed, each accent frame, frame 0 and the last frame, plus `stills/contact.png`.
+Written by `render.mjs stills` (and `--format 9:16`, into `stills/9x16/`): each move under way, each formation fully formed, each accent frame, frame 0 and the last frame, plus `contact.png`.

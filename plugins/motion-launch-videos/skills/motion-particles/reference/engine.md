@@ -32,6 +32,7 @@ Fields every text and shape formation takes:
 | `spin` | degrees per second the formation turns about its centre (a sphere turns about its axis) | 0 |
 | `glint` | `{ at, dur, width, dot, angle }`: a band `width` px wide sweeps across the formation along `angle` (degrees, 0 = left to right) from `at` for `dur` s, growing the dots it passes to `dot` x; sin-enveloped, so it is exactly 0 at both ends | none |
 | `center` | the formation's centre `[x, y]`: spin, explode, `center`/`angle` orders. Text: the ink's centre | the targets' box |
+| `pin` | how the formation follows another format: none keeps its offset from the frame's centre, `'t'` `'b'` `'l'` `'r'` its distance from that edge (Formats, below) | none |
 | `bleed` | `true` exempts the formation from the live-area check | |
 | `assign` | only for `formations[0]` when it is not the field: how particles meet their targets at t = 0 | `index` |
 
@@ -39,7 +40,7 @@ Fields every text and shape formation takes:
 
 | Field | Meaning | Demo |
 |---|---|---|
-| `box` | `[x0, y0, x1, y1]` the homes fill, as blue noise | the canvas plus 48 px |
+| `box` | `[x0, y0, x1, y1]` the homes fill, as blue noise; in another format each side keeps its distance from its edge | the canvas plus 48 px |
 | `colors` | `{ role: weight }`: each particle's colour in the field and as dust | `{ paper: 0.85, signal: 0.15 }` |
 | `depth` | `{ size: [a, b], alpha: [a, b], bias }`: a seeded depth per particle (0 far, 1 near), raised to `bias` (above 1: most far and faint, a few near and bright), sets its size factor and opacity | size 0.35 to 1.9, alpha 0.06 to 1, bias 2.2 |
 | `vignette` | dust dims toward the corners by this much | 0.55 |
@@ -52,13 +53,14 @@ The field never wraps: every particle circles its own home, so a particle can le
 
 ### Text: `text`
 
-A line of type laid out with the core's `layoutText` (kerning, `pairs`, `track`, `fit`, `cap`), rasterised glyph by glyph, and sampled inside each glyph's ink.
+A line of type laid out with the core's `layoutText` (kerning, `pairs`, `track`, `fit`, `cap`), rasterised glyph by glyph, and sampled inside each glyph's ink. A `\n` in `text` stacks lines, each laid out with the same size rule and anchor, `leading` px apart.
 
 | Field | Meaning |
 |---|---|
 | `text`, `font` | the words and the font role (`FILM.fonts`) |
 | `size`, `cap`, `fit`, `justify` | one size rule: font size px, cap height px, `fit: true` to span the measure or `fit: <px>` |
-| `track`, `pairs`, `anchor`, `x`, `y` | tracking and optical pairs in 1/1000 em, `L` `C` `R`, the anchor x and the baseline |
+| `track`, `pairs`, `anchor`, `x`, `y` | tracking and optical pairs in 1/1000 em, `L` `C` `R`, the anchor x and the (first) baseline |
+| `leading` | px from one stacked line's baseline to the next (default 1.25 x the cap height, on the grid) |
 | `fill` | the particles' colour role |
 | `glyphs` | per character: `{ '.': { fill, dot, spacing } }`, an accent glyph in another role, bigger or denser |
 
@@ -75,7 +77,7 @@ A formation of one or more parts, sampled one by one at the formation's `spacing
 | `sphere` | `r`, `n` points (Fibonacci, even), `persp` (camera distance in radii, 4), `back` (opacity of the far side, 0.3), `tilt` (degrees toward the viewer); turns with the formation's `spin` | projected every frame |
 | `cloud` | `r`, `n`: a seeded gaussian blob | points |
 
-Per part: `fill`, `dot`, `spacing`.
+Per part: `fill`, `dot`, `spacing`, and an `id`, so a format patch can change one part and keep the others.
 
 ### Derived: `from`
 
@@ -111,11 +113,35 @@ A spring still settling at the end of a cycle loop carries over into the start o
 
 ## Camera: `FILM.camera`
 
-`[{ at, z, rot, x, y, spring }]` in time order: zoom, turn (degrees) and move (px) about `FILM.cameraPivot` (the canvas centre), each a Prop on `spring` (`DOLLY`). The camera is applied to every particle before its streak is drawn, so a camera move streaks correctly with no subframes. It must end where it starts (the core's "loop closes" row). Small print is not under the camera.
+`[{ at, z, rot, x, y, spring }]` in time order: zoom, turn (degrees) and move (px) about `FILM.cameraPivot` (the canvas centre; an authored pivot keeps its offset from the centre in other formats), each a Prop on `spring` (`DOLLY`). The camera is applied to every particle before its streak is drawn, so a camera move streaks correctly with no subframes. It must end where it starts (the core's "loop closes" row). Small print is not under the camera.
 
 ## Small print: `FILM.type`
 
-`[{ id, text, font, size, cap, track, pairs, anchor, x, y, fill, on, at, erase, cursor }]`: a line of real type, typed in one character per frame from `at` with a block cursor, backspaced from `erase`. Without `at` it is on screen from frame 0. In a cycle loop a line typed in must be erased before the loop point.
+`[{ id, text, font, size, cap, track, pairs, anchor, x, y, pin, fill, on, at, erase, cursor }]`: a line of real type, typed in one character per frame from `at` with a block cursor, backspaced from `erase`. `pin` as for a formation. Without `at` it is on screen from frame 0. In a cycle loop a line typed in must be erased before the loop point.
+
+## Formats
+
+One FILM renders at 1:1, 4:5, 9:16 and 16:9 with `--format` (core.md, Formats). Positions stay in the base format's pixels, patches included. What follows the frame by itself:
+
+- **The field** fills the new canvas: its homes are blue noise over the whole frame, the vignette is measured from the new centre. The same `swarm.n` over a bigger frame thins the dust: 9:16 and 16:9 have 1.7 x the area, so a patch raises `n` by as much to keep the density.
+- **Each text and shape formation moves as one piece.** Its reference point (`center`, else the text's `x` and baseline, else its first part's `x`, `y`) goes through `fmtPos` with the formation's `pin`, and every target moves by the same offset, the vertical part rounded to whole grid units so baselines stay on the 8 px grid. With no pin a formation keeps its offset from the frame's centre, which is what a word or a mark in the middle of a square wants. A derived formation moves with its source; its `explode`, `push` and `dx`, `dy` are distances and stay as written.
+- **Small print** (`type`) moves the same way with its own `pin`. Unpinned, it keeps its distance from the content above it; `pin: 'b'` sends it to the bottom edge, where a 9:16 frame would then lean on it.
+- **Sizes** (`cap`, `size`, `fit`, `r`, `outline`, `spacing`, `dot`) stay as written: the standard formats keep the short side, so a 1080 film is 1080 px across its narrow side in every format.
+
+Then design each format with a patch in `FILM.formats`: formations, parts and `type` lines merge by `id`, anything else is replaced. A vertical frame takes a taller mark or stacked words; a horizontal one a wider word, mark or burst. A bigger word needs more particles or a wider spacing: grow `spacing` and `dot` with the cap height (in proportion, the word averages to the same light at feed size) and check the budget with `render.mjs layout --format 9:16`. The demo's patches:
+
+| | 9:16 (1080 x 1920) | 16:9 (1920 x 1080) |
+|---|---|---|
+| swarm | `n: 7400`: the dust as dense as at 1:1, and room for the stacked name | `n: 7400` |
+| acme | stacked `'AC\nME'`, cap 330, leading 416, first baseline 496 (920 in the tall frame), spacing 6, dot 1.9, a wider glint band | cap 216, spacing 4.6, dot 1.4 |
+| burst | `stretch: [1, 1.5]`, `explode: [90, 1300]`: a tall burst | `stretch: [1.9, 1]`, the same reach: a wide one |
+| mark | the ring at r 196, the arcs turned to the top and bottom at r 360: a taller mark | the arcs at r 318 and a second, thinner pair at r 430: a wider mark |
+| url | as at 1:1 (fitted to 848 px, the width is the limit) | `fit: 1120`, spacing 3.8, dot 1.3 |
+| CRUMB | y 1072 (1496 in the tall frame): under the stack | as at 1:1 |
+
+More particles on a bigger frame cost render time and bytes: the demo's 9:16 MP4 is 29.8 MB against 17.3 at 1:1. The engine makes a vertical frame's preview GIF 320 px wide instead of 480, so it stays under 4 MB (3.7 MB for the demo).
+
+Run `stills` and `loopcheck` with `--format` for every format you deliver: the live-area and legibility rows measure the patched formations, the composition row checks that the stills do not lean to one side, and the seam row is checked particle by particle in that frame.
 
 ## Springs
 

@@ -83,10 +83,10 @@ const FILM = {
     { id: 'mark', center: [540, 528], dot: 1.15, spacing: 4.1, drift: 0.3, dust: 0.2,
       glint: { at: beat(12.5), dur: beat(2), width: 110, dot: 1.45, angle: -35 },
       parts: [
-        { shape: 'circle', x: 540, y: 528, r: 60, fill: 'signal', dot: 1.35, spacing: 3.2 },
-        { shape: 'circle', x: 540, y: 528, r: 178, outline: 44, fill: 'paper' },
-        { shape: 'arc', x: 540, y: 528, r: 298, from: 38, to: 142, outline: 26, fill: 'paper' },
-        { shape: 'arc', x: 540, y: 528, r: 298, from: 218, to: 322, outline: 26, fill: 'paper' },
+        { id: 'core', shape: 'circle', x: 540, y: 528, r: 60, fill: 'signal', dot: 1.35, spacing: 3.2 },
+        { id: 'ring', shape: 'circle', x: 540, y: 528, r: 178, outline: 44, fill: 'paper' },
+        { id: 'arcR', shape: 'arc', x: 540, y: 528, r: 298, from: 38, to: 142, outline: 26, fill: 'paper' },
+        { id: 'arcL', shape: 'arc', x: 540, y: 528, r: 298, from: 218, to: 322, outline: 26, fill: 'paper' },
       ] },
     // CTA: the domain, its dot in the accent.
     { id: 'url', text: 'EXAMPLE.COM', font: 'display', fit: 848, track: 10, anchor: 'C', x: 540, y: 576,
@@ -110,6 +110,32 @@ const FILM = {
     { id: 'CRUMB', text: 'DEMO COPY, FICTIONAL PRODUCT', font: 'mono', size: 26, track: 20, anchor: 'C', x: 540, y: 936,
       fill: 'paper', at: beat(4.5), erase: beat(21) },
   ],
+  // Other formats: positions above stay in 1080 x 1080 terms and move with the frame's centre (or the edge a
+  // `pin` names). Each patch redesigns what the new shape invites; the field always fills the frame.
+  formats: {
+    // 9:16: the name stacks into two big lines, the mark's arcs turn to the top and bottom, the burst runs tall
+    '9:16': {
+      swarm: { n: 7400 },                        // the frame is 1.7 x the area: the same dust density, and the stack's 4402
+      formations: [
+        { id: 'acme', text: 'AC\nME', cap: 330, leading: 416, y: 496, spacing: 6, dot: 1.9, glint: { width: 150 } },
+        { id: 'burst', stretch: [1, 1.5], explode: [90, 1300] },
+        { id: 'mark', parts: [{ id: 'ring', r: 196 }, { id: 'arcR', r: 360, from: -50, to: 50 }, { id: 'arcL', r: 360, from: 130, to: 230 }] },
+      ],
+      type: [{ id: 'CRUMB', y: 1072 }],
+    },
+    // 16:9: a wider name, the mark widened by a second pair of arcs, the burst and the domain run wide
+    '16:9': {
+      swarm: { n: 7400 },
+      formations: [
+        { id: 'acme', cap: 216, spacing: 4.6, dot: 1.4 },
+        { id: 'burst', stretch: [1.9, 1], explode: [90, 1300] },
+        { id: 'mark', parts: [{ id: 'arcR', r: 318 }, { id: 'arcL', r: 318 },
+          { id: 'farR', shape: 'arc', x: 540, y: 528, r: 430, from: 55, to: 125, outline: 14, fill: 'paper' },
+          { id: 'farL', shape: 'arc', x: 540, y: 528, r: 430, from: 235, to: 305, outline: 14, fill: 'paper' }] },
+        { id: 'url', fit: 1120, spacing: 3.8, dot: 1.3 },
+      ],
+    },
+  },
 };
 
 /* ===== CORE BEGIN: shared/core.js, synced by tools/sync.mjs. Do not edit it here. ===== */
@@ -137,6 +163,31 @@ const FILM = {
  * its end, so an engine can name its own functions freely.
  * ========================================================================== */
 const CORE = (() => {
+/* ---------------- formats: one film, several aspect ratios ---------------- */
+// ?format=9x16 (the scripts pass --format 9:16) re-sizes the film before anything reads FILM. A key of
+// FILM.formats patches any field for that format (objects merge, arrays of items with an id merge by id,
+// anything else is replaced). Without W and H in the patch, the standard ratios keep the film's short side:
+// 1:1, 4:5, 9:16, 16:9. Positions stay authored in the base format; an engine maps them with fmtX/fmtY/fmtPos,
+// which keep an element's offset from the centre (the default) or from the edge its pin names.
+const BW = FILM.W, BH = FILM.H;
+const FORMAT = (() => { const m = /[?&]format=(\d+)[x:](\d+)/.exec(location.search); return m ? `${m[1]}:${m[2]}` : null; })();
+function mergeInto(a, b) {
+  for (const [k, v] of Object.entries(b)) {
+    const o = a[k];
+    if (Array.isArray(v) && Array.isArray(o) && v.every((x) => x && x.id != null)) {
+      for (const it of v) { const t = o.find((x) => x && x.id === it.id); if (t) mergeInto(t, it); else o.push(it); }
+    } else if (v && typeof v === 'object' && !Array.isArray(v) && o && typeof o === 'object' && !Array.isArray(o)) mergeInto(o, v);
+    else a[k] = v;
+  }
+  return a;
+}
+if (FORMAT) {
+  const patch = (FILM.formats || {})[FORMAT] || {};
+  const [ra, rb] = FORMAT.split(':').map(Number), short = Math.min(BW, BH);
+  if (!(ra > 0 && rb > 0)) throw new Error(`bad format ${FORMAT}`);
+  const size = ra === rb ? [short, short] : ra < rb ? [short, Math.round(short * rb / ra / 2) * 2] : [Math.round(short * ra / rb / 2) * 2, short];
+  mergeInto(FILM, { W: size[0], H: size[1], ...patch });
+}
 const { W, H, FPS, DUR } = FILM;
 const NFR = Math.round(DUR * FPS);                 // output frames in the loop
 const CX = W / 2, CY = H / 2;
@@ -149,6 +200,13 @@ const GRID = FILM.grid || {};
 const MARGIN = GRID.margin != null ? GRID.margin : Math.round(104 * U);
 const UNIT = GRID.unit || 8;
 const MEASURE = W - 2 * MARGIN;
+const FS = Math.min(W, H) / Math.min(BW, BH);      // base px -> this format's px
+const FMT = { key: FORMAT || `${BW}x${BH}`, W, H, BW, BH, s: FS, aspect: W === H ? 'square' : W < H ? 'vertical' : 'horizontal' };
+// pin: 'l' or 'r' keeps the distance from that edge, 't' or 'b' likewise; otherwise the offset from the centre
+const fmtX = (x, pin = '') => /l/.test(pin) ? x * FS : /r/.test(pin) ? W - (BW - x) * FS : W / 2 + (x - BW / 2) * FS;
+const fmtY = (y, pin = '') => /t/.test(pin) ? y * FS : /b/.test(pin) ? H - (BH - y) * FS : H / 2 + (y - BH / 2) * FS;
+const fmtPos = (x, y, pin = '') => [fmtX(x, pin), fmtY(y, pin)];
+const fmtSz = (v) => v * FS;
 const LOOP = FILM.loop || 'hold';                  // 'hold': ends on a still copy of frame 0; 'cycle': periodic, continuous over the seam; 'none'
 const BLUR = FILM.blur !== false;                  // false: one sample per frame (cartoon, pixel art)
 const SHUTTER = 0.75;                              // 270 degrees, trailing
@@ -630,7 +688,49 @@ function critique() {
       add('blank frames', 'WARN', `frames ${a}-${b} (t ${(a / FPS).toFixed(3)}-${(b / FPS).toFixed(3)}) show nothing: start the next entrance sooner, or pop it in at the cut`);
   }
   for (const w of WARN) add('timeline', 'WARN', w);
+  compositionCheck(add);
   return checks;
+}
+// Composition: where the ink sits in the review stills. Ink is any pixel away from the background and from
+// the colours of the roles an engine lists as backdrop (a stage, a sky). The lean on an axis is the difference
+// between the empty margins on its two sides, or twice the ink's centre of mass off the middle (a small footer
+// stretches the box but barely moves the mass), whichever is larger. An average lean past a fifth of the
+// canvas warns, past 30 % fails: content authored for a square left in the top of a 9:16 frame, or the left
+// of a 16:9 one.
+function inkBox(isBg, step) {
+  const d = ctx.getImageData(0, 0, W, H).data;
+  let x0 = W, y0 = H, x1 = -1, y1 = -1, n = 0, sx = 0, sy = 0;
+  for (let y = 0; y < H; y += step) for (let x = 0; x < W; x += step) {
+    const i = (y * W + x) * 4;
+    if (isBg(d[i], d[i + 1], d[i + 2])) continue;
+    if (x < x0) x0 = x; if (x > x1) x1 = x; if (y < y0) y0 = y; if (y > y1) y1 = y;
+    n++; sx += x; sy += y;
+  }
+  return x1 < 0 ? null : { box: [x0, y0, x1 + step, y1 + step], cx: sx / n, cy: sy / n };
+}
+function compositionCheck(add) {
+  const bgs = [PAL.bg, ...(ENGINE.backdrop || []).map((r) => PAL[r] || r)].map(rgbOf);
+  const isBg = (r, g, b) => bgs.some((c) => Math.abs(r - c[0]) + Math.abs(g - c[1]) + Math.abs(b - c[2]) < 36);
+  const pick = (a, b) => Math.abs(a) >= Math.abs(b) ? a : b;
+  const rows = [];
+  for (const { frame } of stillsPlan()) {
+    draw(ctx, frame / FPS);
+    const ink = inkBox(isBg, Math.max(2, Math.round(3 * U)));
+    if (!ink) continue;
+    const b = ink.box, top = b[1] / H, bottom = (H - b[3]) / H, left = b[0] / W, right = (W - b[2]) / W;
+    if (top + bottom > 0.9 || left + right > 0.9) continue;         // a speck: nothing to balance
+    rows.push({ v: pick(bottom - top, 2 * (0.5 - ink.cy / H)), h: pick(right - left, 2 * (0.5 - ink.cx / W)) });
+  }
+  if (!rows.length) { add('composition', 'PASS', 'no still with measurable ink off the background'); return; }
+  const mean = (k) => rows.reduce((a, r) => a + r[k], 0) / rows.length;
+  const v = mean('v'), h = mean('h');
+  const lean = (x, a, b) => `${x > 0 ? a : b} (a lean of ${Math.round(Math.abs(x) * 100)} %)`;
+  const verdict = (x) => Math.abs(x) > 0.3 ? 'FAIL' : Math.abs(x) > 0.2 ? 'WARN' : 'PASS';
+  const worst = Math.abs(v) >= Math.abs(h) ? ['v', v] : ['h', h];
+  const st = verdict(worst[1]);
+  add('composition', st, st === 'PASS'
+    ? `${rows.length} stills balanced: a lean of ${Math.round(Math.abs(v) * 100)} % top to bottom, ${Math.round(Math.abs(h) * 100)} % left to right on average`
+    : `the stills lean to the ${worst[0] === 'v' ? lean(v, 'top', 'bottom') : lean(h, 'left', 'right')}, over ${rows.length} stills (${FMT.key}): centre the content or pin elements to the edges they belong to`);
 }
 // review stills: the engine's plan (each scene in and at rest, each transition) plus every accent frame
 function stillsPlan() {
@@ -658,7 +758,8 @@ function boot(E) {
   for (const [k, v] of Object.entries(SP)) if (!(v[0] > 0 && v[0] <= 1 && v[1] > 0)) throw new Error(`spring ${k}: zeta must be in (0, 1] and omega > 0`);
   window.DURATION = DUR; window.FPS = FPS; window.WIDTH = W; window.HEIGHT = H;
   window.FILM_META = { title: FILM.title, poster: FILM.poster || 0, bg: PAL.bg, palette: PAL, loop: LOOP, blur: BLUR,
-    engine: E.name, strictPalette: !!E.strictPalette, seamCut: !!E.seamCut, gif: E.gif || null };
+    engine: E.name, strictPalette: !!E.strictPalette, seamCut: !!E.seamCut, gif: E.gif || null,
+    format: FMT.key, aspect: FMT.aspect, formats: Object.keys(FILM.formats || {}) };
   Object.assign(window, { seek, renderFrame, motionAt, layoutTable, critique, stillsPlan, textByFace, accentFrames, misFrames: accentFrames, offPalette });
   const roles = Object.keys(FILM.fonts || {}), sample = filmChars();
   window.ready = Promise.all(roles.map((r) => document.fonts.load(fontStr(r, 100), sample)))
@@ -698,7 +799,8 @@ function boot(E) {
     rgbOf, hexOf, mix, hueChroma, hueDist, lum, contrast, inksClash,
     face, fontStr, setFont, capRatio, useText, measureRun, layoutText, blurQ, glyphSprite, fillGlyph, drawText,
     svgPath, CUTS, ACTIVE, ACCENTS, WARN, CONTRAST, cutAt, activeIn, accentAt, needContrast,
-    checkLiveArea, checkSpacing, seek, boot };
+    checkLiveArea, checkSpacing, seek, boot,
+    FMT, fmtX, fmtY, fmtPos, fmtSz };
 })();
 const { W, H, FPS, DUR, NFR, CX, CY, U, PAL, col, role, GRID, MARGIN, UNIT, MEASURE, LOOP, BLUR, SHUTTER, TAU,
   canvas, ctx, mkCanvas, mk2d, mctx,
@@ -708,7 +810,8 @@ const { W, H, FPS, DUR, NFR, CX, CY, U, PAL, col, role, GRID, MARGIN, UNIT, MEAS
   rgbOf, hexOf, mix, hueChroma, hueDist, lum, contrast, inksClash,
   face, fontStr, setFont, capRatio, useText, measureRun, layoutText, blurQ, glyphSprite, fillGlyph, drawText,
   svgPath, CUTS, ACTIVE, ACCENTS, WARN, CONTRAST, cutAt, activeIn, accentAt, needContrast,
-  checkLiveArea, checkSpacing, seek, boot } = CORE;
+  checkLiveArea, checkSpacing, seek, boot,
+  FMT, fmtX, fmtY, fmtPos, fmtSz } = CORE;
 /* ===== CORE END ===== */
 
 /* ==========================================================================
@@ -750,6 +853,18 @@ function hilbert(x, y) {                                     // Hilbert index on
     if (ry === 0) { if (rx === 1) { x = n - 1 - x; y = n - 1 - y; } const tmp = x; x = y; y = tmp; }
   }
   return d;
+}
+// Formats: positions are authored in the base format. A formation moves as one piece: its reference point
+// (center, the text's anchor, or its first part) goes through fmtPos with the formation's pin, and every
+// target moves by the same offset, its vertical part a whole number of grid units, so baselines stay on
+// the grid. [0, 0] in the base format.
+const onGrid = (d) => Math.round(d / UNIT) * UNIT;
+function fmtShift(ref, pin) { if (W === FMT.BW && H === FMT.BH) return [0, 0]; const p = fmtPos(ref[0], ref[1], pin || ''); return [p[0] - ref[0], onGrid(p[1] - ref[1])]; }
+function formRef(s) {
+  if (s.center) return s.center;
+  if (s.text != null) return [s.x != null ? s.x : FMT.BW / 2, s.y != null ? s.y : FMT.BH / 2];
+  const p = (s.parts || [])[0];
+  return p ? [p.x != null ? p.x : FMT.BW / 2, p.y != null ? p.y : FMT.BH / 2] : [FMT.BW / 2, FMT.BH / 2];
 }
 const hq = (v, lo, span) => Math.max(0, Math.min(1023, Math.floor((v - lo) / span * 1024)));
 function shufflePairs(a, seed) {                            // Fisher-Yates over (x, y) pairs, seeded
@@ -855,28 +970,33 @@ function rasterise(box, pad, paint) {                        // an alpha mask of
 /* ---------------- formations ---------------- */
 // Targets are sampled at build time; every particle a formation does not use stays in the field as dust.
 function sampleParts(F) {
-  const s = F.spec, sp0 = s.spacing || 4.5 * U;
+  const s = F.spec, sp0 = s.spacing || 4.5 * U, [fx, fy] = F.shift;
   const pts = [];                                            // { x, y, col, part, sz }
   const addMask = (m, col, part, seed, sp, sz) => { const got = rsa(candidates(m, sp, seed), sp); for (let k = 0; k < got.length; k += 2) pts.push({ x: got[k], y: got[k + 1], col, part, sz }); return got.length >> 1; };
   F.glyphs = [];
-  if (s.text != null) {                                      // a line of type, one mask per glyph
-    const L = layoutText({ id: s.id, text: s.text, font: s.font || 'display', size: s.size, cap: s.cap, fit: s.fit, justify: s.justify, track: s.track, pairs: s.pairs, anchor: s.anchor || 'C', x: s.x, baseline: s.y });
-    F.line = L;
-    L.glyphs.forEach((g) => {
+  if (s.text != null) {                                      // type, one mask per glyph; '\n' stacks lines `leading` px apart
+    const rows = String(s.text).split('\n'), y0 = (s.y != null ? s.y : 0) + fy;
+    F.lines = [];
+    rows.forEach((row, li) => {
+      const lead = li === 0 ? 0 : s.leading != null ? s.leading : onGrid(1.25 * F.lines[0].capH);
+      F.lines.push(layoutText({ id: s.id, text: row, font: s.font || 'display', size: s.size, cap: s.cap, fit: s.fit, justify: s.justify, track: s.track, pairs: s.pairs, anchor: s.anchor || 'C', x: s.x != null ? s.x + fx : undefined, baseline: y0 + li * lead }));
+    });
+    F.line = F.lines[0];
+    for (const Li of F.lines) Li.glyphs.forEach((g) => {
       if (g.space) return;
       const o = (s.glyphs && s.glyphs[g.ch]) || {}, fill = o.fill || s.fill || 'paper', sp = o.spacing || sp0, sz = o.dot || 1;
-      const m = rasterise([g.inkL, L.baseline - g.asc, g.inkR, L.baseline + g.desc], 3, (x) => { setFont(x, L.font); x.fillStyle = '#fff'; x.fillText(g.ch, g.x, L.baseline); });
+      const m = rasterise([g.inkL, Li.baseline - g.asc, g.inkR, Li.baseline + g.desc], 3, (x) => { setFont(x, Li.font); x.fillStyle = '#fff'; x.fillText(g.ch, g.x, Li.baseline); });
       const gi = F.glyphs.length;
       const n = addMask(m, colIdx(fill), gi, hash(SEED, F.idx, 1000 + gi) * 4294967296 | 0, sp, sz);
-      F.glyphs.push({ ch: g.ch, n, area: m.area, fill, sz, spacing: sp, box: [g.inkL, L.baseline - g.asc, g.inkR, L.baseline + g.desc] });
+      F.glyphs.push({ ch: g.ch, n, area: m.area, fill, sz, spacing: sp, box: [g.inkL, Li.baseline - g.asc, g.inkR, Li.baseline + g.desc] });
     });
     F.words = s.text.split(/\s+/).filter((w) => /[A-Za-z0-9€$£]/.test(w)).length;
-    F.capH = L.capH;
+    F.capH = Math.min(...F.lines.map((Li) => Li.capH));
   }
   (s.parts || []).forEach((p, pi) => {
     const col = colIdx(p.fill || s.fill || 'paper'), gi = F.glyphs.length, seed = hash(SEED, F.idx, 2000 + pi) * 4294967296 | 0, sp = p.spacing || sp0, sz = p.dot || 1;
     let n = 0, area = 0;
-    const ox = p.x != null ? p.x : (s.center ? s.center[0] : CX), oy = p.y != null ? p.y : (s.center ? s.center[1] : CY);
+    const ox = (p.x != null ? p.x : s.center ? s.center[0] : FMT.BW / 2) + fx, oy = (p.y != null ? p.y : s.center ? s.center[1] : FMT.BH / 2) + fy;
     if (p.shape === 'grid') {                                // a lattice: no sampling
       const [cols, rows] = p.grid || [8, 8], [gx, gy] = p.gap || [40, 40];
       for (let j = 0; j < rows; j++) for (let i = 0; i < cols; i++) { pts.push({ x: ox + (i - (cols - 1) / 2) * gx, y: oy + (j - (rows - 1) / 2) * gy, col, part: gi, sz }); n++; }
@@ -922,7 +1042,8 @@ function buildForm(s, idx) {
 }
 // the field: homes as blue noise over its box, depth, colour, wave phases and drift phases per particle
 function buildField(F) {
-  const s = F.spec, box = s.box || [-48 * U, -48 * U, W + 48 * U, H + 48 * U];
+  const s = F.spec, b0 = s.box;                              // an authored box keeps its distance from each edge, so it covers any format as it covered the base
+  const box = b0 ? [fmtX(b0[0], 'l'), fmtY(b0[1], 't'), fmtX(b0[2], 'r'), fmtY(b0[3], 'b')] : [-48 * U, -48 * U, W + 48 * U, H + 48 * U];
   const area = (box[2] - box[0]) * (box[3] - box[1]);
   let r = Math.sqrt(0.62 * area / NP), got = [];
   for (let it = 0; it < 12; it++) {
@@ -1167,6 +1288,7 @@ function buildFormations() {
   for (const F of FORMS) {
     if (F.kind !== 'shape') continue;
     const s = F.spec;
+    F.shift = fmtShift(formRef(s), s.pin);
     F.targets = sampleParts(F);
     if (s.n && F.targets.length > s.n) F.targets = shuffled(F.targets, SEED ^ (F.idx * 131)).slice(0, s.n);
     F.want = F.targets.length;
@@ -1175,8 +1297,11 @@ function buildFormations() {
     let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
     for (const p of F.targets) { x0 = Math.min(x0, p.x); y0 = Math.min(y0, p.y); x1 = Math.max(x1, p.x); y1 = Math.max(y1, p.y); }
     F.tbox = [x0, y0, x1, y1];
-    if (F.line) { F.cx = (F.line.inkL + F.line.inkR) / 2; F.cy = F.line.baseline - F.line.capH / 2; }
-    else if (s.center) { F.cx = s.center[0]; F.cy = s.center[1]; }
+    if (F.line) {                                            // the ink's centre: across every line, cap top to last baseline
+      const Ls = F.lines, last = Ls[Ls.length - 1];
+      F.cx = (Math.min(...Ls.map((Li) => Li.inkL)) + Math.max(...Ls.map((Li) => Li.inkR))) / 2; F.cy = Ls.length === 1 ? F.line.baseline - F.line.capH / 2 : (F.line.baseline - F.line.capH + last.baseline) / 2;
+    }
+    else if (s.center) { F.cx = s.center[0] + F.shift[0]; F.cy = s.center[1] + F.shift[1]; }
     else { F.cx = (x0 + x1) / 2; F.cy = (y0 + y1) / 2; }
     F.tx = new Float32Array(NP); F.ty = new Float32Array(NP); F.col = new Uint8Array(NP); F.part = new Int16Array(NP).fill(-1); F.sz = new Float32Array(NP).fill(1);
     const sph = F.targets.find((p) => p.sphere);
@@ -1201,7 +1326,8 @@ function buildFormations() {
     F.src = src; F.used = src.used; F.n = src.n; F.col = src.col; F.part = src.part; F.tx = src.tx; F.ty = src.ty; F.sz = src.sz;
     F.alpha = s.alpha != null ? s.alpha : src.alpha; F.size = s.dot != null ? s.dot : src.size;
     F.drift = s.drift != null ? s.drift : src.drift; F.dust = s.dust != null ? s.dust : src.dust;
-    F.cx = s.center ? s.center[0] : src.cx != null ? src.cx : CX; F.cy = s.center ? s.center[1] : src.cy != null ? src.cy : CY;
+    const sh = src.shift || [0, 0];                          // a derived formation moves with its source
+    F.cx = s.center ? s.center[0] + sh[0] : src.cx != null ? src.cx : CX; F.cy = s.center ? s.center[1] + sh[1] : src.cy != null ? src.cy : CY;
     F.scale = s.scale != null ? s.scale : 1; F.rot = (s.rot || 0) * DEG; F.dx = s.dx || 0; F.dy = s.dy || 0;
     F.ex = new Float32Array(NP); F.ey = new Float32Array(NP);
     F.sphereAlpha = src.sphereAlpha || (() => 1);
@@ -1235,7 +1361,7 @@ function buildCamera() {
     if (k.x != null) CAM.x.to(k.at, k.x, sp);
     if (k.y != null) CAM.y.to(k.at, k.y, sp);
   }
-  const pv = FILM.cameraPivot || [CX, CY];
+  const pv = FILM.cameraPivot ? fmtPos(FILM.cameraPivot[0], FILM.cameraPivot[1]) : [CX, CY];
   CAM.px = pv[0]; CAM.py = pv[1];
   GLOWP = new Prop(GLOW ? GLOW.gain : 0, 'glow.gain');
   if (GLOW) for (const k of (GLOW.keys || []).slice().sort((a, b) => a.at - b.at)) GLOWP.to(k.at, k.gain, k.spring || 'FADE');
@@ -1246,7 +1372,8 @@ function camAt(t) {
 }
 function buildType() {
   for (const s of FILM.type || []) {
-    const line = layoutText({ id: s.id, text: s.text, font: s.font || 'mono', size: s.size, cap: s.cap, track: s.track, pairs: s.pairs, anchor: s.anchor || 'C', x: s.x, baseline: s.y });
+    const [fx, fy] = fmtShift([s.x != null ? s.x : FMT.BW / 2, s.y != null ? s.y : 0], s.pin);   // pinned like a formation
+    const line = layoutText({ id: s.id, text: s.text, font: s.font || 'mono', size: s.size, cap: s.cap, track: s.track, pairs: s.pairs, anchor: s.anchor || 'C', x: s.x != null ? s.x + fx : undefined, baseline: (s.y != null ? s.y : 0) + fy });
     const L = { spec: s, id: s.id, line, fill: role(s.fill || 'paper'), box: [line.inkL, line.top, line.inkR, line.bottom], n: line.glyphs.length };
     needContrast(s.id, s.fill || 'paper', s.on || 'bg', (s.font || 'mono') === 'mono' || line.size < 40 * U ? 4.5 : 3);
     TYPE.push(L);
@@ -1445,7 +1572,7 @@ function checks(add) {
     const s = F.spec;
     add(`budget: ${F.id}`, F.want > NP ? 'FAIL' : 'PASS', F.want > NP ? `needs ${F.want} particles at spacing ${s.spacing || 4.5}, the swarm has ${NP}: widen the spacing or raise swarm.n` : `${F.n} of ${NP} particles (${(100 * F.n / NP).toFixed(0)} %), spacing ${(s.spacing || 4.5 * U).toFixed(1)} px; ${NP - F.n} stay as dust`);
     if (F.words != null) add(`words: ${F.id}`, F.words > 4 ? 'FAIL' : 'PASS', `${F.words} words of display type (at most 4 a beat)`);
-    if (F.line && F.spec.y % UNIT) add(`grid: ${F.id}`, 'WARN', `baseline ${F.spec.y} is not on the ${UNIT} px grid`);
+    if (F.line) for (const Li of F.lines) if (Li.baseline % UNIT) add(`grid: ${F.id}`, 'WARN', `baseline ${Li.baseline} is not on the ${UNIT} px grid`);
     const w = ST.filter((x) => x.F === F);
     // live area: the targets, their radius and drift, through the camera while formed
     const pad = R0 * F.size * Math.max(1, ...F.glyphs.map((g) => g.sz || 1)) * 1.2 * (F.glint ? F.glint.dot : 1) + F.drift, b = [F.tbox[0] - pad, F.tbox[1] - pad, F.tbox[2] + pad, F.tbox[3] + pad];
@@ -1489,7 +1616,7 @@ function checks(add) {
   }
   for (const L of TYPE) {
     checkLiveArea(add, L.id, L.box);
-    if (L.spec.y % UNIT) add(`grid: ${L.id}`, 'WARN', `baseline ${L.spec.y} is not on the ${UNIT} px grid`);
+    if (L.line.baseline % UNIT) add(`grid: ${L.id}`, 'WARN', `baseline ${L.line.baseline} is not on the ${UNIT} px grid`);
     if (L.line.size < 24 * U) add(`small print: ${L.id}`, 'WARN', `${L.line.size} px is hard to read in a feed (24 px or more at 1080)`);
     if (LOOP === 'cycle' && L.spec.at != null && L.spec.at > 0 && L.spec.erase == null) add(`typed: ${L.id}`, 'FAIL', 'typed in but never erased: in a cycle loop it jumps from full to empty at the seam; add erase, or show it from frame 0 (no at)');
     if (L.spec.erase != null && L.spec.erase + (L.n + 3) / FPS > DUR) add(`typed: ${L.id}`, 'FAIL', 'still erasing at the loop point');
@@ -1531,7 +1658,8 @@ function layout() {
     formations: FORMS.map((F) => ({ id: F.id, kind: F.kind, particles: F.n,
       ...(F.kind === 'shape' ? { spacing: F.spec.spacing || 4.5 * U, centre: [r1(F.cx), r1(F.cy)], box: F.tbox.map(r1),
         parts: F.glyphs.map((g) => ({ what: g.ch, particles: g.n, inkArea: Math.round(g.area), fill: g.fill })),
-        ...(F.line ? { text: F.spec.text, size: r1(F.line.size), capH: r1(F.line.capH), capTop: r1(F.line.capTop), baseline: F.line.baseline, trackEm: r1(F.line.trackEm) } : {}) } : {}),
+        ...(F.line ? { text: F.spec.text, size: r1(F.line.size), capH: r1(F.line.capH), capTop: r1(F.line.capTop), baseline: F.line.baseline, trackEm: r1(F.line.trackEm),
+          ...(F.lines.length > 1 ? { lines: F.lines.map((Li) => ({ text: Li.text, size: r1(Li.size), baseline: Li.baseline, ink: [r1(Li.inkL), r1(Li.inkR)] })) } : {}) } : {}) } : {}),
       ...(F.kind === 'derived' ? { from: F.src.id } : {}) })),
     moves: stays().map((x) => ({ into: x.F.id, at: x.M.at, spring: x.M.spec.spring || 'GATHER', lastStart: r1(Math.max(...x.M.start) * 100) / 100, landed: Math.round(x.landed * 1000) / 1000, formed: Math.round(x.formed * 1000) / 1000, leaves: Math.round(x.leaves * 1000) / 1000 })),
     type: TYPE.map((L) => ({ id: L.id, size: r1(L.line.size), capH: r1(L.line.capH), baseline: L.line.baseline, box: L.box.map(r1) })),
@@ -1559,7 +1687,8 @@ function build() {
 Object.assign(ENG, {
   springs: { GATHER: [0.78, 7.2], BURST: [1, 16], REFORM: [0.62, 10], DISSOLVE: [1, 4.5], QUICK: [1, 24], DOLLY: [1, 3] },
   build, draw: (c, t, q) => drawFrame(c, t, q), accumulate, disp, checks, cycles, lastChange, stills, layout, visible,
-  gif: { fps: 12, colors: 16, dither: 'none' },
+  // every moving dot costs GIF bytes: a vertical frame's preview is 320 px wide (the demo's 9:16 GIF: 6.7 MB at 480, about 3.3 at 320)
+  gif: { fps: 12, colors: 16, dither: 'none', width: FMT.aspect === 'vertical' ? 320 : 480 },
 });
 boot(ENG);
 })();

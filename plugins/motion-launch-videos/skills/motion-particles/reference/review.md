@@ -4,7 +4,7 @@ Step 5 and the end of step 6. Nothing is rendered in full until the stills pass,
 
 ## Pre-pass: `render.mjs stills`
 
-It prints only the checks that did not pass (set `VERBOSE=1` to see all), writes one PNG per planned frame to `videos/<film>/stills/`, and a labelled `contact.png`. It exits non-zero when anything fails.
+It prints only the checks that did not pass (set `VERBOSE=1` to see all), writes one PNG per planned frame to `videos/<film>/stills/`, and a labelled `contact.png`. It exits non-zero when anything fails. With `--format 9:16` (or `16:9`, `4:5`) it checks the film in that frame, format patch included, and writes to `stills/9x16/`: run it once per format you deliver.
 
 The planned frames: frame 0, each move under way (halfway through its spread and landing), each text or shape formation fully formed (before the next move leaves it), each accent frame, and the last frame. The stills are motion-blurred: a moving particle is a streak.
 
@@ -31,7 +31,13 @@ The engine's rows:
 | loop: a move over the seam (cycle) | a move still settling at the loop point involves a spinning formation | settle it before the loop point, or drop the spin |
 | hold (hold) | the field moves (waves, drift, twinkle) or the last formation drifts or spins, so the still tail cannot be still | set them to 0, or make the film a cycle loop |
 
-The core's rows (core.md): glyph coverage from each font's cmap, contrast for each formation's fills and each `type` line, palette roles, the loop (hold: the loop tail; cycle: loop closes for the camera and glow Props, and every period in `cycles()` whole: waves, twinkle, the drift noise's three harmonics), blank frames, timeline warnings. Then the palette gate: sharp frames around each accent (the landing of each `accent: 'land'` move, the burst) with no patch of mixed ink.
+The core's rows (core.md): glyph coverage from each font's cmap, contrast for each formation's fills and each `type` line, palette roles, the loop (hold: the loop tail; cycle: loop closes for the camera and glow Props, and every period in `cycles()` whole: waves, twinkle, the drift noise's three harmonics), blank frames, timeline warnings, and composition:
+
+| Check | Fails when | Fix |
+|---|---|---|
+| composition | averaged over the stills, the ink leans to one side by more than a fifth of the frame (WARN) or 30 % (FAIL): formations laid out for a square left in the top of a 9:16 frame or the left of a 16:9 one, or small print pinned to an edge far from the content | keep formations unpinned (they follow the centre), move the small print with the content, and redesign the format in `FILM.formats` (engine.md, Formats) |
+
+Then the palette gate: sharp frames around each accent (the landing of each `accent: 'land'` move, the burst) with no patch of mixed ink.
 
 ### By eye, on the contact sheet and the full-size stills
 
@@ -42,12 +48,13 @@ The core's rows (core.md): glyph coverage from each font's cmap, contrast for ea
 - **Dust**: quieter than the formation; no bright near particle parked on a letter.
 - **Colour**: the accent only where it means something; no pink or yellow where two inks meet.
 - **Frame 0 and the last frame**: a cycle loop's last frame flows into frame 0 (same field, a small step on); a hold loop's are identical.
+- **Each format**: the field reaches every edge; the formations use the frame's shape (a stack or a taller mark in 9:16, a wider mark or burst in 16:9) rather than sitting as a square in the middle; the small print stays near the content.
 
 Fix, rebuild, and run stills again. Show the user the contact sheet and anything you changed on their brief.
 
 ## Before delivering
 
-1. `loopcheck`: every maximum channel difference is 0, and for a cycle loop the seam continuity line passes (the change over 0.1 ms across the loop point is about what the same step changes elsewhere).
+1. `loopcheck` (with `--format` for each format delivered): every maximum channel difference is 0, and for a cycle loop the seam continuity line passes (the change over 0.1 ms across the loop point is about what the same step changes elsewhere).
 2. `render`: the full film, in the background. The log's subframe counts are the core's budget; the engine draws one pass of streaks per frame.
 3. `verify`: every check passes; the GIF under 4 MB. The engine asks for a 12 fps, 16-colour, undithered GIF (see particle-craft.md).
 4. **Extract and look**: `mp4frames` decodes the planned frames from the MP4 into `stills/mp4/` with a contact sheet and each frame's PSNR against the canvas; read it, then a filmstrip of the whole MP4 (`ffmpeg -i renders/<film>.mp4 -vf "select=not(mod(n\,12)),scale=180:180,tile=10x6" -frames:v 1 strip.png`) for the rhythm of the moves. Particle frames compress hard: the lowest PSNR should still be 35 dB or more.
