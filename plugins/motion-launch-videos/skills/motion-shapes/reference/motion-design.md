@@ -27,11 +27,12 @@ Each beat has one idea and one picture that says it without words: a checkbox th
 
 ## Formats
 
-Positions are canvas pixels, so a layout is made for one format. The template is 1:1 (1080 x 1080).
+The master is 1:1 (1080 x 1080); 9:16 and 16:9 are the same film with a patch each (engine.md, Formats). The engine keeps everything centred at any ratio; the patch makes it look designed for the frame.
 
-- **9:16 (1080 x 1920, stories and reels).** The live area is 104 to 976 across and 104 to 1816 down, but platform buttons and captions cover about 250 px at the top and the bottom: keep type between y 360 and 1560. Centre the composition near y 900, stack the picture above the words with more air than at 1:1, and let background shapes use the full height.
-- **16:9 (1920 x 1080).** Put the picture and the words side by side (picture left of centre, words right, or the reverse) instead of stacking them; the live area is 104 to 1816 across.
-- Change `W` and `H`, move every layer, then read the stills: the critique catches type outside the live area, not a composition that sits too high.
+- **9:16 (1080 x 1920, stories and reels).** The width is the same, so the gain is height: bigger type, a bigger picture, more air between them, and everything stacked. A two-word title reads better as two big lines than one line at the width of the frame. Platform buttons and captions cover about 250 px at the top and the bottom: keep type between y 360 and 1560, and centre the composition near y 960. Background shapes and wipes use the full height.
+- **16:9 (1920 x 1080).** The height is the same, so the gain is width: the picture left of centre and the words beside it, not under it. Stacked titles set flush left beside a picture read as one block; a lockup reads as a row, the mark left of the name. Keep the pair's combined width centred, or the frame leans.
+- **What does not change**: the beats, the words, the timing, the palette and the springs. A format patch moves and sizes things; it does not re-time them.
+- Read the contact sheet at each format. The critique catches type outside the live area and a composition that leans to one side, not a frame with two empty bands.
 
 ## Timing on the beat grid
 

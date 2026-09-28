@@ -91,6 +91,14 @@ Shapes overlap only when opaque, so no two inks blend into a third.
 | 5.00 | list | week | five red bars, up | they cover the frame by 5.00, the scenes swap under them, then they clear |
 | 7.50 | week | lockup | none | the ring shrinks away as the mark pops in the same place |
 
+## Formats
+
+The MP4, GIF and poster are the 1:1 master. The same `src/film.html` renders at 9:16 and 16:9 with `--format`; `poster-9x16.png` and `poster-16x9.png` are frame 0 of each. `FILM.formats` patches only what moves; no layer is pinned, so everything else keeps its offset from the centre.
+
+- **9:16 (1080 x 1920).** Stacked and bigger, type between y 360 and 1560. The lockup grows (mark r 128, ACME cap 136) with the small print at y 1400. The checkbox is 360 px with longer sparks and `DONE.` at cap 160; it rises 300 px from behind a clip at y 1504. `ONE LIST.` and `EVERY DAY.` split onto two lines at cap 160 and 144 (a new layer for the second word, entering where the stagger would have reached it). The rows take the full measure (872 x 152, 196 apart); the ring is r 300. The words drop out 640 px so they leave the taller frame.
+- **16:9 (1920 x 1080).** Side by side. The lockup is a row: the mark left, `ACME` and the domain flush left beside it. The checkbox sits left of centre with `DONE.` beside it (cap 144, rising from behind a clip at y 720). `ONE` / `LIST.` stack flush left at cap 144 with the rows on the right; the ring (r 280) sits left with `EVERY` / `DAY.` beside it at cap 128. The circle wipe opens from the checkbox wherever it is.
+- Checks at each format: critique 37 checks, all pass, composition included (a lean of 10 % top to bottom at 9:16, 12 % left to right at 16:9); loopcheck max diff 0.
+
 ## Loop seam
 
 - Frame 0 is the lockup at rest. It shrinks away at 0.00 and is rebuilt from 7.625.

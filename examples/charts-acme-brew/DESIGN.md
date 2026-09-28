@@ -126,6 +126,14 @@ Why these faces: Inter was drawn for screens, and its figures are tabular by def
 | 6.50 | week | milk | cut on the downbeat | the donut's track is on screen the frame it cuts |
 | 9.50 to 9.625 | milk | lockup | overlap | the donut unsweeps back to 12 o'clock and the bean pops there |
 
+## Formats
+
+The MP4, GIF and poster are the 1:1 master. The same `src/film.html` renders at 9:16 and 16:9 with `--format`; `poster-9x16.png` and `poster-16x9.png` are the week chart at 5.50 s, like `poster.png`. `FILM.formats` patches only what moves; no layer is pinned, so everything else keeps its offset from the centre. The data, the timing and the source text are the same in every format.
+
+- **9:16 (1080 x 1920).** Stacked, titles, labels and source lines between y 360 and 1560. Titles at cap 72 on y 440; the source line of the chart scenes at y 1480, the hook's at 1400. The week's columns run 680 px tall (box 104, 680, 976, 1360) with value labels at 34 px and days at 28; the note sits at y 568. The donut grows to r 300 (ring 92, centre cap 120) and sits at x 600, right of centre, so `DAIRY 38%` stays inside the live area. The lockup grows (bean 80 x 110, name cap 100) with the small print centred at y 1480.
+- **16:9 (1920 x 1080).** The title beside the chart: `CUPS` / `PER DAY` and `OAT MILK` / `LEADS.` stack flush left at cap 80 (a new layer for the second line, entering where the stagger would have reached it). The columns widen to 1096 px (x 720 to 1816) and the note follows SAT; the donut sits at x 1340. The hook's counter spans 1100 px; its source line is centred at y 888. The lockup is a row: the bean left, the name and domain flush left beside it, the small print centred at y 800.
+- Checks at each format: critique all pass, composition included (a lean of 4 % top to bottom and 9 % left to right at 9:16, 12 % top to bottom at 16:9); loopcheck max diff 0.
+
 ## Loop seam
 
 - Frame 0 is the lockup at rest. It leaves at 0.00 and is rebuilt from 9.625.

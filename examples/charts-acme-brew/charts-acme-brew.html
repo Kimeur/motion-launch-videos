@@ -136,6 +136,71 @@ const FILM = {
       exit: { at: beat(19), to: { dy: -48, op: 0 }, spring: 'EXIT' },
     },
   ],
+  // Other aspect ratios (render.mjs --format 9:16). Positions stay in base (1080 x 1080) pixels: with no
+  // pin a layer keeps its offset from the centre, so x 540 is the middle of any frame and y 540 - 420 is
+  // 420 px above the middle; a chart's box maps each edge the same way. Layers and scenes merge by id; a
+  // new id adds a layer.
+  formats: {
+    // Vertical: bigger type, the charts taller, everything stacked; titles, charts and the source line
+    // between y 360 and 1560 of the 1920 frame, clear of the platform's buttons.
+    '9:16': {
+      scenes: [
+        { id: 'lockup', layers: [
+          { id: 'BEAN', rx: 80, ry: 110, y: 260 },
+          { id: 'CREASE', size: 175, width: 18, y: 260 },
+          { id: 'ACME', cap: 100, y: 540 },
+          { id: 'URL', size: 48, y: 644 },
+          { id: 'DEMO', size: 26, anchor: 'C', x: 540, y: 1060 },
+        ] },
+        { id: 'hook', in: { y: 260 }, source: { y: 980 }, layers: [
+          { id: 'TOTAL', y: 540 },
+          { id: 'BREWED', cap: 84, y: 716 },
+          { id: 'WEEKLY', size: 40, y: 804 },
+        ] },
+        { id: 'week', source: { y: 1060 }, layers: [
+          { id: 'PERDAY', cap: 72, y: 20 },
+          { id: 'WEEK', box: [104, 260, 976, 940], values: { size: 34 }, cats: { size: 28 } },
+          { id: 'PEAK', size: 28, y: 148 },
+        ] },
+        { id: 'milk', source: { y: 1060 }, layers: [
+          { id: 'LEADS', cap: 72, y: 20 },
+          { id: 'MILK', x: 600, y: 540, r: 300, width: 92, gap: 10,
+            centre: { cap: 120, captionSize: 32 }, labels: { size: 34, gap: 30 } },
+        ] },
+      ],
+    },
+    // Horizontal: the title beside the chart, the plots wider, the lockup in one row.
+    '16:9': {
+      scenes: [
+        { id: 'lockup', layers: [
+          { id: 'BEAN', x: 100, y: 480 },
+          { id: 'CREASE', x: 100, y: 480 },
+          { id: 'ACME', cap: 104, anchor: 'L', x: 240, y: 544 },
+          { id: 'URL', anchor: 'L', x: 240, y: 632 },
+          { id: 'DEMO', anchor: 'C', x: 540, y: 800 },
+        ] },
+        { id: 'hook', in: { x: 100, y: 480 }, source: { anchor: 'C', x: 540, y: 888 }, layers: [
+          { id: 'TOTAL', fit: 1100, y: 540 },
+          { id: 'BREWED', cap: 88, y: 716 },
+          { id: 'WEEKLY', size: 36, y: 804 },
+        ] },
+        { id: 'week', layers: [
+          { id: 'PERDAY', text: 'CUPS', cap: 80, x: -316, y: 500 },
+          { id: 'PERDAY2', kind: 'text', text: 'PER DAY', font: 'display', cap: 80, track: 10, anchor: 'L', x: -316, y: 608, fill: 'paper',
+            enter: { at: beat(6.5), from: { dy: 48, op: 0, blur: 8 }, spring: 'LAND', stagger: 32 } },
+          { id: 'WEEK', box: [300, 344, 1396, 800], values: { size: 32 } },
+          { id: 'PEAK', x: 1161 },
+        ] },
+        { id: 'milk', layers: [
+          { id: 'LEADS', text: 'OAT MILK', cap: 80, x: -316, y: 500 },
+          { id: 'LEADS2', kind: 'text', text: 'LEADS.', font: 'display', cap: 80, track: 10, anchor: 'L', x: -316, y: 608, fill: 'paper',
+            enter: { at: beat(13.875), from: { dy: 48, op: 0, blur: 8 }, spring: 'LAND', stagger: 32 } },
+          { id: 'MILK', x: 920, y: 540, r: 300, width: 92, gap: 10,
+            centre: { cap: 120, captionSize: 32 }, labels: { size: 34, gap: 30 } },
+        ] },
+      ],
+    },
+  },
 };
 
 /* ===== CORE BEGIN: shared/core.js, synced by tools/sync.mjs. Do not edit it here. ===== */
@@ -163,6 +228,31 @@ const FILM = {
  * its end, so an engine can name its own functions freely.
  * ========================================================================== */
 const CORE = (() => {
+/* ---------------- formats: one film, several aspect ratios ---------------- */
+// ?format=9x16 (the scripts pass --format 9:16) re-sizes the film before anything reads FILM. A key of
+// FILM.formats patches any field for that format (objects merge, arrays of items with an id merge by id,
+// anything else is replaced). Without W and H in the patch, the standard ratios keep the film's short side:
+// 1:1, 4:5, 9:16, 16:9. Positions stay authored in the base format; an engine maps them with fmtX/fmtY/fmtPos,
+// which keep an element's offset from the centre (the default) or from the edge its pin names.
+const BW = FILM.W, BH = FILM.H;
+const FORMAT = (() => { const m = /[?&]format=(\d+)[x:](\d+)/.exec(location.search); return m ? `${m[1]}:${m[2]}` : null; })();
+function mergeInto(a, b) {
+  for (const [k, v] of Object.entries(b)) {
+    const o = a[k];
+    if (Array.isArray(v) && Array.isArray(o) && v.every((x) => x && x.id != null)) {
+      for (const it of v) { const t = o.find((x) => x && x.id === it.id); if (t) mergeInto(t, it); else o.push(it); }
+    } else if (v && typeof v === 'object' && !Array.isArray(v) && o && typeof o === 'object' && !Array.isArray(o)) mergeInto(o, v);
+    else a[k] = v;
+  }
+  return a;
+}
+if (FORMAT) {
+  const patch = (FILM.formats || {})[FORMAT] || {};
+  const [ra, rb] = FORMAT.split(':').map(Number), short = Math.min(BW, BH);
+  if (!(ra > 0 && rb > 0)) throw new Error(`bad format ${FORMAT}`);
+  const size = ra === rb ? [short, short] : ra < rb ? [short, Math.round(short * rb / ra / 2) * 2] : [Math.round(short * ra / rb / 2) * 2, short];
+  mergeInto(FILM, { W: size[0], H: size[1], ...patch });
+}
 const { W, H, FPS, DUR } = FILM;
 const NFR = Math.round(DUR * FPS);                 // output frames in the loop
 const CX = W / 2, CY = H / 2;
@@ -175,6 +265,13 @@ const GRID = FILM.grid || {};
 const MARGIN = GRID.margin != null ? GRID.margin : Math.round(104 * U);
 const UNIT = GRID.unit || 8;
 const MEASURE = W - 2 * MARGIN;
+const FS = Math.min(W, H) / Math.min(BW, BH);      // base px -> this format's px
+const FMT = { key: FORMAT || `${BW}x${BH}`, W, H, BW, BH, s: FS, aspect: W === H ? 'square' : W < H ? 'vertical' : 'horizontal' };
+// pin: 'l' or 'r' keeps the distance from that edge, 't' or 'b' likewise; otherwise the offset from the centre
+const fmtX = (x, pin = '') => /l/.test(pin) ? x * FS : /r/.test(pin) ? W - (BW - x) * FS : W / 2 + (x - BW / 2) * FS;
+const fmtY = (y, pin = '') => /t/.test(pin) ? y * FS : /b/.test(pin) ? H - (BH - y) * FS : H / 2 + (y - BH / 2) * FS;
+const fmtPos = (x, y, pin = '') => [fmtX(x, pin), fmtY(y, pin)];
+const fmtSz = (v) => v * FS;
 const LOOP = FILM.loop || 'hold';                  // 'hold': ends on a still copy of frame 0; 'cycle': periodic, continuous over the seam; 'none'
 const BLUR = FILM.blur !== false;                  // false: one sample per frame (cartoon, pixel art)
 const SHUTTER = 0.75;                              // 270 degrees, trailing
@@ -656,7 +753,49 @@ function critique() {
       add('blank frames', 'WARN', `frames ${a}-${b} (t ${(a / FPS).toFixed(3)}-${(b / FPS).toFixed(3)}) show nothing: start the next entrance sooner, or pop it in at the cut`);
   }
   for (const w of WARN) add('timeline', 'WARN', w);
+  compositionCheck(add);
   return checks;
+}
+// Composition: where the ink sits in the review stills. Ink is any pixel away from the background and from
+// the colours of the roles an engine lists as backdrop (a stage, a sky). The lean on an axis is the difference
+// between the empty margins on its two sides, or twice the ink's centre of mass off the middle (a small footer
+// stretches the box but barely moves the mass), whichever is larger. An average lean past a fifth of the
+// canvas warns, past 30 % fails: content authored for a square left in the top of a 9:16 frame, or the left
+// of a 16:9 one.
+function inkBox(isBg, step) {
+  const d = ctx.getImageData(0, 0, W, H).data;
+  let x0 = W, y0 = H, x1 = -1, y1 = -1, n = 0, sx = 0, sy = 0;
+  for (let y = 0; y < H; y += step) for (let x = 0; x < W; x += step) {
+    const i = (y * W + x) * 4;
+    if (isBg(d[i], d[i + 1], d[i + 2])) continue;
+    if (x < x0) x0 = x; if (x > x1) x1 = x; if (y < y0) y0 = y; if (y > y1) y1 = y;
+    n++; sx += x; sy += y;
+  }
+  return x1 < 0 ? null : { box: [x0, y0, x1 + step, y1 + step], cx: sx / n, cy: sy / n };
+}
+function compositionCheck(add) {
+  const bgs = [PAL.bg, ...(ENGINE.backdrop || []).map((r) => PAL[r] || r)].map(rgbOf);
+  const isBg = (r, g, b) => bgs.some((c) => Math.abs(r - c[0]) + Math.abs(g - c[1]) + Math.abs(b - c[2]) < 36);
+  const pick = (a, b) => Math.abs(a) >= Math.abs(b) ? a : b;
+  const rows = [];
+  for (const { frame } of stillsPlan()) {
+    draw(ctx, frame / FPS);
+    const ink = inkBox(isBg, Math.max(2, Math.round(3 * U)));
+    if (!ink) continue;
+    const b = ink.box, top = b[1] / H, bottom = (H - b[3]) / H, left = b[0] / W, right = (W - b[2]) / W;
+    if (top + bottom > 0.9 || left + right > 0.9) continue;         // a speck: nothing to balance
+    rows.push({ v: pick(bottom - top, 2 * (0.5 - ink.cy / H)), h: pick(right - left, 2 * (0.5 - ink.cx / W)) });
+  }
+  if (!rows.length) { add('composition', 'PASS', 'no still with measurable ink off the background'); return; }
+  const mean = (k) => rows.reduce((a, r) => a + r[k], 0) / rows.length;
+  const v = mean('v'), h = mean('h');
+  const lean = (x, a, b) => `${x > 0 ? a : b} (a lean of ${Math.round(Math.abs(x) * 100)} %)`;
+  const verdict = (x) => Math.abs(x) > 0.3 ? 'FAIL' : Math.abs(x) > 0.2 ? 'WARN' : 'PASS';
+  const worst = Math.abs(v) >= Math.abs(h) ? ['v', v] : ['h', h];
+  const st = verdict(worst[1]);
+  add('composition', st, st === 'PASS'
+    ? `${rows.length} stills balanced: a lean of ${Math.round(Math.abs(v) * 100)} % top to bottom, ${Math.round(Math.abs(h) * 100)} % left to right on average`
+    : `the stills lean to the ${worst[0] === 'v' ? lean(v, 'top', 'bottom') : lean(h, 'left', 'right')}, over ${rows.length} stills (${FMT.key}): centre the content or pin elements to the edges they belong to`);
 }
 // review stills: the engine's plan (each scene in and at rest, each transition) plus every accent frame
 function stillsPlan() {
@@ -684,7 +823,8 @@ function boot(E) {
   for (const [k, v] of Object.entries(SP)) if (!(v[0] > 0 && v[0] <= 1 && v[1] > 0)) throw new Error(`spring ${k}: zeta must be in (0, 1] and omega > 0`);
   window.DURATION = DUR; window.FPS = FPS; window.WIDTH = W; window.HEIGHT = H;
   window.FILM_META = { title: FILM.title, poster: FILM.poster || 0, bg: PAL.bg, palette: PAL, loop: LOOP, blur: BLUR,
-    engine: E.name, strictPalette: !!E.strictPalette, seamCut: !!E.seamCut, gif: E.gif || null };
+    engine: E.name, strictPalette: !!E.strictPalette, seamCut: !!E.seamCut, gif: E.gif || null,
+    format: FMT.key, aspect: FMT.aspect, formats: Object.keys(FILM.formats || {}) };
   Object.assign(window, { seek, renderFrame, motionAt, layoutTable, critique, stillsPlan, textByFace, accentFrames, misFrames: accentFrames, offPalette });
   const roles = Object.keys(FILM.fonts || {}), sample = filmChars();
   window.ready = Promise.all(roles.map((r) => document.fonts.load(fontStr(r, 100), sample)))
@@ -724,7 +864,8 @@ function boot(E) {
     rgbOf, hexOf, mix, hueChroma, hueDist, lum, contrast, inksClash,
     face, fontStr, setFont, capRatio, useText, measureRun, layoutText, blurQ, glyphSprite, fillGlyph, drawText,
     svgPath, CUTS, ACTIVE, ACCENTS, WARN, CONTRAST, cutAt, activeIn, accentAt, needContrast,
-    checkLiveArea, checkSpacing, seek, boot };
+    checkLiveArea, checkSpacing, seek, boot,
+    FMT, fmtX, fmtY, fmtPos, fmtSz };
 })();
 const { W, H, FPS, DUR, NFR, CX, CY, U, PAL, col, role, GRID, MARGIN, UNIT, MEASURE, LOOP, BLUR, SHUTTER, TAU,
   canvas, ctx, mkCanvas, mk2d, mctx,
@@ -734,7 +875,8 @@ const { W, H, FPS, DUR, NFR, CX, CY, U, PAL, col, role, GRID, MARGIN, UNIT, MEAS
   rgbOf, hexOf, mix, hueChroma, hueDist, lum, contrast, inksClash,
   face, fontStr, setFont, capRatio, useText, measureRun, layoutText, blurQ, glyphSprite, fillGlyph, drawText,
   svgPath, CUTS, ACTIVE, ACCENTS, WARN, CONTRAST, cutAt, activeIn, accentAt, needContrast,
-  checkLiveArea, checkSpacing, seek, boot } = CORE;
+  checkLiveArea, checkSpacing, seek, boot,
+  FMT, fmtX, fmtY, fmtPos, fmtSz } = CORE;
 /* ===== CORE END ===== */
 
 /* ==========================================================================
@@ -752,6 +894,28 @@ const ISSUES = [];                                 // critique rows found while 
 const issue = (name, status, detail) => ISSUES.push([name, status, detail]);
 const DATA_KINDS = ['counter', 'columns', 'bars', 'line', 'donut'];
 let camZ = null;
+
+/* ---------------- formats: FILM is authored in its base format ---------------- */
+// Every position FILM gives goes through fmtX / fmtY with the layer's `pin` ('t', 'b', 'l', 'r' or a
+// combination; none keeps its offset from the centre), every size through fmtSz (core.md, Formats).
+// A plot box maps each edge on its own, so a box pinned 'lr' (or 'tb') stretches with the frame.
+// At the base format all of it is the identity. A text baseline mapped to another format is put back on
+// the grid; a clip edge on the base frame's edge stays on the canvas edge.
+const BASE = FMT.W === FMT.BW && FMT.H === FMT.BH;
+const K = fmtSz(1);
+const sz = (v) => (v == null ? v : fmtSz(v));
+const szo = (o, keys) => { if (!o || typeof o !== 'object') return o; const r = { ...o }; for (const k of keys) if (typeof r[k] === 'number') r[k] = fmtSz(r[k]); return r; };
+const px = (x, pin) => (x == null ? x : fmtX(x, pin || ''));
+const py = (y, pin) => (y == null ? y : fmtY(y, pin || ''));
+const pyGrid = (y, pin) => (y == null || BASE ? py(y, pin) : Math.round(fmtY(y, pin || '') / UNIT) * UNIT);
+function boxAt(b, pin = '') {                      // [x0, y0, x1, y1]: each edge keeps its own pin
+  const one = (p, a, o) => (p.includes(a) ? a : p.includes(o) ? o : '');
+  return [fmtX(b[0], one(pin, 'l', 'r')), fmtY(b[1], one(pin, 't', 'b')), fmtX(b[2], one(pin, 'r', 'l')), fmtY(b[3], one(pin, 'b', 't'))];
+}
+function clipBox(b, pin) {
+  const [x0, y0, x1, y1] = b;
+  return [x0 === 0 ? 0 : px(x0, pin), y0 === 0 ? 0 : py(y0, pin), x1 === FMT.BW ? W : px(x1, pin), y1 === FMT.BH ? H : py(y1, pin)];
+}
 
 /* ---------------- data: every number on screen comes from here ---------------- */
 const DFMT = { decimals: 0, group: ',', point: '.', prefix: '', suffix: '', sign: false, scale: 1 };
@@ -972,9 +1136,9 @@ function geomSpec(s) {
 }
 function buildGeom(s) {
   const spec = geomSpec(s), P = svgPath(spec.d);
-  let m = null;
+  let m = K !== 1 ? new DOMMatrix([K, 0, 0, K, 0, 0]) : null;   // sizes are authored in the base format
   if (spec.raw) {                                  // an SVG path in its own units: centre it, and scale it to `size` px
-    const [x0, y0, x1, y1] = P.box, k = s.size ? s.size / Math.max(x1 - x0, y1 - y0) : 1;
+    const [x0, y0, x1, y1] = P.box, k = (s.size ? s.size / Math.max(x1 - x0, y1 - y0) : 1) * K;
     m = new DOMMatrix([k, 0, 0, k, -(x0 + x1) / 2 * k, -(y0 + y1) / 2 * k]);
   }
   let p2d = P.p2d;
@@ -993,7 +1157,7 @@ const KEYS = { dx: 0, dy: 0, rot: 0, sc: 1, op: 1, bl: 0, ta: 0, tb: 1, fo: 1 };
 function stateVals(s) {
   const o = {};
   if (!s || typeof s !== 'object') return o;
-  for (const k of ['dx', 'dy', 'rot', 'op', 'blur', 'fill']) if (s[k] != null) o[{ blur: 'bl', fill: 'fo' }[k] || k] = s[k];
+  for (const k of ['dx', 'dy', 'rot', 'op', 'blur', 'fill']) if (s[k] != null) o[{ blur: 'bl', fill: 'fo' }[k] || k] = k === 'dx' || k === 'dy' ? sz(s[k]) : s[k];
   if (s.scale != null) o.sc = s.scale;
   if (s.trim != null) { const tr = Array.isArray(s.trim) ? s.trim : [0, s.trim]; o.ta = tr[0]; o.tb = tr[1]; }
   return o;
@@ -1019,7 +1183,7 @@ const stagOf = (spec, ranks, k) => (spec && spec.stagger ? noteSec(spec.stagger)
 
 /* ---------------- layers ---------------- */
 const FIELDS = {
-  common: ['id', 'kind', 'x', 'y', 'rot', 'scale', 'op', 'enter', 'keys', 'exit', 'accent', 'bleed', 'on'],
+  common: ['id', 'kind', 'x', 'y', 'pin', 'rot', 'scale', 'op', 'enter', 'keys', 'exit', 'accent', 'bleed', 'on'],
   text: ['text', 'font', 'size', 'cap', 'fit', 'track', 'pairs', 'anchor', 'fill', 'clip', 'literal'],
   counter: ['ref', 'font', 'size', 'cap', 'fit', 'track', 'anchor', 'fill', 'format', 'grow'],
   columns: ['data', 'box', 'width', 'radius', 'fill', 'colors', 'highlight', 'track', 'axis', 'grid', 'values', 'cats', 'baseline', 'sort', 'grow'],
@@ -1066,14 +1230,17 @@ function buildLayer(Sc, ls, li) {
   if (L.dead) { L.copies = []; L.box = [0, 0, 0, 0]; }
   return L;
 }
-function place(ls, anchor) { return ls.x != null ? ls.x : anchor === 'R' ? W - MARGIN : anchor === 'C' ? CX : MARGIN; }
+function place(ls, anchor) { return ls.x != null ? px(ls.x, ls.pin) : anchor === 'R' ? W - MARGIN : anchor === 'C' ? CX : MARGIN; }
 
 function buildText(Sc, L) {
   const ls = L.spec, fr = ls.font || 'display';
   L.typed = !!(ls.enter && ls.enter.typed);
   L.text = fillRefs(L, ls.text);
   if (!ls.auto) freeNumbers(L, ls.text);
-  L.line = layoutText({ id: ls.id, text: L.text, font: fr, size: ls.size, cap: ls.cap, fit: ls.fit, track: ls.track, pairs: ls.pairs, anchor: ls.anchor || 'L', x: ls.x, baseline: ls.y });
+  const cv = ls.canvas;                             // the source line: already in this format's pixels
+  L.line = layoutText({ id: ls.id, text: L.text, font: fr, size: cv ? ls.size : sz(ls.size), cap: cv ? ls.cap : sz(ls.cap), fit: cv || ls.fit === true ? ls.fit : sz(ls.fit), track: ls.track, pairs: ls.pairs, anchor: ls.anchor || 'L', x: cv ? ls.x : px(ls.x, ls.pin), baseline: cv ? ls.y : pyGrid(ls.y, ls.pin) });
+  L.clip = ls.clip ? clipBox(ls.clip, ls.pin) : null;
+  L.baseY = ls.y != null ? L.line.baseline : null;
   L.px = (L.line.inkL + L.line.inkR) / 2; L.py = L.line.baseline - L.line.capH / 2;
   L.box = [L.line.inkL, L.line.top, L.line.inkR, L.line.bottom];
   L.R = L.line.capH;
@@ -1094,12 +1261,12 @@ function buildCounter(Sc, L) {
   L.from = g && g.from != null ? g.from : 0;
   L.final = R.v; L.fmt = f;
   const vals = [R.v, L.from, ...L.keyVals.map((k) => k.v)];
-  let size = ls.size != null ? ls.size : ls.cap != null ? ls.cap / capRatio(fr) : 200 * U;
-  if (ls.fit) { const w = ls.fit === true ? MEASURE : ls.fit, N0 = numLayout(fr, 100, ls.track, f, vals, R.v); size = 100 * w / (N0.ink[2] - N0.ink[0]); }
+  let size = ls.size != null ? sz(ls.size) : ls.cap != null ? sz(ls.cap) / capRatio(fr) : 200 * U;
+  if (ls.fit) { const w = ls.fit === true ? MEASURE : sz(ls.fit), N0 = numLayout(fr, 100, ls.track, f, vals, R.v); size = 100 * w / (N0.ink[2] - N0.ink[0]); }
   const N = numLayout(fr, size, ls.track, f, vals, R.v), anchor = ls.anchor || 'L', x = place(ls, anchor);
   N.x0 = anchor === 'C' ? x - (N.ink[0] + N.ink[2]) / 2 : anchor === 'R' ? x - N.ink[2] : x - N.ink[0];
-  N.y = ls.y;
-  L.N = N;
+  N.y = pyGrid(ls.y, ls.pin);
+  L.N = N; L.baseY = ls.y != null ? N.y : null;
   L.box = [N.x0 + N.ink[0], N.y + N.ink[1], N.x0 + N.ink[2], N.y + N.ink[3]];
   L.px = (L.box[0] + L.box[2]) / 2; L.py = N.y - N.capH / 2;
   L.R = Math.hypot(L.box[2] - L.box[0], L.box[3] - L.box[1]) / 2;
@@ -1135,13 +1302,13 @@ function buildBarChart(Sc, L) {
   const mn = ax.min != null ? ax.min : Math.min(0, ...all);
   let mx = ax.max === 'total' ? D.total : ax.max != null ? ax.max : Math.max(0, ...all);
   if (mx == null || !isFinite(mx) || mx <= mn) mx = mn + 1;
-  const [x0, y0, x1, y1] = ls.box;
+  const [x0, y0, x1, y1] = boxAt(ls.box, ls.pin);
   const G = { horiz, n, cats, mn, mx, x0, y0, x1, y1, vals: sets[0], all, sets };
   if (horiz) { G.k = (x1 - x0) / (mx - mn); G.zero = x0 + (0 - mn) * G.k; G.band = (y1 - y0) / n; }
   else { G.k = (y1 - y0) / (mx - mn); G.zero = y1 - (0 - mn) * G.k; G.band = (x1 - x0) / n; }
   const wd = ls.width != null ? ls.width : 0.6;
-  G.bw = wd <= 1 ? G.band * wd : wd;
-  G.rad = Math.min(ls.radius != null ? ls.radius : 8 * U, G.bw / 2);
+  G.bw = wd <= 1 ? G.band * wd : sz(wd);
+  G.rad = Math.min(ls.radius != null ? sz(ls.radius) : 8 * U, G.bw / 2);
   G.mid = (i) => (horiz ? y0 : x0) + G.band * (i + 0.5);
   G.fillRole = cats.map((c) => (ls.colors || {})[c] || ls.fill || 'paper');
   G.fill = G.fillRole.map((r) => role(r));
@@ -1156,11 +1323,12 @@ function buildBarChart(Sc, L) {
   L.hl0 = set(hs && hs.cat); L.hlKeys = hkeys.map((k) => ({ at: k.at, on: set(k.highlight) }));
   for (const h of [L.hl0, ...L.hlKeys.map((k) => k.on)]) for (const c of h) if (!cats.includes(c)) issue(`fields: ${L.id}`, 'FAIL', `highlight "${c}" is not a category of ${ls.data}`);
   // labels
-  const vo = ls.values === false ? null : { font: 'label', size: 30 * U, fill: 'paper', gap: 12 * U, track: 0, ...(ls.values || {}) };
-  const co = ls.cats === false ? null : { font: 'mono', size: 24 * U, fill: 'muted', gap: 16 * U, track: 20, pos: horiz ? 'left' : 'below', every: 1, ...(ls.cats || {}) };
+  const vo = ls.values === false ? null : { font: 'label', size: 30 * U, fill: 'paper', gap: 12 * U, track: 0, ...szo(ls.values, ['size', 'gap']) };
+  const co = ls.cats === false ? null : { font: 'mono', size: 24 * U, fill: 'muted', gap: 16 * U, track: 20, pos: horiz ? 'left' : 'below', every: 1, ...szo(ls.cats, ['size', 'gap']) };
+  if (co && co.y != null) co.y = pyGrid(co.y, ls.pin);
   G.vo = vo; G.co = co;
   const noBase = ls.baseline === false || (ls.baseline == null && (ls.track || (horiz && co && co.pos === 'above')));   // a track or labels over the bars already show the zero line
-  G.base = noBase ? null : { stroke: 'muted', width: 2 * U, ...(ls.baseline || {}) };
+  G.base = noBase ? null : { stroke: 'muted', width: 2 * U, ...szo(ls.baseline, ['width']) };
   if (G.base) G.baseCol = role(G.base.stroke);
   L.marks = [...new Set(G.fillRole.concat(G.hlRole ? [G.hlRole] : []))];
   G.valN = []; G.valFill = vo ? role(vo.fill) : null;
@@ -1191,7 +1359,7 @@ function buildBarChart(Sc, L) {
   G.grid = [];
   if (ls.grid) {
     const go = Array.isArray(ls.grid) ? { at: ls.grid } : ls.grid;
-    const gs = { stroke: 'muted', width: 2 * U, font: 'mono', size: 22 * U, fill: 'muted', ...go };
+    const gs = { stroke: 'muted', width: 2 * U, font: 'mono', size: 22 * U, fill: 'muted', ...szo(go, ['width', 'size']) };
     G.gridCol = role(gs.stroke); G.gridW = gs.width;
     needContrast(`${L.id} ticks`, gs.fill, ls.on || Sc.bgRole, 4.5);
     const tf = tickFmt(gs.at || [], D.fmt);
@@ -1253,13 +1421,13 @@ function buildLine(Sc, L) {
   }
   const all = series.flatMap((s) => s.sets.flat()), ax = ls.axis || {};
   const mn = ax.min != null ? ax.min : Math.min(0, ...all), mx0 = ax.max != null ? ax.max : Math.max(0, ...all), mx = mx0 > mn ? mx0 : mn + 1;
-  const [x0, y0, x1, y1] = ls.box;
+  const [x0, y0, x1, y1] = boxAt(ls.box, ls.pin);
   const G = { n, mn, mx, x0, y0, x1, y1, series, all, cats: D.cats };
   G.k = (y1 - y0) / (mx - mn); G.zero = y1 - (0 - mn) * G.k;
   G.xs = D.cats.map((_, i) => x0 + (x1 - x0) * i / (n - 1));
   G.y = (v) => G.zero - v * G.k;
-  G.lw = ls.width != null ? ls.width : 6 * U;
-  G.pr = ls.points != null ? ls.points : 9 * U;
+  G.lw = ls.width != null ? sz(ls.width) : 6 * U;
+  G.pr = ls.points != null ? sz(ls.points) : 9 * U;
   G.curve = ls.curve === 'monotone' ? 'monotone' : 'linear';
   G.strokeRole = series.map((s) => (ls.colors || {})[s.name] || ls.stroke || 'paper');
   G.stroke = G.strokeRole.map((r) => role(r));
@@ -1267,14 +1435,14 @@ function buildLine(Sc, L) {
   if (ls.area && series.length > 1) issue(`honest chart: ${L.id}`, 'FAIL', 'an area under one of several lines stacks nothing and hides the others: use area on a single series');
   G.surface = role(ls.on || Sc.bgRole);
   L.marks = [...new Set(G.strokeRole)];
-  const lo = { font: 'label', size: 30 * U, fill: 'paper', gap: 14 * U, pos: 'above', ...(typeof ls.labels === 'object' && !Array.isArray(ls.labels) ? ls.labels : {}) };
+  const lo = { font: 'label', size: 30 * U, fill: 'paper', gap: 14 * U, pos: 'above', ...(typeof ls.labels === 'object' && !Array.isArray(ls.labels) ? szo(ls.labels, ['size', 'gap']) : {}) };
   const which = typeof ls.labels === 'string' || Array.isArray(ls.labels) ? ls.labels : lo.show || 'end';
   const pick = (s, i) => which === 'all' || (which === 'end' && i === n - 1) || (which === 'max' && s.values[i] === Math.max(...s.values)) || (which === 'min' && s.values[i] === Math.min(...s.values)) || (Array.isArray(which) && (which.includes(D.cats[i]) || which.includes(i)));
   G.lo = lo; G.labFill = role(lo.fill);
   if (which !== 'none') needContrast(`${L.id} values`, lo.fill, ls.on || Sc.bgRole, 4.5);
   for (const s of series) s.labels = s.values.map((v, i) => (which !== 'none' && pick(s, i) ? numLayout(lo.font, lo.size, lo.track || 0, D.fmt, s.sets.map((x) => x[i]), v) : null));
   // direct labels naming each series at its end (on by default when there are several)
-  G.names = (ls.names != null ? ls.names : series.length > 1) ? { font: lo.font, size: lo.size, fill: 'muted', gap: 18 * U, ...(typeof ls.names === 'object' ? ls.names : {}) } : null;
+  G.names = (ls.names != null ? ls.names : series.length > 1) ? { font: lo.font, size: lo.size, fill: 'muted', gap: 18 * U, ...(typeof ls.names === 'object' ? szo(ls.names, ['size', 'gap']) : {}) } : null;
   if (G.names) {                                   // "WEB 26.4K" just right of the line's end: the name, then its last value
     needContrast(`${L.id} names`, G.names.fill, ls.on || Sc.bgRole, 4.5);
     G.nameFill = role(G.names.fill);
@@ -1286,7 +1454,8 @@ function buildLine(Sc, L) {
     }
   }
   if (series.length > 1 && !G.names) issue(`labels: ${L.id}`, 'FAIL', 'several series and no names: label each line directly (names: true); there are no legends');
-  const co = ls.cats === false ? null : { font: 'mono', size: 24 * U, fill: 'muted', gap: 16 * U, track: 20, every: 1, ...(ls.cats || {}) };
+  const co = ls.cats === false ? null : { font: 'mono', size: 24 * U, fill: 'muted', gap: 16 * U, track: 20, every: 1, ...szo(ls.cats, ['size', 'gap']) };
+  if (co && co.y != null) co.y = pyGrid(co.y, ls.pin);
   G.co = co; G.catLines = [];
   if (co) {
     needContrast(`${L.id} categories`, co.fill, ls.on || Sc.bgRole, 4.5);
@@ -1294,11 +1463,11 @@ function buildLine(Sc, L) {
     const base = co.y != null ? co.y : Math.ceil((Math.max(y1, G.zero) + co.gap + capRatio(co.font) * co.size) / UNIT) * UNIT;
     D.cats.forEach((c, i) => G.catLines.push(i % (co.every || 1) && i !== n - 1 ? null : layoutText({ id: `${L.id}:${c}`, text: String(c), font: co.font, size: co.size, track: co.track, anchor: 'C', x: G.xs[i], baseline: base })));
   }
-  G.base = ls.baseline === false ? null : { stroke: 'muted', width: 2 * U, ...(ls.baseline || {}) };
+  G.base = ls.baseline === false ? null : { stroke: 'muted', width: 2 * U, ...szo(ls.baseline, ['width']) };
   if (G.base) G.baseCol = role(G.base.stroke);
   G.grid = [];
   if (ls.grid) {
-    const go = Array.isArray(ls.grid) ? { at: ls.grid } : ls.grid, gs = { stroke: 'muted', width: 2 * U, font: 'mono', size: 22 * U, fill: 'muted', ...go };
+    const go = Array.isArray(ls.grid) ? { at: ls.grid } : ls.grid, gs = { stroke: 'muted', width: 2 * U, font: 'mono', size: 22 * U, fill: 'muted', ...szo(go, ['width', 'size']) };
     G.gridCol = role(gs.stroke); G.gridW = gs.width;
     needContrast(`${L.id} ticks`, gs.fill, ls.on || Sc.bgRole, 4.5);
     const tf = tickFmt(gs.at || [], D.fmt);
@@ -1359,8 +1528,8 @@ function buildDonut(Sc, L) {
   L.whole = { sum, total: D.total, tol, remainder: null };
   if (D.total != null && ls.remainder && D.total - sum > tol) { cats.push(ls.remainder); vals.push(D.total - sum); L.whole.remainder = ls.remainder; }
   const total = D.total != null ? D.total : sum;
-  const G = { n: cats.length, cats, vals, total, cx: place(ls, 'C'), cy: ls.y != null ? ls.y : CY, R: ls.r || 240 * U };
-  G.r = G.R - (ls.width || 72 * U); G.gap = ls.gap != null ? ls.gap : 6 * U; G.a0 = -Math.PI / 2 + (ls.start || 0) * DEG;
+  const G = { n: cats.length, cats, vals, total, cx: place(ls, 'C'), cy: ls.y != null ? py(ls.y, ls.pin) : CY, R: sz(ls.r) || 240 * U };
+  G.r = G.R - (sz(ls.width) || 72 * U); G.gap = ls.gap != null ? sz(ls.gap) : 6 * U; G.a0 = -Math.PI / 2 + (ls.start || 0) * DEG;
   G.cum = [0]; for (const v of vals) G.cum.push(G.cum[G.cum.length - 1] + v);
   G.fillRole = cats.map((c) => (ls.colors || {})[c]);
   G.fillRole.forEach((r, k) => { if (!r) issue(`fields: ${L.id}`, 'FAIL', `slice "${cats[k]}" has no colour: colors: { ${cats[k]}: '<role>' }`); });
@@ -1370,7 +1539,7 @@ function buildDonut(Sc, L) {
   L.marks = G.fillRole.filter(Boolean);
   G.ang = (v) => G.a0 + v / G.total * TAU;
   // the centre: one slice's share, big, counting as its slice sweeps; a caption under it
-  const ce = ls.centre ? { font: 'display', fill: 'paper', captionFont: 'mono', captionSize: 26 * U, captionFill: 'muted', gap: 20 * U, ...ls.centre } : null;
+  const ce = ls.centre ? { font: 'display', fill: 'paper', captionFont: 'mono', captionSize: 26 * U, captionFill: 'muted', gap: 20 * U, ...szo(ls.centre, ['size', 'cap', 'captionSize', 'gap']) } : null;
   G.ck = ce ? cats.indexOf(ce.cat) : -1;
   if (ce && G.ck < 0) issue(`fields: ${L.id}`, 'FAIL', `centre.cat "${ce.cat}" is not a slice`);
   if (ce && G.ck >= 0) {
@@ -1391,7 +1560,7 @@ function buildDonut(Sc, L) {
     if (G.caption) L.texts.push({ id: `${L.id} caption`, b: [G.caption.inkL, G.caption.top, G.caption.inkR, G.caption.bottom], chart: true });
   }
   // a direct label outside each other slice: its name, then its share
-  const lo = ls.labels === false ? null : { font: 'label', size: 30 * U, fill: 'paper', catFill: 'muted', gap: 28 * U, ...(ls.labels || {}) };
+  const lo = ls.labels === false ? null : { font: 'label', size: 30 * U, fill: 'paper', catFill: 'muted', gap: 28 * U, ...szo(ls.labels, ['size', 'gap']) };
   G.labels = [];
   if (lo) {
     needContrast(`${L.id} values`, lo.fill, ls.on || Sc.bgRole, 4.5);
@@ -1426,12 +1595,14 @@ function buildNote(Sc, L) {
   const ls = L.spec, fr = ls.font || 'mono';
   L.text = fillRefs(L, ls.text);
   freeNumbers(L, ls.text);
-  L.line = layoutText({ id: ls.id, text: L.text, font: fr, size: ls.size || 26 * U, track: ls.track != null ? ls.track : 20, anchor: ls.anchor || 'C', x: ls.x, baseline: ls.y });
+  L.line = layoutText({ id: ls.id, text: L.text, font: fr, size: sz(ls.size) || 26 * U, track: ls.track != null ? ls.track : 20, anchor: ls.anchor || 'C', x: px(ls.x, ls.pin), baseline: pyGrid(ls.y, ls.pin) });
+  L.baseY = ls.y != null ? L.line.baseline : null;
+  if (ls.point) L.point = [px(ls.point[0], ls.pin), py(ls.point[1], ls.pin)];
   L.box = [L.line.inkL, L.line.top, L.line.inkR, L.line.bottom];
   L.px = (L.box[0] + L.box[2]) / 2; L.py = (L.box[1] + L.box[3]) / 2; L.R = Math.hypot(L.box[2] - L.box[0], L.box[3] - L.box[1]) / 2;
   L.texts = [{ id: L.id, b: L.box, mono: fr === 'mono', size: L.line.size, y: ls.y }];
   L.fill = role(ls.fill || 'paper'); L.stroke = role(ls.stroke || ls.fill || 'paper');
-  L.lw = ls.width != null ? ls.width : 3 * U; L.dotR = ls.dot != null ? ls.dot : 7 * U; L.gap = ls.gap != null ? ls.gap : 12 * U;
+  L.lw = ls.width != null ? sz(ls.width) : 3 * U; L.dotR = ls.dot != null ? sz(ls.dot) : 7 * U; L.gap = ls.gap != null ? sz(ls.gap) : 12 * U;
   L.typed = true;
   needContrast(ls.id, ls.fill || 'paper', ls.on || Sc.bgRole, fr === 'mono' || L.line.size < 40 * U ? 4.5 : 3);
   L.copies = [container(L)];
@@ -1441,8 +1612,8 @@ function buildMark(Sc, L) {
   const ls = L.spec;
   L.geom = buildGeom(ls);
   L.fill = ls.fill ? role(ls.fill) : null; L.stroke = ls.stroke ? role(ls.stroke) : null;
-  L.width = ls.width != null ? ls.width : 8 * U;
-  L.px = ls.x != null ? ls.x : CX; L.py = ls.y != null ? ls.y : CY;
+  L.width = ls.width != null ? sz(ls.width) : 8 * U;
+  L.px = ls.x != null ? px(ls.x, ls.pin) : CX; L.py = ls.y != null ? py(ls.y, ls.pin) : CY;
   const g = L.geom, sw = L.stroke ? L.width / 2 : 0, sc = ls.scale != null ? ls.scale : 1, a = (ls.rot || 0) * DEG, c = Math.cos(a), s = Math.sin(a);
   const cs = [[g.box[0], g.box[1]], [g.box[2], g.box[1]], [g.box[2], g.box[3]], [g.box[0], g.box[3]]].map(([x, y]) => [L.px + sc * (x * c - y * s), L.py + sc * (x * s + y * c)]);
   L.box = [Math.min(...cs.map((p) => p[0])) - sw, Math.min(...cs.map((p) => p[1])) - sw, Math.max(...cs.map((p) => p[0])) + sw, Math.max(...cs.map((p) => p[1])) + sw];
@@ -1459,9 +1630,9 @@ function addSource(Sc) {
   if (so === false) { issue(`source: ${Sc.id}`, 'FAIL', 'this scene shows numbers from FILM.data but has source: false'); return; }
   const rows = [...new Set(dataLayers.flatMap((L) => L.dsets.map((D) => D.source).concat(L.refs.map((R) => R.D.source))).filter(Boolean))];
   const texts = [...new Set(rows.map((r) => (FILM.sources || {})[r]).filter(Boolean))];
-  const o = { font: 'mono', size: 24 * U, track: 20, anchor: 'L', fill: 'muted', ...(so || {}) };
+  const o = { font: 'mono', size: 24 * U, track: 20, anchor: 'L', fill: 'muted', ...szo(so, ['size']) };
   const text = (FILM.sourcePrefix != null ? FILM.sourcePrefix : 'SOURCE: ') + texts.join('; ');
-  let y = o.y;
+  let y = pyGrid(o.y, o.pin);
   if (y == null) { const probe = layoutText({ id: 'probe', text, font: o.font, size: o.size, anchor: 'L', x: 0, baseline: 0 }); y = Math.floor((H - MARGIN - probe.bottom) / UNIT) * UNIT; }
   const first = (L) => {                           // when a layer's numbers (or the chart around them) first show
     const ls = L.spec, ts = [];
@@ -1471,7 +1642,7 @@ function addSource(Sc) {
   };
   let at = o.at != null ? o.at : Math.max(Sc.t0, Math.min(...dataLayers.map(first)));
   if (o.at == null && at < 1 / FPS && LOOP === 'hold' && !Sc.wrap) at = 1 / FPS;   // frame 0 belongs to the lockup, cursor and all
-  const L = buildLayer(Sc, { id: `SOURCE-${Sc.id}`, kind: 'text', auto: true, text, font: o.font, size: o.size, track: o.track, anchor: o.anchor, x: o.x, y, fill: o.fill, on: o.on, enter: { at, typed: true } }, Sc.layers.length);
+  const L = buildLayer(Sc, { id: `SOURCE-${Sc.id}`, kind: 'text', auto: true, canvas: true, text, font: o.font, size: o.size, track: o.track, anchor: o.anchor, x: px(o.x, o.pin), y, fill: o.fill, on: o.on, enter: { at, typed: true } }, Sc.layers.length);
   L.isSource = true; L.rows = rows;
   Sc.source = L;
 }
@@ -1626,7 +1797,7 @@ function buildScenes() {
     const tr = Sc.tr, prev = SCENES.filter((p) => p !== Sc && p.win.some(([a, b]) => a < Sc.t0 && b >= Sc.t0 - 1e-9));
     if (tr.kind === 'cut') cutAt(Sc.t0);
     if (tr.kind === 'circle') {
-      const x = tr.x != null ? tr.x : CX, y = tr.y != null ? tr.y : CY;
+      const x = tr.x != null ? px(tr.x, tr.pin) : CX, y = tr.y != null ? py(tr.y, tr.pin) : CY;
       const far = Math.max(Math.hypot(x, y), Math.hypot(W - x, y), Math.hypot(x, H - y), Math.hypot(W - x, H - y));
       const sp = spring(tr.spring || 'MASK'), rMax = far * 1.25;
       let a = 0, b = settle(sp);
@@ -1691,7 +1862,7 @@ function linkNote(Sc, L) {                         // find the data point a note
 function noteAnchor(L, t) {                        // the point on the data (at time t; null = at rest) a note starts from
   const ls = L.spec, gp = L.gap;
   const v = (P, rest) => (t == null ? rest : P.at(t));  // t null: the chart at rest
-  if (!L.C) return { x: ls.point[0], y: ls.point[1] };
+  if (!L.C) return { x: L.point[0], y: L.point[1] };
   const C = L.C, G = C.G, i = L.ci;
   if (C.kind === 'columns' || C.kind === 'bars') {
     const val = v(C.vals[i], G.vals[i]), e = barEnd(G, val);
@@ -1726,8 +1897,8 @@ function inCopy(c, L, st, fn) {                    // draw in the layer's rest c
 }
 const shown = (st) => st.op > 0.002 && Math.abs(st.sc) > 1e-4;
 function drawTextLayer(c, L, t, q) {
-  const ls = L.spec;
-  if (ls.clip) { c.save(); c.beginPath(); c.rect(ls.clip[0], ls.clip[1], ls.clip[2] - ls.clip[0], ls.clip[3] - ls.clip[1]); c.clip(); }
+  const cl = L.clip;
+  if (cl) { c.save(); c.beginPath(); c.rect(cl[0], cl[1], cl[2] - cl[0], cl[3] - cl[1]); c.clip(); }
   if (L.typed) drawTyped(c, L, t, q);
   else {
     const ln = L.line;
@@ -1741,7 +1912,7 @@ function drawTextLayer(c, L, t, q) {
     }
   }
   c.globalAlpha = 1;
-  if (ls.clip) c.restore();
+  if (cl) c.restore();
 }
 function typedCount(L, q) {
   const at = L.kind === 'note' ? L.typeAt : L.spec.enter.at;
@@ -1928,7 +2099,7 @@ function drawMark(c, L, t) {
       if (b - a < 0.9999) {
         if (g.closed) { c.setLineDash([seg, Math.max(1e-3, g.len - seg)]); c.lineDashOffset = -a * g.len; }
         else { c.setLineDash([seg, g.len + 1]); c.lineDashOffset = -a * g.len; }
-      } else if (ls.dash) c.setLineDash(ls.dash);
+      } else if (ls.dash) c.setLineDash(ls.dash.map(sz));
       c.stroke(g.p2d);
       c.setLineDash([]); c.lineDashOffset = 0;
     }
@@ -2113,7 +2284,7 @@ function checks(add) {
         checkLiveArea(add, tx.id, tx.b, L.spec.bleed);
         if (tx.mono && tx.size < 24 * U) add(`small print: ${tx.id}`, 'WARN', `${tx.size.toFixed(1)} px is hard to read in a feed (24 px or more at 1080)`);
       }
-      if (L.spec.y != null && ['text', 'counter', 'note'].includes(L.kind) && L.spec.y % UNIT) add(`grid: ${L.id}`, 'WARN', `baseline ${L.spec.y} is not on the ${UNIT} px grid`);
+      if (L.baseY != null && ['text', 'counter', 'note'].includes(L.kind) && L.baseY % UNIT) add(`grid: ${L.id}`, 'WARN', `baseline ${L.baseY} is not on the ${UNIT} px grid`);
       if (L.markBox) checkLiveArea(add, `${L.id} marks`, L.markBox, L.spec.bleed);
       else if (L.kind === 'mark') checkLiveArea(add, L.id, L.box, L.spec.bleed);
       if (L.texts.some((x) => x.chart)) checkSpacing(add, L.texts.filter((x) => x.chart), 6 * U);
@@ -2268,6 +2439,8 @@ boot({
   name: 'charts',
   springs: { COUNT: [1, 9], GROW: [1, 11], SWEEP: [1, 8], TRACE: [1, 10], POP: [0.5, 22] },
   build, draw: (c, t, q) => drawFrame(c, t, q), disp, checks, lastChange, stills, layout, visible,
+  // a scene's bg fills the frame: the composition check reads it as background (FILM.backdrop overrides)
+  backdrop: FILM.backdrop || [...new Set(FILM.scenes.map((s) => s.bg).filter(Boolean))],
 });
 })();
 
