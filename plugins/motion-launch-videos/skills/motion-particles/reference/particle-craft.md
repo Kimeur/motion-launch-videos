@@ -84,6 +84,16 @@ A GIF stores only the pixels that change from one frame to the next. A particle 
 
 H.264 finds little to reuse in thousands of moving dots, so a particle film's MP4 is large: the demo is 17.3 MB for 12 s (11.5 Mb/s at the default CRF 16), where the other skills' demos are 1 to 2.5 MB. A higher CRF saves less than it costs: `--crf 20` gives 11.8 MB and its lowest review frame falls to 34.8 dB, `--crf 23` 8.6 MB and 32.5 dB, and the fine streaks go first. Deliver the CRF 16 file; a platform that re-encodes on upload starts from the best copy.
 
+## Formats
+
+The same beats in a different frame (engine.md, Formats, has the mechanics). The field fills any frame by itself; the formations follow the centre; what the patch adds is a design for the frame's shape.
+
+- **9:16**: the width is the limit and the height is spare. Stack a short name into two lines at a much bigger cap (the demo's `'AC\nME'` at a 330 px cap against 183 at 1:1), turn a mark's side elements to the top and bottom, and stretch the burst tall. A domain stays on one line: split, it stops reading as an address.
+- **16:9**: the height is the limit. Widen instead: a slightly bigger name, a wider domain, a second pair of arcs, a burst stretched sideways.
+- **Scale spacing and dot with the cap.** A word twice as tall at the same spacing needs four times the particles; at twice the spacing and twice the dot it needs the same number and averages to the same light at feed size.
+- **Raise `swarm.n` with the area**, 1.7 x for 9:16 or 16:9, so the dust is as dense as at 1:1, and keep the budget row's 25 to 40 % of dust.
+- **Small print with the content**, unpinned, a grid step or two under the lowest formation; pinned to the bottom edge of a tall frame it drags the composition down.
+
 ## Things that look good in a still and bad in motion
 
 - A word that forms with every particle arriving at once: no swarm, just a fade.
