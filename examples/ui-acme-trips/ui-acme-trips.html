@@ -140,7 +140,7 @@ const FILM = {
     { at: beat(5.75), expand: 'lisbon', from: 'LISBON' },
     { at: beat(6.25), pointer: 'out' },
     { at: beat(9.5), pointer: 'in', to: 'SAVE', point: [0.6, 0.5] },
-    { at: beat(10.25), focus: 'SAVE', z: 1.36, place: [0.5, 0.72] },
+    { id: 'ZOOM', at: beat(10.25), focus: 'SAVE', z: 1.36, place: [0.5, 0.72] },
     { at: beat(11.5), tap: 'SAVE' },
     { at: beat(11.75), state: 'SAVE', to: 'saved' },
     { at: beat(12.25), pointer: 'out' },
@@ -175,6 +175,29 @@ const FILM = {
         enter: { at: beat(19.5), typed: true } },
     ],
   },
+
+  // Other aspect ratios (render.mjs --format 9:16). Positions are in the 1080 x 1080 base; with no pin an element
+  // keeps its offset from the centre, pin 't' its distance from the top. Arrays of items with an id merge by id.
+  formats: {
+    // An app store preview or a Reel: a much bigger phone, the callouts centred above it, leaders dropping down.
+    '9:16': {
+      device: { x: 540, y: 580, scale: 1.6, enter: { from: { dy: 1760 } }, exit: { to: { dy: 1760 } } },
+      callouts: [
+        { id: 'PLAN', x: 540, y: 248, pin: 't', anchor: 'C', cap: 64, to: 'KYOTO', point: [0.62, 0.5] },
+        { id: 'SEE', x: 540, y: 248, pin: 't', anchor: 'C', cap: 64, point: [0.6, 0.5] },
+        { id: 'KEEP', x: 540, y: 248, pin: 't', anchor: 'C', cap: 64 },
+      ],
+      script: [{ id: 'ZOOM', place: [0.5, 0.78] }],   // the button low in the tall frame, the phone filling it
+      lockup: { layers: [
+        { id: 'ICON', y: 308, scale: 1.25 }, { id: 'NAME', y: 664, cap: 88 }, { id: 'URL', y: 752, size: 40 }, { id: 'DEMO', y: 904 },
+      ] },
+    },
+    // A landing-page hero: the phone left of centre, the callouts in the column to its right.
+    '16:9': {
+      device: { x: 460 },
+      callouts: [{ id: 'PLAN', x: 720, cap: 60 }, { id: 'SEE', x: 720, cap: 60 }, { id: 'KEEP', x: 720, cap: 60 }],
+    },
+  },
 };
 
 /* ===== CORE BEGIN: shared/core.js, synced by tools/sync.mjs. Do not edit it here. ===== */
@@ -202,6 +225,31 @@ const FILM = {
  * its end, so an engine can name its own functions freely.
  * ========================================================================== */
 const CORE = (() => {
+/* ---------------- formats: one film, several aspect ratios ---------------- */
+// ?format=9x16 (the scripts pass --format 9:16) re-sizes the film before anything reads FILM. A key of
+// FILM.formats patches any field for that format (objects merge, arrays of items with an id merge by id,
+// anything else is replaced). Without W and H in the patch, the standard ratios keep the film's short side:
+// 1:1, 4:5, 9:16, 16:9. Positions stay authored in the base format; an engine maps them with fmtX/fmtY/fmtPos,
+// which keep an element's offset from the centre (the default) or from the edge its pin names.
+const BW = FILM.W, BH = FILM.H;
+const FORMAT = (() => { const m = /[?&]format=(\d+)[x:](\d+)/.exec(location.search); return m ? `${m[1]}:${m[2]}` : null; })();
+function mergeInto(a, b) {
+  for (const [k, v] of Object.entries(b)) {
+    const o = a[k];
+    if (Array.isArray(v) && Array.isArray(o) && v.every((x) => x && x.id != null)) {
+      for (const it of v) { const t = o.find((x) => x && x.id === it.id); if (t) mergeInto(t, it); else o.push(it); }
+    } else if (v && typeof v === 'object' && !Array.isArray(v) && o && typeof o === 'object' && !Array.isArray(o)) mergeInto(o, v);
+    else a[k] = v;
+  }
+  return a;
+}
+if (FORMAT) {
+  const patch = (FILM.formats || {})[FORMAT] || {};
+  const [ra, rb] = FORMAT.split(':').map(Number), short = Math.min(BW, BH);
+  if (!(ra > 0 && rb > 0)) throw new Error(`bad format ${FORMAT}`);
+  const size = ra === rb ? [short, short] : ra < rb ? [short, Math.round(short * rb / ra / 2) * 2] : [Math.round(short * ra / rb / 2) * 2, short];
+  mergeInto(FILM, { W: size[0], H: size[1], ...patch });
+}
 const { W, H, FPS, DUR } = FILM;
 const NFR = Math.round(DUR * FPS);                 // output frames in the loop
 const CX = W / 2, CY = H / 2;
@@ -214,6 +262,13 @@ const GRID = FILM.grid || {};
 const MARGIN = GRID.margin != null ? GRID.margin : Math.round(104 * U);
 const UNIT = GRID.unit || 8;
 const MEASURE = W - 2 * MARGIN;
+const FS = Math.min(W, H) / Math.min(BW, BH);      // base px -> this format's px
+const FMT = { key: FORMAT || `${BW}x${BH}`, W, H, BW, BH, s: FS, aspect: W === H ? 'square' : W < H ? 'vertical' : 'horizontal' };
+// pin: 'l' or 'r' keeps the distance from that edge, 't' or 'b' likewise; otherwise the offset from the centre
+const fmtX = (x, pin = '') => /l/.test(pin) ? x * FS : /r/.test(pin) ? W - (BW - x) * FS : W / 2 + (x - BW / 2) * FS;
+const fmtY = (y, pin = '') => /t/.test(pin) ? y * FS : /b/.test(pin) ? H - (BH - y) * FS : H / 2 + (y - BH / 2) * FS;
+const fmtPos = (x, y, pin = '') => [fmtX(x, pin), fmtY(y, pin)];
+const fmtSz = (v) => v * FS;
 const LOOP = FILM.loop || 'hold';                  // 'hold': ends on a still copy of frame 0; 'cycle': periodic, continuous over the seam; 'none'
 const BLUR = FILM.blur !== false;                  // false: one sample per frame (cartoon, pixel art)
 const SHUTTER = 0.75;                              // 270 degrees, trailing
@@ -695,7 +750,49 @@ function critique() {
       add('blank frames', 'WARN', `frames ${a}-${b} (t ${(a / FPS).toFixed(3)}-${(b / FPS).toFixed(3)}) show nothing: start the next entrance sooner, or pop it in at the cut`);
   }
   for (const w of WARN) add('timeline', 'WARN', w);
+  compositionCheck(add);
   return checks;
+}
+// Composition: where the ink sits in the review stills. Ink is any pixel away from the background and from
+// the colours of the roles an engine lists as backdrop (a stage, a sky). The lean on an axis is the difference
+// between the empty margins on its two sides, or twice the ink's centre of mass off the middle (a small footer
+// stretches the box but barely moves the mass), whichever is larger. An average lean past a fifth of the
+// canvas warns, past 30 % fails: content authored for a square left in the top of a 9:16 frame, or the left
+// of a 16:9 one.
+function inkBox(isBg, step) {
+  const d = ctx.getImageData(0, 0, W, H).data;
+  let x0 = W, y0 = H, x1 = -1, y1 = -1, n = 0, sx = 0, sy = 0;
+  for (let y = 0; y < H; y += step) for (let x = 0; x < W; x += step) {
+    const i = (y * W + x) * 4;
+    if (isBg(d[i], d[i + 1], d[i + 2])) continue;
+    if (x < x0) x0 = x; if (x > x1) x1 = x; if (y < y0) y0 = y; if (y > y1) y1 = y;
+    n++; sx += x; sy += y;
+  }
+  return x1 < 0 ? null : { box: [x0, y0, x1 + step, y1 + step], cx: sx / n, cy: sy / n };
+}
+function compositionCheck(add) {
+  const bgs = [PAL.bg, ...(ENGINE.backdrop || []).map((r) => PAL[r] || r)].map(rgbOf);
+  const isBg = (r, g, b) => bgs.some((c) => Math.abs(r - c[0]) + Math.abs(g - c[1]) + Math.abs(b - c[2]) < 36);
+  const pick = (a, b) => Math.abs(a) >= Math.abs(b) ? a : b;
+  const rows = [];
+  for (const { frame } of stillsPlan()) {
+    draw(ctx, frame / FPS);
+    const ink = inkBox(isBg, Math.max(2, Math.round(3 * U)));
+    if (!ink) continue;
+    const b = ink.box, top = b[1] / H, bottom = (H - b[3]) / H, left = b[0] / W, right = (W - b[2]) / W;
+    if (top + bottom > 0.9 || left + right > 0.9) continue;         // a speck: nothing to balance
+    rows.push({ v: pick(bottom - top, 2 * (0.5 - ink.cy / H)), h: pick(right - left, 2 * (0.5 - ink.cx / W)) });
+  }
+  if (!rows.length) { add('composition', 'PASS', 'no still with measurable ink off the background'); return; }
+  const mean = (k) => rows.reduce((a, r) => a + r[k], 0) / rows.length;
+  const v = mean('v'), h = mean('h');
+  const lean = (x, a, b) => `${x > 0 ? a : b} (a lean of ${Math.round(Math.abs(x) * 100)} %)`;
+  const verdict = (x) => Math.abs(x) > 0.3 ? 'FAIL' : Math.abs(x) > 0.2 ? 'WARN' : 'PASS';
+  const worst = Math.abs(v) >= Math.abs(h) ? ['v', v] : ['h', h];
+  const st = verdict(worst[1]);
+  add('composition', st, st === 'PASS'
+    ? `${rows.length} stills balanced: a lean of ${Math.round(Math.abs(v) * 100)} % top to bottom, ${Math.round(Math.abs(h) * 100)} % left to right on average`
+    : `the stills lean to the ${worst[0] === 'v' ? lean(v, 'top', 'bottom') : lean(h, 'left', 'right')}, over ${rows.length} stills (${FMT.key}): centre the content or pin elements to the edges they belong to`);
 }
 // review stills: the engine's plan (each scene in and at rest, each transition) plus every accent frame
 function stillsPlan() {
@@ -723,7 +820,8 @@ function boot(E) {
   for (const [k, v] of Object.entries(SP)) if (!(v[0] > 0 && v[0] <= 1 && v[1] > 0)) throw new Error(`spring ${k}: zeta must be in (0, 1] and omega > 0`);
   window.DURATION = DUR; window.FPS = FPS; window.WIDTH = W; window.HEIGHT = H;
   window.FILM_META = { title: FILM.title, poster: FILM.poster || 0, bg: PAL.bg, palette: PAL, loop: LOOP, blur: BLUR,
-    engine: E.name, strictPalette: !!E.strictPalette, seamCut: !!E.seamCut, gif: E.gif || null };
+    engine: E.name, strictPalette: !!E.strictPalette, seamCut: !!E.seamCut, gif: E.gif || null,
+    format: FMT.key, aspect: FMT.aspect, formats: Object.keys(FILM.formats || {}) };
   Object.assign(window, { seek, renderFrame, motionAt, layoutTable, critique, stillsPlan, textByFace, accentFrames, misFrames: accentFrames, offPalette });
   const roles = Object.keys(FILM.fonts || {}), sample = filmChars();
   window.ready = Promise.all(roles.map((r) => document.fonts.load(fontStr(r, 100), sample)))
@@ -763,7 +861,8 @@ function boot(E) {
     rgbOf, hexOf, mix, hueChroma, hueDist, lum, contrast, inksClash,
     face, fontStr, setFont, capRatio, useText, measureRun, layoutText, blurQ, glyphSprite, fillGlyph, drawText,
     svgPath, CUTS, ACTIVE, ACCENTS, WARN, CONTRAST, cutAt, activeIn, accentAt, needContrast,
-    checkLiveArea, checkSpacing, seek, boot };
+    checkLiveArea, checkSpacing, seek, boot,
+    FMT, fmtX, fmtY, fmtPos, fmtSz };
 })();
 const { W, H, FPS, DUR, NFR, CX, CY, U, PAL, col, role, GRID, MARGIN, UNIT, MEASURE, LOOP, BLUR, SHUTTER, TAU,
   canvas, ctx, mkCanvas, mk2d, mctx,
@@ -773,7 +872,8 @@ const { W, H, FPS, DUR, NFR, CX, CY, U, PAL, col, role, GRID, MARGIN, UNIT, MEAS
   rgbOf, hexOf, mix, hueChroma, hueDist, lum, contrast, inksClash,
   face, fontStr, setFont, capRatio, useText, measureRun, layoutText, blurQ, glyphSprite, fillGlyph, drawText,
   svgPath, CUTS, ACTIVE, ACCENTS, WARN, CONTRAST, cutAt, activeIn, accentAt, needContrast,
-  checkLiveArea, checkSpacing, seek, boot } = CORE;
+  checkLiveArea, checkSpacing, seek, boot,
+  FMT, fmtX, fmtY, fmtPos, fmtSz } = CORE;
 /* ===== CORE END ===== */
 
 /* ==========================================================================
@@ -788,6 +888,19 @@ const lerp = (a, b, k) => a + (b - a) * k;
 const ALL = [], NODES = {}, SCREENS = [], SCREEN = {}, ENTRIES = [], HUD = [], CALLOUTS = [], TEXTS = [];
 const TAPS = [], TYPING = [], FOCUS = [], SHOTS = [], CROSS = [], RINGS = [], NOTES = [];
 let DEV = null, PTR = null, CAM = null, LOCK = null, PO = 0;
+
+/* ---------------- formats: FILM is authored in its base format ---------------- */
+// The device's centre, callouts, free layers (the lockup) and camera points are canvas positions in the base
+// format; they map to the format being rendered through the core's fmtX/fmtY with an optional pin ('t', 'b',
+// 'l', 'r', or no pin: the offset from the centre), and their sizes scale with FMT.s. A free layer and its
+// children map as one piece (its pin's affine map). In the base format every map is skipped, so the pixels
+// are exactly those of a film that knows nothing of formats.
+const BASEFMT = W === FMT.BW && H === FMT.BH && FMT.s === 1;
+const posX = (x, pin) => (BASEFMT ? x : fmtX(x, pin || ''));
+const posY = (y, pin) => (BASEFMT ? y : fmtY(y, pin || ''));
+const szF = (v) => (BASEFMT || v == null ? v : fmtSz(v));
+const pinM = (pin) => (BASEFMT ? null : [FMT.s, 0, 0, FMT.s, fmtX(0, pin || ''), fmtY(0, pin || '')]);
+function szState(o) { if (!BASEFMT) for (const k of ['dx', 'dy']) if (k in o) o[k] = fmtSz(o[k]); return o; }   // canvas-px offsets
 
 /* ---------------- 2D affine matrices [a, b, c, d, e, f], the order canvas transform() takes ---------------- */
 const M1 = [1, 0, 0, 1, 0, 0];
@@ -913,6 +1026,7 @@ function mkNode(s, parent, ctx, auto) {
   N.top = parent ? parent.top : N;
   N.fixed = parent ? parent.fixed : !!s.fixed || FIXED_TYPES.has(type);
   N.x = s.x || 0; N.y = s.y || 0;
+  N.fm = !parent && N.hud ? pinM(s.pin) : null;   // a free layer's format map (null in the base format)
   const B = BUILD[type];
   if (!B) throw new Error(`${N.id}: unknown type "${type}"`);
   if (N.hud && ['nav', 'tabbar', 'row', 'toast', 'sheet', 'modal', 'input', 'toggle', 'checkbox'].includes(type)) throw new Error(`${N.id}: a ${type} belongs on a screen`);
@@ -1109,12 +1223,14 @@ const BUILD = {
 /* ---------------- matrices of a node ---------------- */
 function restLocal(N) {
   let m = mT(N.x, N.y);
+  if (N.fm) m = mmul(N.fm, m);
   if (N.rest.sc !== 1 || N.rest.rot !== 0) m = mmul(m, mAbout(N.pv ? N.pv[0] : 0, N.pv ? N.pv[1] : 0, N.rest.rot * DEG, N.rest.sc));
   return m;
 }
 function restChain(N) { let m = M1; const ch = []; for (let n = N; n; n = n.parent) ch.push(n); for (let i = ch.length - 1; i >= 0; i--) m = mmul(m, restLocal(ch[i])); return m; }
 function localM(N, t) {
   let m = mT(N.x + V(N, 'dx', t), N.y + V(N, 'dy', t));
+  if (N.fm) m = mmul(N.fm, m);
   if (N.over) {
     const k = V(N, 'show', t);
     if (N.over === 'toast') m = mmul(m, mT(0, -(1 - k) * (N.y + N.h + 24)));
@@ -1162,7 +1278,7 @@ function buildDevice(d) {
   const def = { phone: { screen: [360, 760], radius: 46, bezel: 12, status: 44 }, tablet: { screen: [600, 820], radius: 26, bezel: 18, status: 32 }, browser: { screen: [880, 560], radius: 12, bezel: 0, status: 0 } }[kind];
   if (!def) throw new Error(`device kind "${kind}": use phone, tablet or browser`);
   const [sw, sh] = d.screen || def.screen;
-  const D = DEV = { id: 'device', kind, spec: d, sw, sh, x: d.x != null ? d.x : CX, y: d.y != null ? d.y : CY, scale: d.scale || 1,
+  const D = DEV = { id: 'device', kind, spec: d, sw, sh, x: d.x != null ? posX(d.x, d.pin) : CX, y: d.y != null ? posY(d.y, d.pin) : CY, scale: szF(d.scale || 1),
     r: d.radius != null ? d.radius : def.radius, bz: d.bezel != null ? d.bezel : def.bezel, bar: kind === 'browser' ? (d.bar || 56) : 0,
     P: {}, rest: { dx: 0, dy: 0, sc: 1, op: 1, rot: 0 } };
   D.body = role(d.body || (kind === 'browser' ? 'paper' : 'ink'));
@@ -1217,20 +1333,20 @@ function buildHud() {
 }
 function buildCallout(s, i) {
   const C = { id: s.id || `callout${i}`, spec: s, P: {}, rest: { ln: 0, lo: 0, dot: 0 } };
-  C.line = layoutText(spaced({ id: C.id, text: s.text, font: s.font || 'display', size: s.size, cap: s.cap, track: s.track, pairs: s.pairs, space: s.space, anchor: s.anchor || 'L', x: s.x, baseline: s.y }));
+  C.line = layoutText(spaced({ id: C.id, text: s.text, font: s.font || 'display', size: szF(s.size), cap: szF(s.cap), track: s.track, pairs: s.pairs, space: s.space, anchor: s.anchor || 'L', x: posX(s.x, s.pin), baseline: posY(s.y, s.pin) }));
   C.colorRole = s.color || 'ink'; C.color = role(C.colorRole);
   C.lineC = role(s.line || C.colorRole); C.dotC = role(s.dot || 'brand'); C.ringC = role(s.ring || 'paper');
-  C.lw = s.width || 4; C.gap = s.gap != null ? s.gap : 24;
+  C.lw = szF(s.width || 4); C.gap = szF(s.gap != null ? s.gap : 24); C.dotR = szF(8); C.ringR = szF(13);
   C.box = [C.line.inkL, C.line.top, C.line.inkR, C.line.bottom];
   C.words = s.text.split(/\s+/).filter((w) => /[A-Za-z0-9€$£]/.test(w)).length;
   C.tin = s.in; C.tout = s.out != null ? s.out : Infinity;
   if (C.tin == null) throw new Error(`${C.id}: a callout needs in (and usually out)`);
   C.copies = C.line.glyphs.filter((g) => !g.space).map((g, k) => ({ id: `${C.id}#${k}`, g, P: {}, rest: { ...BASE } }));
-  const from = stateVals(s.from || { dy: 28, op: 0, blur: 6 }, C.copies[0] || { rest: BASE, id: C.id }), st = noteSec(s.stagger || 32);
+  const from = szState(stateVals(s.from || { dy: 28, op: 0, blur: 6 }, C.copies[0] || { rest: BASE, id: C.id })), st = noteSec(s.stagger || 32);
   C.copies.forEach((G, k) => {
     for (const [key, v] of Object.entries(from)) { initV(G, key, v); ev(G, key, C.tin + k * st, G.rest[key], springFor(key, s.spring || 'LAND')); }
     if (C.tout < DUR) {
-      const lv = stateVals(s.leave || { dy: -20, op: 0 }, G), te = C.tout + k * noteSec(64);
+      const lv = szState(stateVals(s.leave || { dy: -20, op: 0 }, G)), te = C.tout + k * noteSec(64);
       for (const [key, v] of Object.entries(lv)) ev(G, key, te, v, springFor(key, 'EXIT'));
       if (LOOP === 'cycle') for (const key of new Set([...Object.keys(lv), ...Object.keys(from)])) ev(G, key, te + settle(SP.EXIT) + 1 / FPS, key in from ? from[key] : G.rest[key], null, 'set');
     }
@@ -1290,9 +1406,9 @@ function orderOf(cps, how, seed) {
 }
 function deviceMotion() {
   const d = DEV.spec, fake = { id: 'device', rest: DEV.rest, w: 0, h: 0 };
-  if (d.enter) { const from = stateVals(d.enter.from, fake); for (const [k, v] of Object.entries(from)) { initV(DEV, k, v); ev(DEV, k, d.enter.at, DEV.rest[k], springFor(k, d.enter.spring || 'LIFT')); } }
-  for (const m of d.keys || []) for (const [k, v] of Object.entries(stateVals(m.to, fake))) ev(DEV, k, m.at, v, springFor(k, m.spring));
-  if (d.exit) for (const [k, v] of Object.entries(stateVals(d.exit.to, fake))) ev(DEV, k, d.exit.at, v, springFor(k, d.exit.spring || 'EXIT'));
+  if (d.enter) { const from = szState(stateVals(d.enter.from, fake)); for (const [k, v] of Object.entries(from)) { initV(DEV, k, v); ev(DEV, k, d.enter.at, DEV.rest[k], springFor(k, d.enter.spring || 'LIFT')); } }
+  for (const m of d.keys || []) for (const [k, v] of Object.entries(szState(stateVals(m.to, fake)))) ev(DEV, k, m.at, v, springFor(k, m.spring));
+  if (d.exit) for (const [k, v] of Object.entries(szState(stateVals(d.exit.to, fake)))) ev(DEV, k, d.exit.at, v, springFor(k, d.exit.spring || 'EXIT'));
 }
 
 /* ---------------- the script ---------------- */
@@ -1485,10 +1601,16 @@ function runScript() {
   }
   for (const Sc of SCREENS) for (const [t, v] of Sc.scrolls || []) if (v < -0.5 || v > Sc.content - DEV.sh + 0.5) NOTES.push(['WARN', `scroll: ${Sc.id}`, `at ${t.toFixed(2)} s the scroll heads for ${v}, outside 0 to ${Math.max(0, Sc.content - DEV.sh).toFixed(0)} (the content is ${Sc.content.toFixed(0)} units tall)`]);
 }
-const CAMQ = [];
+const CAMQ = [], ZOOMS = [];
 const RIPPLE_T = 1.3;
+function focusBox(a, t) {                          // a focus target's box on the canvas at t, before the camera
+  if (a.focus == null || a.focus === false) return null;
+  if (Array.isArray(a.focus)) return mbox(devM(t), a.focus);
+  const N = nodeOf(a.focus, `focus at ${a.at}`);
+  return mbox(N.hud ? chainM(N, t) : mmul(devM(t), screenOf(N, t)), N.box);
+}
 function cameraMotion() {
-  for (const a of CAMQ) {
+  for (const [i, a] of CAMQ.entries()) {
     const t = a.at, sp = a.spring || 'ZOOM';
     if (a.focus === false || a.focus === null || a.camera === 'rest') { ev(CAM, 'cx', t, CX, sp); ev(CAM, 'cy', t, CY, sp); ev(CAM, 'z', t, 1, sp); continue; }
     let z = a.z || 1.4, T;
@@ -1496,9 +1618,24 @@ function cameraMotion() {
       const tt = t + 0.5;
       if (Array.isArray(a.focus)) { const [x0, y0, x1, y1] = a.focus; T = mpt(devM(tt), (x0 + x1) / 2, (y0 + y1) / 2); }
       else { const N = nodeOf(a.focus, `focus at ${t}`), m = N.hud ? chainM(N, tt) : mmul(devM(tt), screenOf(N, tt)); T = mpt(m, (N.box[0] + N.box[2]) / 2, (N.box[1] + N.box[3]) / 2); }
-    } else { const c = a.camera; T = [c.x != null ? c.x : CX, c.y != null ? c.y : CY]; z = c.z || 1; }
+    } else { const c = a.camera; T = [c.x != null ? posX(c.x, c.pin) : CX, c.y != null ? posY(c.y, c.pin) : CY]; z = c.z || 1; }
     const pl = a.place || [0.5, 0.5];
-    ev(CAM, 'cx', t, T[0] - (pl[0] * W - CX) / z, sp); ev(CAM, 'cy', t, T[1] - (pl[1] * H - CY) / z, sp); ev(CAM, 'z', t, z, sp);
+    let cx = T[0] - (pl[0] * W - CX) / z, cy = T[1] - (pl[1] * H - CY) / z, moved = 0;
+    const tb = focusBox(a, t + 0.5);
+    if (tb) {                                      // keep the target inside the live area in every format
+      const fit = (lo, hi, c, C, D) => {           // the camera centre that puts [lo, hi] inside [MARGIN, D - MARGIN]
+        const a0 = z * (lo - c) + C, a1 = z * (hi - c) + C;
+        if (a1 - a0 > D - 2 * MARGIN) return (lo + hi) / 2;
+        if (a0 < MARGIN) return c - (MARGIN - a0) / z;
+        if (a1 > D - MARGIN) return c + (a1 - (D - MARGIN)) / z;
+        return c;
+      };
+      const nx = fit(tb[0], tb[2], cx, CX, W), ny = fit(tb[1], tb[3], cy, CY, H);
+      moved = Math.hypot(nx - cx, ny - cy) * z; cx = nx; cy = ny;
+    }
+    ev(CAM, 'cx', t, cx, sp); ev(CAM, 'cy', t, cy, sp); ev(CAM, 'z', t, z, sp);
+    const next = CAMQ[i + 1] ? CAMQ[i + 1].at - 1e-6 : DUR - 1e-6;   // judged when it has settled, or as the next move starts
+    if (tb) ZOOMS.push({ a, t: Math.min(t + settle(spring(sp)), next), z, moved, what: Array.isArray(a.focus) ? 'a box' : a.focus });
     SHOTS.push({ t: t + landT(sp) + 0.2, name: `focus-${a.focus || 'camera'}`, what: `camera on ${a.focus || 'a point'} at ${z}` });
   }
 }
@@ -1830,8 +1967,8 @@ function drawCallout(c, C, t) {
     c.beginPath(); c.moveTo(lerp(x0, E[0], lo), lerp(y0, E[1], lo)); c.lineTo(lerp(x0, E[0], ln), lerp(y0, E[1], ln)); c.stroke();
   }
   if (ds > 0.01) {
-    c.globalAlpha = 1; c.fillStyle = C.ringC; c.beginPath(); c.arc(E[0], E[1], 13 * ds, 0, TAU); c.fill();
-    c.fillStyle = C.dotC; c.beginPath(); c.arc(E[0], E[1], 8 * ds, 0, TAU); c.fill();
+    c.globalAlpha = 1; c.fillStyle = C.ringC; c.beginPath(); c.arc(E[0], E[1], C.ringR * ds, 0, TAU); c.fill();
+    c.fillStyle = C.dotC; c.beginPath(); c.arc(E[0], E[1], C.dotR * ds, 0, TAU); c.fill();
   }
 }
 function resetStroke(c) {                          // the core resets transform, alpha and filter; strokes and type are ours
@@ -1887,7 +2024,7 @@ function disp(ta, tb) {
       const A = calloutEnd(C, ta), B = calloutEnd(C, tb);
       if (A && B) {
         const len = Math.hypot(B[0] - C.start[0], B[1] - C.start[1]);
-        d = Math.max(d, Math.hypot(B[0] - A[0], B[1] - A[1]), len * Math.max(Math.abs(V(C, 'ln', tb) - V(C, 'ln', ta)), Math.abs(V(C, 'lo', tb) - V(C, 'lo', ta))), 13 * Math.abs(V(C, 'dot', tb) - V(C, 'dot', ta)));
+        d = Math.max(d, Math.hypot(B[0] - A[0], B[1] - A[1]), len * Math.max(Math.abs(V(C, 'ln', tb) - V(C, 'ln', ta)), Math.abs(V(C, 'lo', tb) - V(C, 'lo', ta))), C.ringR * Math.abs(V(C, 'dot', tb) - V(C, 'dot', ta)));
       }
     }
   }
@@ -1985,7 +2122,7 @@ function checks(add) {
     const db = mbox(devM(0, true), DEV.outer);
     if (LOOP === 'hold') {
       const t1 = DUR - 1e-6, a = stageM(0), b = stageM(t1), oa = V(DEV, 'op', 0), ob = V(DEV, 'op', t1);
-      const pad = DEV.shadow ? DEV.shadow.blur * 2.5 + Math.abs(DEV.shadow.dy) : 2, onCanvas = (m, o) => { const bb = mbox(m, DEV.outer); return o > 0.002 && bb[2] > -pad && bb[0] < W + pad && bb[3] > -pad && bb[1] < H + pad; };
+      const pad = (DEV.shadow ? DEV.shadow.blur * 2.5 + Math.abs(DEV.shadow.dy) : 2) * DEV.scale, onCanvas = (m, o) => { const bb = mbox(m, DEV.outer); return o > 0.002 && bb[2] > -pad && bb[0] < W + pad && bb[3] > -pad && bb[1] < H + pad; };
       const same = mdisp(a, b, DEV.outer) < 0.01 && Math.abs(oa - ob) < 1e-6;
       add('device seam', !same && (onCanvas(a, oa) || onCanvas(b, ob)) ? 'FAIL' : 'PASS', same ? 'the device ends where frame 0 has it' : onCanvas(a, oa) || onCanvas(b, ob)
         ? 'the device, or its shadow, shows at frame 0 or at the end, in two different places: enter from where it exits to, far enough off the canvas' : 'off the canvas, shadow included, at frame 0 and at the end');
@@ -2012,6 +2149,23 @@ function checks(add) {
       }
       add(`leader: ${C.id}`, bad ? 'FAIL' : 'PASS', bad || `ends on ${Array.isArray(to) ? 'a point' : to} while it shows`);
     }
+  }
+  // callouts do not sit on each other or on a free layer (a headline, the lockup) that shows with them
+  const heads = HUD.filter((N) => N.kind !== 'group' || N.kids.length);
+  for (const C of CALLOUTS) {
+    const hit = new Set();
+    for (let t = C.tin; t < Math.min(DUR, C.tout + 0.4); t += 2 / FPS) {
+      if (C.copies.every((G) => V(G, 'op', t) < 0.05)) continue;
+      for (const D of CALLOUTS) if (D !== C && C.id < D.id && !hit.has(D) && D.copies.some((G) => V(G, 'op', t) > 0.05) && overlaps(C.box, D.box)) { hit.add(D); add(`overlap: ${C.id} / ${D.id}`, 'FAIL', `the two callouts overlap at ${t.toFixed(2)} s`); }
+      for (const N of heads) if (!hit.has(N) && hudShows(N, t) && overlaps(C.box, mbox(chainM(N, t), N.box))) { hit.add(N); add(`overlap: ${C.id} / ${N.id}`, 'FAIL', `the callout sits on ${N.id} at ${t.toFixed(2)} s`); }
+    }
+    if (!hit.size) add(`overlap: ${C.id}`, 'PASS', 'clear of the other callouts and the free layers');
+  }
+  // a focus zoom keeps its target inside the live area (the camera is moved to keep it there)
+  for (const Z of ZOOMS) {
+    const b = mbox(camM(Z.t), focusBox(Z.a, Z.t)), inLive = b[0] >= MARGIN - 1 && b[2] <= W - MARGIN + 1 && b[1] >= MARGIN - 1 && b[3] <= H - MARGIN + 1;
+    add(`focus: ${Z.what}`, inLive ? 'PASS' : 'WARN', inLive ? `framed at ${b.map((v) => v.toFixed(0)).join(', ')}${Z.moved > 0.5 ? ` (the camera moved ${Z.moved.toFixed(0)} px to keep it in)` : ''}`
+      : `${b.map((v) => v.toFixed(0)).join(', ')} is larger than the live area at z ${Z.z}: zoom less`);
   }
   // taps land on what they press
   for (const T of TAPS) {
@@ -2056,7 +2210,7 @@ function layout() {
     device: DEV && { kind: DEV.kind, screen: [DEV.sw, DEV.sh], scale: DEV.scale, box: rb(mbox(devM(0, true), DEV.outer)), screenBox: rb(mbox(devM(0, true), [0, 0, DEV.sw, DEV.sh])) },
     screens: SCREENS.map((Sc) => ({ id: Sc.id, content: r(Sc.content), layers: nodes([...Sc.flow, ...Sc.fixed, ...Sc.overlays]) })),
     texts: TEXTS.map((T) => { const p = textPlace(T); return { id: T.line.id || T.N.id, text: T.line.text, px: r(T.line.size * p.s * (T.N.hud ? 1 : DEV.scale) / U), on: p.bg, color: T.color }; }),
-    callouts: CALLOUTS.map((C) => ({ id: C.id, text: C.spec.text, box: rb(C.box), start: C.start && rb(C.start), capH: r(C.line.capH), size: r(C.line.size) })),
+    callouts: CALLOUTS.map((C) => ({ id: C.id, text: C.spec.text, box: rb(C.box), start: C.start && rb(C.start), side: C.side, capH: r(C.line.capH), size: r(C.line.size) })),
     hud: nodes(HUD),
   };
 }
@@ -2076,8 +2230,11 @@ function build() {
   flushEvents();
   for (const N of ALL) N.moves = Object.keys(N.P).length > 0 || (N.parent && N.parent.moves) || !!N.ripples;
   for (const C of CALLOUTS) {                      // the leader leaves the side of the words that faces its element
-    const t = Math.min(DUR - 1e-6, C.tin + 0.6), E = calloutEnd(C, t) || [CX, CY], L = C.line, y = L.baseline - L.capH / 2;
-    C.start = E[0] < (C.box[0] + C.box[2]) / 2 ? [C.box[0] - C.gap, y] : [C.box[2] + C.gap, y];
+    const t = Math.min(DUR - 1e-6, C.tin + 0.6), E = calloutEnd(C, t) || [CX, CY], L = C.line, y = L.baseline - L.capH / 2, b = C.box;
+    C.side = C.spec.side || (E[0] < b[0] ? 'l' : E[0] > b[2] ? 'r' : E[1] > b[3] ? 'b' : E[1] < b[1] ? 't' : E[0] < (b[0] + b[2]) / 2 ? 'l' : 'r');
+    if (!/^[lrtb]$/.test(C.side)) throw new Error(`${C.id}: side is 'l', 'r', 't' or 'b'`);
+    const xm = Math.max(b[0], Math.min(b[2], E[0]));   // above or below: the leader leaves under (or over) its element
+    C.start = C.side === 'l' ? [b[0] - C.gap, y] : C.side === 'r' ? [b[2] + C.gap, y] : C.side === 'b' ? [xm, b[3] + C.gap] : [xm, b[1] - C.gap];
   }
   if (DEV && DEV.spec.enter) SHOTS.sort((a, b) => a.t - b.t);
 }
