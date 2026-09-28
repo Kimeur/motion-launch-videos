@@ -4,7 +4,7 @@ Step 5 and the end of step 6. Nothing is rendered in full until the stills pass,
 
 ## Pre-pass: `render.mjs stills`
 
-It prints only the checks that did not pass (set `VERBOSE=1` to see all), writes one PNG per planned frame to `videos/<film>/stills/`, and a labelled `contact.png`. It exits non-zero when anything fails.
+It prints only the checks that did not pass (set `VERBOSE=1` to see all), writes one PNG per planned frame to `videos/<film>/stills/`, and a labelled `contact.png`. It exits non-zero when anything fails. With `--format 9:16` (or `16:9`) it checks the film at that ratio and writes to `stills/9x16/`; run it once per delivered format.
 
 The planned frames: frame 0, the loop start (the lockup leaving), each transition just after it starts (a bars wipe mid-cover), each scene at rest (after its entrances land, before its punch-in or exits), each accent frame, and the last frame.
 
@@ -25,6 +25,7 @@ The planned frames: frame 0, the loop start (the lockup leaving), each transitio
 | loop closes (cycle) | a value ends somewhere other than where it starts | add the move back |
 | cycle (cycle) | a behaviour's cycles per loop are not whole | a whole `n` |
 | blank frames (warn) | 4 or more frames show nothing | start the next entrance sooner |
+| composition | the ink in the review stills leans to one side on average: over 20 % of the canvas warns, over 30 % fails (a scene `bg` counts as background). At 9:16 and 16:9 it catches a layout left in the top or the left square | centre it, `pin` elements to the edges they belong to, or patch the format in `FILM.formats` (engine.md, Formats) |
 | timeline (warn) | the camera does not return, a punch is never reset, a morph mixes open and closed outlines | see loops.md, engine.md |
 | palette gate | an accent frame has a patch of mixed ink (two hues blended into a third) | make the overlapping shapes opaque, or change a role |
 
@@ -37,6 +38,7 @@ The planned frames: frame 0, the loop start (the lockup leaving), each transitio
 - **Transitions**: the circle wipe starts on the element that just landed; the bars cover the frame completely at the swap; a push reads as a streak, not copies.
 - **The loop start**: the lockup leaves and the hook arrives with no empty frame between them.
 - **Frame 0 and the last frame** look identical (hold loop), and the lockup is complete in both.
+- **Each format looks designed for its frame**: at 9:16 no empty bands above and below a square layout, type clear of the top and bottom 360 px; at 16:9 the picture and the words side by side, not a column in the middle. Nothing that rises or slides in shows at its starting offset (a word peeking under the lockup at frame 0).
 
 Fix, rebuild, and run stills again. Show the user the contact sheet and anything you changed on their brief.
 
@@ -44,7 +46,9 @@ Fix, rebuild, and run stills again. Show the user the contact sheet and anything
 
 1. `loopcheck`: every maximum channel difference is 0 (and, for a cycle loop, the seam continuity line passes).
 2. `render`: the full film, in the background.
-3. `verify`: every check passes. The encoded seam and the GIF size are information and warnings.
+3. `verify`: every check passes.
+
+Run the three once per delivered format, with the same `--format` flag each time (`renders/<film>-9x16.mp4` is checked by `verify --format 9:16`). The encoded seam and the GIF size are information and warnings.
 4. **Extract and look**: `mp4frames` decodes the planned frames from the MP4 into `stills/mp4/` with a contact sheet and each frame's PSNR against the canvas. Read the sheet and the transition and accent frames full size.
 5. Report: the files with sizes, what verify said, the loopcheck line, the lowest mp4frames PSNR, and anything you could not check.
 

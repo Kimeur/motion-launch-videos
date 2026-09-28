@@ -9,6 +9,16 @@ The spec the film is built from. Numbers here and in the FILM config agree; when
 - Baseline unit 8 px: every text baseline is a multiple of 8.
 - Tempo 120 BPM: beat 0.5 s, 16th 0.125 s, bar 2 s. Every entrance starts on a 16th.
 
+## Formats
+
+- Master 1:1 (1080 x 1080). Delivered also: <9:16 (1080 x 1920) / 16:9 (1920 x 1080) / none>.
+- Positions are in base pixels; with no `pin` an element keeps its offset from the centre. Pins: <layer: edge, or none>.
+
+| Format | Layout | Patched (`FILM.formats`) |
+|---|---|---|
+| 9:16 | stacked, bigger type; type between y 360 and 1560 | <layers and fields that move: sizes, y, split titles, entrance offsets> |
+| 16:9 | picture left, words right; lockup in a row | <layers and fields that move> |
+
 ## Palette
 
 | Role | Hex | Used for | Contrast on its backdrop |

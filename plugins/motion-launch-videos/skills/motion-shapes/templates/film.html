@@ -124,6 +124,83 @@ const FILM = {
       exit: { at: beat(15), to: { scale: 0 }, spring: 'EXIT', stagger: 32 },
     },
   ],
+  // Other aspect ratios (render.mjs --format 9:16). Positions stay in base (1080 x 1080) pixels: with no
+  // pin a layer keeps its offset from the centre, so x 540 is the middle of any frame and y 540 - 420 is
+  // 420 px above the middle. Layers and scenes merge by id; a new id adds a layer.
+  formats: {
+    // Vertical: everything bigger, stacked, the two-word titles on two lines, type between y 360 and 1560
+    // of the 1920 frame (clear of the platform's buttons).
+    '9:16': {
+      scenes: [
+        { id: 'lockup', layers: [
+          { id: 'MARK', r: 128, y: 240 },
+          { id: 'TICK', points: [[-57, 5], [-15, 47], [64, -42]], width: 32, y: 240 },
+          { id: 'ACME', cap: 136, y: 556 },
+          { id: 'URL', size: 48, y: 652 },
+          { id: 'DEMO', size: 28, y: 980 },
+        ] },
+        { id: 'hook', layers: [
+          { id: 'BOX', w: 360, h: 360, radius: 80, y: 360 },
+          { id: 'CHECK', points: [[-101, 0], [-31, 70], [110, -84]], width: 52, y: 360 },
+          { id: 'SPARK', points: [[0, -272], [0, -360]], width: 18, y: 360 },
+          { id: 'DONE', cap: 160, y: 980, clip: [0, 0, 1080, 1084], enter: { from: { dy: 300 } } },
+        ] },
+        { id: 'list', in: { y: 360 }, layers: [
+          { id: 'LIST', text: 'ONE', cap: 160, y: 160 },
+          { id: 'LIST2', shape: 'text', text: 'LIST.', font: 'display', cap: 160, track: 10, anchor: 'C', x: 540, y: 360, fill: 'ink', on: 'sun',
+            enter: { at: beat(5.625), from: { dy: 48, op: 0, blur: 8 }, spring: 'LAND', stagger: 32 } },
+          { id: 'ROW', w: 872, h: 152, radius: 76, y: 520, repeat: { n: 3, dy: 196 } },
+          { id: 'RING', r: 36, width: 12, x: 204, y: 520, repeat: { n: 3, dy: 196 } },
+          { id: 'BAR', w: 480, h: 28, radius: 14, y: 520, repeat: { n: 3, dy: 196 } },
+          { id: 'DOT', r: 36, x: 204, y: 520, repeat: { n: 3, dy: 196 } },
+        ] },
+        { id: 'week', layers: [
+          { id: 'TRACK', r: 300, y: 340 },
+          { id: 'FILLRING', r: 300, width: 52, y: 340 },
+          { id: 'DAYS', r: 24, y: 340, repeat: { radial: 7, r: 300 } },
+          { id: 'DAILY', text: 'EVERY', cap: 144, y: 880, exit: { to: { dy: 640 } } },
+          { id: 'DAILY2', shape: 'text', text: 'DAY.', font: 'display', cap: 144, track: 10, anchor: 'C', x: 540, y: 1076, fill: 'paper',
+            enter: { at: beat(12.125), from: { dy: 48, op: 0, blur: 8 }, spring: 'LAND', stagger: 32 },
+            exit: { at: beat(15), to: { dy: 640 }, spring: 'EXIT' } },
+        ] },
+      ],
+    },
+    // Horizontal: the picture left of centre, the words beside it, the lockup in one row.
+    '16:9': {
+      scenes: [
+        { id: 'lockup', layers: [
+          { id: 'MARK', r: 120, x: 155, y: 480 },
+          { id: 'TICK', points: [[-53, 5], [-14, 44], [60, -39]], width: 30, x: 155, y: 480 },
+          { id: 'ACME', cap: 136, anchor: 'L', x: 339, y: 544 },
+          { id: 'URL', size: 44, anchor: 'L', x: 339, y: 640 },
+        ] },
+        { id: 'hook', layers: [
+          { id: 'BOX', x: 130, y: 540 },
+          { id: 'CHECK', x: 130, y: 540 },
+          { id: 'SPARK', x: 130, y: 540 },
+          { id: 'DONE', cap: 144, anchor: 'L', x: 510, y: 616, clip: [0, 0, 1080, 720], enter: { from: { dy: 280 } } },
+        ] },
+        { id: 'list', in: { x: 130, y: 540 }, layers: [
+          { id: 'LIST', text: 'ONE', cap: 144, anchor: 'L', x: -236, y: 512 },
+          { id: 'LIST2', shape: 'text', text: 'LIST.', font: 'display', cap: 144, track: 10, anchor: 'L', x: -236, y: 692, fill: 'ink', on: 'sun',
+            enter: { at: beat(5.625), from: { dy: 48, op: 0, blur: 8 }, spring: 'LAND', stagger: 32 } },
+          { id: 'ROW', x: 920, y: 372 },
+          { id: 'RING', x: 630, y: 372 },
+          { id: 'BAR', x: 906, y: 372 },
+          { id: 'DOT', x: 630, y: 372 },
+        ] },
+        { id: 'week', layers: [
+          { id: 'TRACK', r: 280, x: 140, y: 540 },
+          { id: 'FILLRING', r: 280, x: 140, y: 540 },
+          { id: 'DAYS', x: 140, y: 540, repeat: { radial: 7, r: 280 } },
+          { id: 'DAILY', text: 'EVERY', cap: 128, anchor: 'L', x: 580, y: 520, exit: { to: { dy: 560 } } },
+          { id: 'DAILY2', shape: 'text', text: 'DAY.', font: 'display', cap: 128, track: 10, anchor: 'L', x: 580, y: 680, fill: 'paper',
+            enter: { at: beat(12.125), from: { dy: 48, op: 0, blur: 8 }, spring: 'LAND', stagger: 32 },
+            exit: { at: beat(15), to: { dy: 560 }, spring: 'EXIT' } },
+        ] },
+      ],
+    },
+  },
 };
 
 /* ===== CORE BEGIN: shared/core.js, synced by tools/sync.mjs. Do not edit it here. ===== */
@@ -812,6 +889,22 @@ const clamp01 = (v) => (v < 0 ? 0 : v > 1 ? 1 : v);
 const SCENES = [], LAYERS = {};
 let camX = null, camZ = null;
 
+/* ---------------- formats: FILM is authored in its base format ---------------- */
+// Every position FILM gives goes through fmtX / fmtY with the element's `pin` ('t', 'b', 'l', 'r' or a
+// combination; none keeps its offset from the centre), every size through fmtSz (core.md, Formats).
+// At the base format all of it is the identity. A text baseline mapped to another format is put back on
+// the grid; a clip edge on the base frame's edge stays on the canvas edge.
+const BASE = FMT.W === FMT.BW && FMT.H === FMT.BH;
+const K = fmtSz(1);
+const sz = (v) => (v == null ? v : fmtSz(v));
+const px = (x, pin) => (x == null ? x : fmtX(x, pin || ''));
+const py = (y, pin) => (y == null ? y : fmtY(y, pin || ''));
+const pyGrid = (y, pin) => (y == null || BASE ? py(y, pin) : Math.round(fmtY(y, pin || '') / UNIT) * UNIT);
+function clipBox(b, pin) {
+  const [x0, y0, x1, y1] = b;
+  return [x0 === 0 ? 0 : px(x0, pin), y0 === 0 ? 0 : py(y0, pin), x1 === FMT.BW ? W : px(x1, pin), y1 === FMT.BH ? H : py(y1, pin)];
+}
+
 /* ---------------- geometry: every shape is SVG path data, centred on its own 0,0 ---------------- */
 // Closed shapes start at the top and run clockwise, so trims draw on from 12 o'clock and morphs line up.
 function geomSpec(s) {
@@ -843,9 +936,9 @@ function geomSpec(s) {
 function signedArea(pts) { let a = 0; for (let i = 0; i < pts.length; i++) { const p = pts[i], q = pts[(i + 1) % pts.length]; a += p[0] * q[1] - q[0] * p[1]; } return a / 2; }
 function buildGeom(s) {
   const spec = geomSpec(s), P = svgPath(spec.d);
-  let m = null;
+  let m = K !== 1 ? new DOMMatrix([K, 0, 0, K, 0, 0]) : null;   // sizes are authored in the base format
   if (spec.raw) {                                  // an SVG path in its own units: centre it, and scale it to `size` px
-    const [x0, y0, x1, y1] = P.box, k = s.size ? s.size / Math.max(x1 - x0, y1 - y0) : (s.unit || 1);
+    const [x0, y0, x1, y1] = P.box, k = (s.size ? s.size / Math.max(x1 - x0, y1 - y0) : (s.unit || 1)) * K;
     m = new DOMMatrix([k, 0, 0, k, -(x0 + x1) / 2 * k, -(y0 + y1) / 2 * k]);
   }
   let p2d = P.p2d;
@@ -878,7 +971,7 @@ const KEYS = { dx: 0, dy: 0, rot: 0, sc: 1, sx: 1, sy: 1, op: 1, ta: 0, tb: 1, s
 function stateVals(s) {                            // a from/to state -> prop values
   const o = {};
   if (!s) return o;
-  for (const k of ['dx', 'dy', 'rot', 'sx', 'sy', 'op', 'shift', 'fill', 'morph', 'blur']) if (s[k] != null) o[{ shift: 'sh', fill: 'fo', morph: 'mo', blur: 'bl' }[k] || k] = s[k];
+  for (const k of ['dx', 'dy', 'rot', 'sx', 'sy', 'op', 'shift', 'fill', 'morph', 'blur']) if (s[k] != null) o[{ shift: 'sh', fill: 'fo', morph: 'mo', blur: 'bl' }[k] || k] = k === 'dx' || k === 'dy' ? sz(s[k]) : s[k];
   if (s.scale != null) o.sc = s.scale;
   if (s.trim != null) { const tr = Array.isArray(s.trim) ? s.trim : [0, s.trim]; o.ta = tr[0]; o.tb = tr[1]; }
   return o;
@@ -901,11 +994,11 @@ function copiesOf(ls) {
   if (!r) return [{ ox: 0, oy: 0, orot: 0, osc: 1 }];
   const out = [];
   if (r.grid) {
-    const [cols, rows] = r.grid, [gx, gy] = r.gap || [100, 100];
+    const [cols, rows] = r.grid, [gx, gy] = (r.gap || [100, 100]).map(sz);
     for (let j = 0; j < rows; j++) for (let i = 0; i < cols; i++) out.push({ ox: (i - (cols - 1) / 2) * gx, oy: (j - (rows - 1) / 2) * gy, orot: 0, osc: 1 });
   } else if (r.radial) {
-    for (let k = 0; k < r.radial; k++) { const a = TAU * k / r.radial + (r.start || 0) * DEG; out.push({ ox: (r.r || 0) * Math.sin(a), oy: -(r.r || 0) * Math.cos(a), orot: r.rotate === false ? 0 : a, osc: 1 }); }
-  } else for (let k = 0; k < (r.n || 1); k++) out.push({ ox: k * (r.dx || 0), oy: k * (r.dy || 0), orot: k * (r.rot || 0) * DEG, osc: Math.pow(r.scale || 1, k) });
+    for (let k = 0; k < r.radial; k++) { const a = TAU * k / r.radial + (r.start || 0) * DEG; out.push({ ox: sz(r.r || 0) * Math.sin(a), oy: -sz(r.r || 0) * Math.cos(a), orot: r.rotate === false ? 0 : a, osc: 1 }); }
+  } else for (let k = 0; k < (r.n || 1); k++) out.push({ ox: k * sz(r.dx || 0), oy: k * sz(r.dy || 0), orot: k * (r.rot || 0) * DEG, osc: Math.pow(r.scale || 1, k) });
   return out;
 }
 
@@ -915,12 +1008,13 @@ function buildLayer(Sc, ls, li) {
   LAYERS[L.id] = L;
   L.fill = ls.fill ? role(ls.fill) : null;
   L.stroke = ls.stroke ? role(ls.stroke) : null;
-  L.width = ls.width != null ? ls.width : 8;
-  L.dash = ls.dash || null;
+  L.width = sz(ls.width != null ? ls.width : 8);
+  L.dash = ls.dash ? ls.dash.map(sz) : null;
+  L.clip = ls.clip ? clipBox(ls.clip, ls.pin) : null;
   if (L.kind === 'text') {
     if (!ls.fill) throw new Error(`${ls.id}: a text layer needs a fill role`);
     L.typed = !!(ls.enter && ls.enter.typed);
-    L.line = layoutText({ id: ls.id, text: ls.text, font: ls.font || 'display', size: ls.size, cap: ls.cap, fit: ls.fit, track: ls.track, pairs: ls.pairs, anchor: ls.anchor || 'L', x: ls.x, baseline: ls.y });
+    L.line = layoutText({ id: ls.id, text: ls.text, font: ls.font || 'display', size: sz(ls.size), cap: sz(ls.cap), fit: ls.fit === true ? true : sz(ls.fit), track: ls.track, pairs: ls.pairs, anchor: ls.anchor || 'L', x: px(ls.x, ls.pin), baseline: pyGrid(ls.y, ls.pin) });
     L.px = (L.line.inkL + L.line.inkR) / 2; L.py = L.line.baseline - L.line.capH / 2;
     L.box = [L.line.inkL, L.line.top, L.line.inkR, L.line.bottom];
     L.words = ls.font === 'mono' || L.typed ? 0 : ls.text.split(/\s+/).filter((w) => /[A-Za-z0-9€$£]/.test(w)).length;
@@ -932,7 +1026,7 @@ function buildLayer(Sc, ls, li) {
       if (L.geoms[i].closed !== L.geoms[0].closed) WARN.push(`${L.id}: morph ${i} mixes open and closed outlines`);
       L.geoms[i].pts = alignTo(L.geoms[i - 1].pts, L.geoms[i].pts);
     }
-    L.px = ls.x != null ? ls.x : CX; L.py = ls.y != null ? ls.y : CY;
+    L.px = ls.x != null ? px(ls.x, ls.pin) : CX; L.py = ls.y != null ? py(ls.y, ls.pin) : CY;
     L.copies = copiesOf(ls);
     const g = L.geoms[0], sw = L.stroke ? L.width / 2 : 0;
     L.R = Math.max(...L.geoms.map((q) => q.R)) + sw;
@@ -1017,7 +1111,7 @@ function buildScenes() {
     const tr = Sc.tr, prev = SCENES.filter((p) => p !== Sc && p.win.some(([a, b]) => a < Sc.t0 && b >= Sc.t0 - 1e-9));
     if (tr.kind === 'cut') cutAt(Sc.t0);
     if (tr.kind === 'circle') {
-      const x = tr.x != null ? tr.x : CX, y = tr.y != null ? tr.y : CY;
+      const x = tr.x != null ? px(tr.x, tr.pin) : CX, y = tr.y != null ? py(tr.y, tr.pin) : CY;
       const far = Math.max(Math.hypot(x, y), Math.hypot(W - x, y), Math.hypot(x, H - y), Math.hypot(W - x, H - y));
       const sp = spring(tr.spring || 'MASK'), rMax = far * 1.25;
       let a = 0, b = settle(sp);
@@ -1076,9 +1170,9 @@ function copyState(L, cp, t) {
     const ph = cp.phase;
     if (B.spin) rot += TAU * B.spin * t / DUR;
     if (B.sway) rot += B.sway[1] * DEG * Math.sin(cyc(t, B.sway[0], ph));
-    if (B.bob) dy += B.bob[1] * Math.sin(cyc(t, B.bob[0], ph));
+    if (B.bob) dy += sz(B.bob[1]) * Math.sin(cyc(t, B.bob[0], ph));
     if (B.pulse) sc *= 1 + B.pulse[1] * Math.sin(cyc(t, B.pulse[0], ph));
-    if (B.orbit) { dx += B.orbit[1] * Math.sin(cyc(t, B.orbit[0], ph)); dy -= B.orbit[1] * Math.cos(cyc(t, B.orbit[0], ph)); }
+    if (B.orbit) { const o = sz(B.orbit[1]); dx += o * Math.sin(cyc(t, B.orbit[0], ph)); dy -= o * Math.cos(cyc(t, B.orbit[0], ph)); }
   }
   return { x: L.px + cp.ox + dx, y: L.py + cp.oy + dy, rot, sx: sc * P.sx.at(t), sy: sc * P.sy.at(t), op: P.op.at(t),
     ta: P.ta.at(t), tb: P.tb.at(t), sh: P.sh.at(t), fo: P.fo.at(t), mo: P.mo.at(t), bl: P.bl.at(t) };
@@ -1110,8 +1204,8 @@ function paintShape(c, L, st, t) {
   c.setLineDash([]); c.lineDashOffset = 0;
 }
 function drawLayer(c, L, t, q) {
-  const ls = L.spec;
-  if (ls.clip) { c.save(); c.beginPath(); c.rect(ls.clip[0], ls.clip[1], ls.clip[2] - ls.clip[0], ls.clip[3] - ls.clip[1]); c.clip(); }
+  const ls = L.spec, cl = L.clip;
+  if (cl) { c.save(); c.beginPath(); c.rect(cl[0], cl[1], cl[2] - cl[0], cl[3] - cl[1]); c.clip(); }
   if (L.kind === 'text' && L.typed) drawTyped(c, L, t, q);
   else if (L.kind === 'text') {
     const ln = L.line, color = L.fill;
@@ -1133,7 +1227,7 @@ function drawLayer(c, L, t, q) {
     c.restore();
   }
   c.globalAlpha = 1;
-  if (ls.clip) c.restore();
+  if (cl) c.restore();
 }
 function typedCount(L, q) { const en = L.spec.enter; return q < en.at - 1e-9 ? 0 : typed(q, en.at, L.line.glyphs.length); }
 function drawTyped(c, L, t, q) {                   // typewriter small print: one character per frame, block cursor
@@ -1250,7 +1344,7 @@ function checks(add) {
     for (const L of Sc.layers) {
       if (L.kind === 'text') {
         checkLiveArea(add, L.id, L.box, L.spec.bleed);
-        if (L.spec.y % UNIT) add(`grid: ${L.id}`, 'WARN', `baseline ${L.spec.y} is not on the ${UNIT} px grid`);
+        if (L.line.baseline % UNIT) add(`grid: ${L.id}`, 'WARN', `baseline ${L.line.baseline} is not on the ${UNIT} px grid`);
         items.push({ id: L.id, b: L.box });
         if (L.line.role === 'mono' && L.line.size < 24 * U) add(`small print: ${L.id}`, 'WARN', `${L.line.size} px is hard to read in a feed (24 px or more at 1080)`);
       } else checkLiveArea(add, L.id, L.box, L.spec.bleed);
@@ -1307,6 +1401,8 @@ boot({
   name: 'shapes',
   springs: { POP: [0.45, 22], BOUNCE: [0.35, 18], SNAP: [0.8, 40], SWING: [0.55, 14], TRACE: [1, 14], FILL: [1, 8], GLIDE: [1, 12] },
   build, draw: (c, t, q) => drawFrame(c, t, q), disp, checks, cycles, lastChange, stills, layout, visible,
+  // a scene's bg fills the frame: the composition check reads it as background (FILM.backdrop overrides)
+  backdrop: FILM.backdrop || [...new Set(FILM.scenes.map((s) => s.bg).filter(Boolean))],
 });
 })();
 </script>

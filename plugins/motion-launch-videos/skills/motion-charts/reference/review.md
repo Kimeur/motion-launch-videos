@@ -4,7 +4,7 @@ Step 5 and the end of step 6. Nothing is rendered in full until the stills pass,
 
 ## Pre-pass: `render.mjs stills`
 
-It prints only the checks that did not pass (set `VERBOSE=1` to see all), writes one PNG per planned frame to `videos/<film>/stills/`, and a labelled `contact.png`. It exits non-zero when anything fails.
+It prints only the checks that did not pass (set `VERBOSE=1` to see all), writes one PNG per planned frame to `videos/<film>/stills/`, and a labelled `contact.png`. It exits non-zero when anything fails. With `--format 9:16` (or `16:9`) it checks the film at that ratio and writes to `stills/9x16/`; run it once per delivered format.
 
 The planned frames: frame 0, the loop start (the lockup leaving), each transition just after it starts (a wipe mid-cover), each chart while its data grows, each scene at rest (every number landed, before its punch-in or exits), each accent frame (a counter landing, a highlight lighting, a sweep completing), and the last frame.
 
@@ -42,6 +42,7 @@ The planned frames: frame 0, the loop start (the lockup leaving), each transitio
 | palette roles | a colour in the film is not a palette role | add the role, or use an existing one |
 | loop tail (hold) | anything still changes in the last frame's shutter: a spring, typing, a relabel | start the lockup sooner, or lengthen the film |
 | blank frames (warn) | 4 or more frames show nothing | start the next entrance sooner; a cut lands on chrome or a track |
+| composition | the ink in the review stills leans to one side on average: over 20 % of the canvas warns, over 30 % fails (a scene `bg` counts as background). At 9:16 and 16:9 it catches a layout left in the top or the left square | centre it, `pin` elements to the edges they belong to, or patch the format in `FILM.formats` (engine.md, Formats) |
 | timeline (warn) | an event outside the loop, a punch-in never reset | see loops.md |
 | palette gate | an accent frame has a patch of mixed ink (two hues blended into a third) | opaque roles; slices separated by a surface `gap` |
 
@@ -54,6 +55,7 @@ The planned frames: frame 0, the loop start (the lockup leaving), each transitio
 - **Transitions.** A cut lands on the next chart's chrome or track, never on an empty frame; a wipe covers the frame completely at the swap; the circle starts on the element that just landed.
 - **The source line** is on every frame that shows a number, and invented data says so.
 - **Frame 0 and the last frame** look identical (hold loop), and the lockup is complete in both.
+- **Each format looks designed for its frame**: at 9:16 a taller chart and bigger type, titles, labels and the source line clear of the top and bottom 360 px; at 16:9 the title beside a wider plot, not a square chart in the middle. Every value label still clears its neighbours at the new sizes.
 
 Fix, rebuild, and run stills again. Show the user the contact sheet and anything you changed on their brief.
 
@@ -62,6 +64,8 @@ Fix, rebuild, and run stills again. Show the user the contact sheet and anything
 1. `loopcheck`: every maximum channel difference is 0.
 2. `render`: the full film, in the background.
 3. `verify`: every check passes. The encoded seam and the GIF size are information and warnings.
+
+   Run steps 1 to 3 once per delivered format, with the same `--format` flag each time (`renders/<film>-9x16.mp4` is checked by `verify --format 9:16`).
 4. **Extract and look**: `mp4frames` decodes the planned frames from the MP4 into `stills/mp4/` with a contact sheet and each frame's PSNR against the canvas. Read the sheet and the growth, highlight and transition frames full size; make a filmstrip of the whole MP4 and watch the counts slow onto their final numbers.
 5. Report: the files with sizes, what verify said, the loopcheck line, the lowest mp4frames PSNR, the critique counts, and anything you could not check.
 

@@ -54,6 +54,15 @@ The engine and its critique enforce most of this; know why, so the design does n
 - **Sized for a phone.** At 1080: value labels 28 px or more, small print 24 px or more, bars about 60 % of their band, lines 6 px, points 9 px radius.
 - **The live area** is the canvas minus 104 px on every side; every label and mark stays inside it.
 
+## Formats
+
+The master is 1:1 (1080 x 1080); 9:16 and 16:9 are the same film with a patch each (engine.md, Formats). The data, the findings, the timing and the source lines do not change between formats; the layout does.
+
+- **9:16 (1080 x 1920).** The width is the same, so the gain is height: columns grow taller (more pixels per unit, the differences easier to see), type and labels a size bigger, everything stacked: title, chart, source line. Platform buttons and captions cover about 250 px at the top and the bottom: keep titles, labels and the source line between y 360 and 1560. Bars (horizontal) gain rows, not length.
+- **16:9 (1920 x 1080).** The height is the same, so the gain is width: the title beside the chart, set flush left on two lines, and the plot wider. Columns get wider bands (more room for value labels); a line gets longer segments. The source line stays bottom left under the title.
+- **A steady frame per format.** Titles and the source line in the same place in every chart scene of that format.
+- A donut is square: it gains little from either format. Give it the space the labels need, not the whole frame.
+
 ## Colour
 
 - **A dark, neutral background** keeps the data the loudest thing on screen. A full-bleed accent scene (the hook on crema) is one beat, not a chart background.

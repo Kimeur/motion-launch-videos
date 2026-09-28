@@ -25,7 +25,7 @@ A film lives in the user's project at `videos/<film>/` (`BRIEF.md`, `DESIGN.md`,
 ## Workflow
 
 0. **Once per machine.** `node "${CLAUDE_SKILL_DIR}/scripts/render.mjs" doctor` checks Node 20+, playwright-core, a Chromium, ffmpeg with libx264, ffprobe, npm and tar, and prints the exact command for anything missing (usually `npm install --prefix "${CLAUDE_SKILL_DIR}" --no-package-lock`, or `npm i -D playwright-core` in the user's project). Re-run it until it says `DOCTOR OK`.
-1. **Brief intake.** Read the product's live site first, then ask at most one round of questions (message, format, duration, palette), or use the defaults: 1080 x 1080, 10 s, 60 fps, 120 BPM, muted, hold loop, brand colours from the site's CSS. With no live site, the user's brief is the only source. Fill [templates/BRIEF.md](templates/BRIEF.md) into `videos/<film>/BRIEF.md`. See [reference/brief.md](reference/brief.md).
+1. **Brief intake.** Read the product's live site first, then ask at most one round of questions (message, formats, duration, palette), or use the defaults: 1080 x 1080, 10 s, 60 fps, 120 BPM, muted, hold loop, brand colours from the site's CSS. The 1:1 film is the master; 9:16 (1080 x 1920) and 16:9 (1920 x 1080) are delivered when asked for, from the same file. With no live site, the user's brief is the only source. Fill [templates/BRIEF.md](templates/BRIEF.md) into `videos/<film>/BRIEF.md`. See [reference/brief.md](reference/brief.md).
 2. **Copy and picture pass.** 3 to 5 beats of at most 4 words each (hook, what it does, proof, CTA), and for each beat the one picture that says it in shapes: a checkbox for "done", rows for "a list", a ring for "every day". Show the user the beats and proceed unless they object; when nobody can answer, write them into BRIEF.md and proceed.
 3. **Design spec.** Fill [templates/DESIGN.md](templates/DESIGN.md) into `videos/<film>/DESIGN.md`: canvas and grid, palette roles with contrast, type roles, then every scene (layers, sizes, springs, staggers, transition) on the tempo grid, and the loop seam. Read [reference/motion-design.md](reference/motion-design.md), [reference/engine.md](reference/engine.md) and [reference/springs.md](reference/springs.md).
 4. **Build and measure.** Copy [templates/film.html](templates/film.html) to `videos/<film>/src/film.html` and transcribe DESIGN.md into its `FILM` block (edit nothing below it; the build copies the title, the background and the canvas size into the page head). Fetch the fonts, build, and read the measured layout:
@@ -34,8 +34,8 @@ A film lives in the user's project at `videos/<film>/` (`BRIEF.md`, `DESIGN.md`,
    node "${CLAUDE_SKILL_DIR}/scripts/build.mjs" videos/<film>
    node "${CLAUDE_SKILL_DIR}/scripts/render.mjs" layout videos/<film>    # sizes, cap tops, boxes
    ```
-   Put text baselines on the 8 px grid from the reported cap heights, then write the final numbers into DESIGN.md and FILM together. See [reference/fonts.md](reference/fonts.md) and [reference/core.md](reference/core.md).
-5. **Stills and critique.** `node "${CLAUDE_SKILL_DIR}/scripts/render.mjs" stills videos/<film>` runs the automated critique (glyph coverage, words per beat, live area, text collisions, contrast against each text's own backdrop, palette roles, the loop, blank frames) and the palette gate, and writes stills plus `stills/contact.png`. Read the contact sheet and the full-size stills; fix and repeat until it passes and looks right. See [reference/review.md](reference/review.md).
+   Put text baselines on the 8 px grid from the reported cap heights, then write the final numbers into DESIGN.md and FILM together. For each extra format, add a patch to `FILM.formats` that restacks the layout for the frame (engine.md, Formats). See [reference/fonts.md](reference/fonts.md) and [reference/core.md](reference/core.md).
+5. **Stills and critique.** `node "${CLAUDE_SKILL_DIR}/scripts/render.mjs" stills videos/<film>` runs the automated critique (glyph coverage, words per beat, live area, text collisions, contrast against each text's own backdrop, palette roles, the loop, blank frames, composition) and the palette gate, and writes stills plus `stills/contact.png`. Read the contact sheet and the full-size stills; fix and repeat until it passes and looks right. Run it again with `--format 9:16` or `--format 16:9` for each other delivered format (stills in `stills/9x16/`, `stills/16x9/`). See [reference/review.md](reference/review.md).
 6. **Render and verify.**
    ```bash
    node "${CLAUDE_SKILL_DIR}/scripts/render.mjs" loopcheck videos/<film>   # hold loop: every diff must be 0
@@ -43,7 +43,7 @@ A film lives in the user's project at `videos/<film>/` (`BRIEF.md`, `DESIGN.md`,
    node "${CLAUDE_SKILL_DIR}/scripts/render.mjs" verify videos/<film>      # ffprobe facts, tags, decoded pixels
    node "${CLAUDE_SKILL_DIR}/scripts/render.mjs" mp4frames videos/<film>   # decoded review frames + PSNR
    ```
-   Look at `stills/mp4/contact.png` and the full-size frames at each transition and accent. Report the files, their sizes and the verify, loopcheck and mp4frames lines. See [reference/render.md](reference/render.md) and [reference/loops.md](reference/loops.md).
+   Run `loopcheck`, `render`, `verify` and `mp4frames` once per delivered format, each with its `--format` flag (outputs `renders/<film>-9x16.mp4`, `preview-9x16.gif`, `poster-9x16.png`). Look at `stills/mp4/contact.png` and the full-size frames at each transition and accent. Report the files, their sizes and the verify, loopcheck and mp4frames lines. See [reference/render.md](reference/render.md) and [reference/loops.md](reference/loops.md).
 
 ## Pass criteria
 
@@ -52,6 +52,7 @@ A film lives in the user's project at `videos/<film>/` (`BRIEF.md`, `DESIGN.md`,
 - Entrances overshoot (POP, LAND), exits do not (EXIT); strokes draw on critically damped (TRACE, DRAW).
 - Display type at least 3:1 and small print at least 4.5:1 against its own backdrop; at most 4 words of display type a beat.
 - Every text layer inside the live area, baselines on the grid, no text colliding with text.
+- The composition passes at every delivered format, and each format looks designed for its frame: stacked and bigger at 9:16, side by side at 16:9.
 - Motion blur on every moving frame, one sample on still ones, never across a cut or the bars' scene swap.
 - The deliverable MP4 is H.264, yuv420p, BT.709-tagged in the stream, faststart, exactly DUR x FPS frames.
 
@@ -66,3 +67,4 @@ A film lives in the user's project at `videos/<film>/` (`BRIEF.md`, `DESIGN.md`,
 - Text `rot` and `scale` turn and scale each glyph about its own centre, not the line's.
 - Loop behaviours (`spin`, `bob`, `pulse`, `orbit`, `sway`, `march`) keep their scene moving on every frame. The hold loop's lockup must hold still: put them elsewhere, or make the film a cycle loop.
 - Stroke width scales with its layer: a thin line scaled up becomes a thick one.
+- At 9:16 and 16:9, an offset that took something off screen at 1:1 (`dx: 1000`, an exit `dy: 360`) may leave it in view. Patch the offset in `FILM.formats`, and look at frame 0 at each format.

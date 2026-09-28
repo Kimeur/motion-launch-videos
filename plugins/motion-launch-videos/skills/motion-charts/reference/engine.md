@@ -66,7 +66,7 @@ A film is a list of scenes. Each is drawn inside its window and holds layers dra
 | `wrap` | only on the hold loop's last scene, the lockup: `{ exit: 0, to: { scale: 0 }, spring: 'EXIT', stagger: 32 }`. Its layers are at rest at frame 0, leave at `exit` (staggered by layer), are hidden once gone, and come back with their own `enter` and `grow` |
 | `punch` | `{ at, z }`: a camera punch-in about the canvas centre (1.04 is plenty), undone at the next scene's start: instantly at a cut or wipe, eased otherwise |
 | `exit` | `{ at, to, spring, stagger }` for every layer of the scene that has no `exit` of its own |
-| `source` | the source line: `{ at, x, y, anchor, size, font, fill, on, track }`. By default it types in small print (mono 24, muted, +20) at the left margin on the lowest grid line that keeps its descenders in the live area, starting with the scene's first data (a chart's axis a 16th before its data, a counter's entrance), and leaves when the last of its charts starts to leave (an element exit or an exit to zero), or with the scene. `false` fails the critique in a scene that shows data |
+| `source` | the source line: `{ at, x, y, pin, anchor, size, font, fill, on, track }`. By default it types in small print (mono 24, muted, +20) at the left margin on the lowest grid line that keeps its descenders in the live area, starting with the scene's first data (a chart's axis a 16th before its data, a counter's entrance), and leaves when the last of its charts starts to leave (an element exit or an exit to zero), or with the scene. `false` fails the critique in a scene that shows data |
 | `layers` | what is in it, below |
 
 ### Transitions (`in`)
@@ -75,7 +75,7 @@ A film is a list of scenes. Each is drawn inside its window and holds layers dra
 |---|---|
 | `'none'` | the scene just starts drawing at `t0`, over or after the outgoing one; overlap exits and entrances |
 | `'cut'` | a hard cut: motion blur stops at it. Chart chrome (axis, category labels, a donut's track) whose entrance would start at the cut is simply on screen, so the cut lands on something |
-| `{ kind: 'circle', x, y, spring }` | the incoming scene (on its `bg`) is revealed inside a circle growing from (x, y) until it covers the frame (MASK, about 0.3 s) |
+| `{ kind: 'circle', x, y, pin, spring }` | the incoming scene (on its `bg`) is revealed inside a circle growing from (x, y) until it covers the frame (MASK, about 0.3 s) |
 | `{ kind: 'wipe', n: 5, dir: 'up', color, stagger: 32, spring }` | `n` bars in `color` sweep in and cover the frame by `t0`, the scenes swap under them, and they sweep on out. `dir`: `up`, `down`, `left`, `right`. Seven bars rising read as a column chart filling the screen |
 
 ## Layers
@@ -84,7 +84,8 @@ Every layer has `id` (unique across the film) and `kind`, and may have:
 
 | Field | Meaning |
 |---|---|
-| `x`, `y` | position; for text, counters and notes the anchor x and the baseline |
+| `x`, `y` | position; for text, counters and notes the anchor x and the baseline. Base-format pixels (Formats, below) |
+| `pin` | which edges the layer keeps its distance to in another format: `'t'`, `'b'`, `'l'`, `'r'` or a pair (`'bl'`). None: its offset from the centre. A chart's `box` maps each edge on its own, so `pin: 'lr'` stretches it with the frame's width |
 | `rot`, `scale`, `op` | rest rotation (degrees), scale and opacity of the whole element |
 | `on` | the role it sits on, for the contrast checks (default: the scene's `bg`) |
 | `accent` | `'land'` (text and marks: the entrance lands; counters and charts: the last number reaches its final value) or a time: an accent frame for the stills and the palette gate |
@@ -95,7 +96,7 @@ An unknown field fails the critique (a typo would otherwise do nothing). So do `
 
 ### `text`: display type and small print
 
-`text` (may hold `{refs}`), `font` (a role in `FILM.fonts`), one size rule (`size` px, `cap` px of cap height, or `fit: true` to span the measure / `fit: <px>`), `track` and `pairs` (1/1000 em), `anchor` (`L`, `C`, `R`), `fill`, `clip: [x0, y0, x1, y1]`, `literal`. Every glyph is a copy with its own springs, so `stagger` runs across the letters. `enter: { at, typed: true }` types it one character per frame with a block cursor instead (small print).
+`text` (may hold `{refs}`), `font` (a role in `FILM.fonts`), one size rule (`size` px, `cap` px of cap height, or `fit: true` to span the measure / `fit: <px>`), `track` and `pairs` (1/1000 em), `anchor` (`L`, `C`, `R`), `fill`, `clip: [x0, y0, x1, y1]` (an edge at 0 or at the base width or height stays on the canvas edge in every format), `literal`. Every glyph is a copy with its own springs, so `stagger` runs across the letters. `enter: { at, typed: true }` types it one character per frame with a block cursor instead (small print).
 
 ### `counter`: a number that counts
 
@@ -184,6 +185,46 @@ A dot on a data point, a leader line drawing out to a label, the label typed.
 ### `mark`: a simple shape
 
 For logos and small pictures: `shape` `circle` (`r`), `ellipse` (`rx`, `ry`), `rect` (`w`, `h`, `radius`), `poly` (`sides`, `r`), `star` (`points`, `r`, `inner`), `arc` (`r`, `from`, `to`), `line` (`points` or `x1 y1 x2 y2`, `closed`), `path` (`d`, `size` px across); `fill`, `stroke`, `width`, `cap`, `join`, `trim`, `dash`. `x`, `y` is its centre. For anything richer, the shapes skill has the full vocabulary.
+
+## Formats
+
+A film is authored once, in its base format (the template's 1080 x 1080), and rendered at other ratios with `--format 9:16` or `--format 16:9` (core.md, Formats). The engine maps what the `FILM` block says; `FILM.formats` redesigns what should look different.
+
+**What the engine maps.** Every position is in base-format pixels and goes through `fmtX` / `fmtY`: layers' `x` and `y`, a chart's `box`, a note's `point`, a circle wipe's origin, a source line's `x` and `y`. With no `pin`, an element keeps its offset from the centre, so a centred composition stays centred in any frame. A `pin` keeps its distance to the edges it names (`pin: 'bl'` for a corner tag). A `box` maps each edge with the part of the pin that names its side: `pin: 'lr'` keeps both side margins and stretches the plot, `'tb'` does the same in height. Sizes (`size`, `cap`, `fit`, a donut's `r` and `width`, label sizes and gaps, bar `width` in px, `radius`, line widths, `dx` and `dy` in states) go through `fmtSz`, 1 between the standard formats of a 1080 film. The source line's default place is the lowest grid line of the live area at the left margin, in whatever frame. A scene's `bg`, the circle wipe and the wipe's bars cover the whole `W` x `H`. A baseline that lands off the 8 px grid is moved to the nearest grid line (at 9:16 the centre moves by 420 px, which is not a multiple of 8). At the base format nothing moves.
+
+**What you design.** Centring alone leaves a square layout floating in a tall or a wide frame: the composition check passes, and the frame still looks like a square with empty bands. Give each delivered format a patch in `FILM.formats`. Objects merge; arrays whose items carry an `id` (scenes, layers) merge by id, so a patch names only what moves; anything else (a `box`, a string) is replaced; a new id adds a layer. Positions in a patch are still base-format pixels: at 9:16, `y: 20` sits 520 px above the centre (canvas y 440 of 1920); at 16:9, `x: -316` sits 856 px left of it (canvas x 104, the left margin).
+
+The template's week chart, per format:
+
+```js
+formats: {
+  '9:16': { scenes: [                       // vertical: the title bigger, the chart 680 px tall instead of 456
+    { id: 'week', source: { y: 1060 }, layers: [
+      { id: 'PERDAY', cap: 72, y: 20 },
+      { id: 'WEEK', box: [104, 260, 976, 940], values: { size: 34 }, cats: { size: 28 } },
+      { id: 'PEAK', size: 28, y: 148 },
+    ] },
+  ] },
+  '16:9': { scenes: [                       // horizontal: the title on two lines beside a wider plot
+    { id: 'week', layers: [
+      { id: 'PERDAY', text: 'CUPS', cap: 80, x: -316, y: 500 },
+      { id: 'PERDAY2', kind: 'text', text: 'PER DAY', font: 'display', cap: 80, track: 10, anchor: 'L', x: -316, y: 608,
+        fill: 'paper', enter: { at: beat(6.5), from: { dy: 48, op: 0, blur: 8 }, spring: 'LAND', stagger: 32 } },
+      { id: 'WEEK', box: [300, 344, 1396, 800], values: { size: 32 } },   // canvas x 720 to 1816
+      { id: 'PEAK', x: 1161 },                                            // over SAT again
+    ] },
+  ] },
+},
+```
+
+At 9:16 the source line moves up to canvas y 1480 (`source: { y: 1060 }`), out of the band the platform's captions cover and right under the chart. At 16:9 the note follows its column: a note's label is placed by `x`, `y`, and only its anchor rides the data. Splitting the title keeps its words and adds a line; the second word enters where the first one's stagger would have reached it.
+
+**What to check after a patch.**
+
+- A donut's side labels need room outside the ring: a label at 9 o'clock reaches `r + gap + its width` left of the centre. The template's 9:16 donut is bigger and sits right of centre to keep `DAIRY 38%` inside the live area.
+- A bigger counter grows downwards past its baseline too (the comma's tail): keep the line under it clear (the critique's collision row catches it).
+- Run `stills` and `loopcheck` with `--format` for every delivered format, read each contact sheet, and fix crowding and collisions there; the live-area, grid, collision, source and composition rows run at the format being checked.
+- The composition check treats every scene `bg` as background, so a full-bleed scene is measured by what sits on it. A mark drawn in that same role (the template's crema highlight and oat slice) is then invisible to the check; `FILM.backdrop: [...]` lists the roles yourself, `[]` counts every fill as ink.
 
 ## Motion: enter, keys, exit and grow
 

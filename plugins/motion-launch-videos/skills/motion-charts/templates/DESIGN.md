@@ -9,6 +9,16 @@ The spec the film is built from. Numbers here and in the FILM config agree; when
 - Baseline unit 8 px: every text, counter and note baseline is a multiple of 8.
 - Tempo 120 BPM: beat 0.5 s, 16th 0.125 s, bar 2 s. Every entrance starts on a 16th.
 
+## Formats
+
+- Master 1:1 (1080 x 1080). Delivered also: <9:16 (1080 x 1920) / 16:9 (1920 x 1080) / none>.
+- Positions are in base pixels; with no `pin` an element keeps its offset from the centre. Pins: <layer: edge, or none>.
+
+| Format | Layout | Patched (`FILM.formats`) |
+|---|---|---|
+| 9:16 | stacked; taller charts, bigger type; titles, labels and source between y 360 and 1560 | <boxes, sizes, y, source y> |
+| 16:9 | title beside the chart, wider plots | <boxes, x, split titles, note x> |
+
 ## Data
 
 Every number on screen, where it comes from, and how it prints. The Facts rows are in BRIEF.md.
