@@ -1,0 +1,1869 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Warren Buffett, from $0 to billions: a pixel history</title>
+<style>
+*,*::before,*::after{transition:none!important;animation:none!important}
+html,body{margin:0;height:100%;background:#83B7E6}
+body{display:grid;place-items:center;overflow:hidden}
+canvas{display:block;max-width:100vw;max-height:100vh;width:auto;height:auto;image-rendering:pixelated}
+</style>
+</head>
+<body>
+<canvas id="c" width="1080" height="1080"></canvas>
+<script>
+(() => {
+'use strict';
+
+/* ==========================================================================
+ * FILM: the part you edit. Everything below CORE BEGIN stays as it is.
+ *
+ * Pixel art on a small logical canvas (px.w x px.h), scaled up by the whole
+ * number px.scale with no smoothing: W = px.w x scale, H = px.h x scale.
+ * Every position is in logical px, top-left origin, whole numbers. Colours are
+ * palette role names; every pixel of every frame is exactly one of them.
+ * Sprites are ASCII art: one character per pixel, `key` maps characters to
+ * roles, '.' is transparent. `sheet` rows hold every frame side by side, one
+ * space apart; `art` is a single frame. Layers draw back to front.
+ * Times are seconds; beat(n) and bar(n) put them on the tempo grid. In a
+ * 'cycle' loop every scroll, sprite cycle, blink and sparkle must repeat a
+ * whole number of times per DUR (the critique lists each period).
+ * ========================================================================== */
+/* ART: every sprite in the film is drawn here, in code, from rectangles, discs and lines.
+ * cv(w, h) is a tiny raster: one character per pixel, '.' is transparent. out(c) wraps the
+ * drawing in a 1 px ink outline. rows() hands the ASCII art to the engine. */
+const cv = (w, h) => {
+  const g = Array.from({ length: h }, () => Array(w).fill('.'));
+  const A = {
+    w, h, g,
+    px(x, y, c) { x = Math.round(x); y = Math.round(y); if (x >= 0 && y >= 0 && x < w && y < h) g[y][x] = c; return A; },
+    get(x, y) { return x >= 0 && y >= 0 && x < w && y < h ? g[y][x] : '.'; },
+    rect(x, y, ww, hh, c) { for (let j = 0; j < hh; j++) for (let i = 0; i < ww; i++) A.px(x + i, y + j, c); return A; },
+    box(x, y, ww, hh, c) { A.rect(x, y, ww, 1, c); A.rect(x, y + hh - 1, ww, 1, c); A.rect(x, y, 1, hh, c); A.rect(x + ww - 1, y, 1, hh, c); return A; },
+    disc(cx, cy, r, c) { for (let y = Math.floor(cy - r); y <= Math.ceil(cy + r); y++) for (let x = Math.floor(cx - r); x <= Math.ceil(cx + r); x++) if ((x + 0.5 - cx) ** 2 + (y + 0.5 - cy) ** 2 <= r * r) A.px(x, y, c); return A; },
+    ring(cx, cy, r, c, t = 1) { for (let y = Math.floor(cy - r); y <= Math.ceil(cy + r); y++) for (let x = Math.floor(cx - r); x <= Math.ceil(cx + r); x++) { const d = (x + 0.5 - cx) ** 2 + (y + 0.5 - cy) ** 2; if (d <= r * r && d > (r - t) ** 2) A.px(x, y, c); } return A; },
+    line(x0, y0, x1, y1, c) { x0 = Math.round(x0); y0 = Math.round(y0); x1 = Math.round(x1); y1 = Math.round(y1); const dx = Math.abs(x1 - x0), dy = -Math.abs(y1 - y0), sx = x0 < x1 ? 1 : -1, sy = y0 < y1 ? 1 : -1; let e = dx + dy; for (;;) { A.px(x0, y0, c); if (x0 === x1 && y0 === y1) break; const e2 = 2 * e; if (e2 >= dy) { e += dy; x0 += sx; } if (e2 <= dx) { e += dx; y0 += sy; } } return A; },
+    thick(x0, y0, x1, y1, c) { A.line(x0, y0, x1, y1, c); A.line(x0 + 1, y0, x1 + 1, y1, c); return A; },
+    tri(cx, top, base, halfBase, c) { for (let y = top; y <= base; y++) { const hw = Math.round((y - top + 0.5) * halfBase / (base - top + 1)); A.rect(cx - hw, y, 2 * hw + 1, 1, c); } return A; },
+    text(s, x, y, c, k = 1) { let p = x; for (const ch of s) { const r = D35[ch]; if (!r) continue; r.forEach((row, j) => [...row].forEach((v, i) => { if (v === '#') A.rect(p + i * k, y + j * k, k, k, c); })); p += (r[0].length + 1) * k; } return A; },
+    over(o, x, y) { for (let j = 0; j < o.h; j++) for (let i = 0; i < o.w; i++) { const v = o.g[j][i]; if (v !== '.') A.px(x + i, y + j, v); } return A; },
+    out(c = 'k') {                                // a 1 px outline round everything drawn, on a canvas 2 px bigger
+      const B = cv(w + 2, h + 2);
+      for (let y = 0; y < h + 2; y++) for (let x = 0; x < w + 2; x++) {
+        const v = A.get(x - 1, y - 1);
+        if (v !== '.') B.g[y][x] = v;
+        else if (A.get(x - 2, y - 1) !== '.' || A.get(x, y - 1) !== '.' || A.get(x - 1, y - 2) !== '.' || A.get(x - 1, y) !== '.') B.g[y][x] = c;
+      }
+      return B;
+    },
+    flipX() { const B = cv(w, h); for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) B.g[y][x] = g[y][w - 1 - x]; return B; },
+    rows() { return g.map((r) => r.join('')); },
+  };
+  return A;
+};
+// 3 x 5 figures for numbers written on props
+const D35 = {
+  0: ['###', '#.#', '#.#', '#.#', '###'], 1: ['.#.', '##.', '.#.', '.#.', '###'], 2: ['###', '..#', '###', '#..', '###'], 3: ['###', '..#', '###', '..#', '###'],
+  4: ['#.#', '#.#', '###', '..#', '..#'], 5: ['###', '#..', '###', '..#', '###'], 6: ['###', '#..', '###', '#.#', '###'], 7: ['###', '..#', '.#.', '.#.', '.#.'],
+  8: ['###', '#.#', '###', '#.#', '###'], 9: ['###', '#.#', '###', '..#', '###'], M: ['#.#', '###', '###', '#.#', '#.#'], B: ['##.', '#.#', '##.', '#.#', '##.'],
+  '#': ['#.#', '###', '#.#', '###', '#.#'],
+};
+const DOLLAR = ['..#..', '.####', '#.#..', '.###.', '..#.#', '####.', '..#..'];   // 5 x 7, for the big coin
+const stamp = (c, rows, x, y, col, k = 1) => { rows.forEach((row, j) => [...row].forEach((v, i) => { if (v === '#') c.rect(x + i * k, y + j * k, k, k, col); })); return c; };
+
+/* the letters the art uses, and the palette role each one is */
+const KEY = { k: 'ink', w: 'white', n: 'snow', d: 'shade', f: 'far', h: 'haze', c: 'sky2', b: 'bg', e: 'earth', o: 'wood', s: 'skin', u: 'suit', r: 'red', g: 'gold', y: 'orange', p: 'pine' };
+
+/* ---------------- the runner: one figure, five ages ---------------- */
+// 16 x 24, facing right. Six drawings: contact, down, pass, then the other leg. head 10 rows + torso T + legs L.
+const ERA = {
+  kid:    { T: 4, L: 6, hair: 'e', shirt: 'r', pants: 'u', cap: false, glasses: false, tie: false, bag: false, white: false, jacket: false },
+  paper:  { T: 6, L: 7, hair: 'e', shirt: 'o', pants: 'u', cap: true, glasses: false, tie: false, bag: true, white: false, jacket: false },
+  young:  { T: 7, L: 7, hair: 'e', shirt: 'n', pants: 'u', cap: false, glasses: true, tie: true, bag: false, white: false, jacket: false },
+  man:    { T: 7, L: 7, hair: 'e', shirt: 'u', pants: 'u', cap: false, glasses: true, tie: true, bag: false, white: false, jacket: true },
+  elder:  { T: 7, L: 7, hair: 'w', shirt: 'u', pants: 'u', cap: false, glasses: true, tie: true, bag: false, white: true, jacket: true },
+};
+// leg A per drawing: foot forward of the hip (px) and how high the foot is lifted; leg B runs three drawings behind
+const LEG = [[3, 0], [1, 0], [-1, 0], [-3, 2], [-2, 4], [1, 3]];
+const BOB = [0, 1, 0, 0, 1, 0];
+function runner(era, f) {
+  const E = ERA[era], H = 10 + E.T + E.L, c = cv(16, 24), top = 24 - H, oy = top + BOB[f];
+  const hipY = oy + 10 + E.T, sole = top + H - 1;
+  const leg = (i, col, x) => {
+    const [dx, lift] = LEG[i], fx = 8 + dx, fy = sole - lift;
+    c.thick(x - 1, hipY, fx - 1, fy - 1, col);
+    c.rect(fx - 1, fy, 3, 1, 'k');
+  };
+  const arm = (i, col, near) => {                                // the arm swings against the leg on its side
+    const [dx, lift] = LEG[(i + 3) % 6], sx = 8, sy = oy + 11;
+    const hx = 8 + Math.round(dx * 1.1), hy = sy + 4 - Math.min(2, lift >> 1);
+    c.thick(sx - (near ? 0 : 1), sy, hx - (near ? 0 : 1), hy, col);
+    c.px(hx + (near ? 1 : 0), hy, 's');
+  };
+  leg((f + 3) % 6, E.pants, 8); if (E.bag) bag(c, oy);
+  arm((f + 3) % 6, E.shirt, false);
+  const tw = 7, tx = 5;
+  c.rect(tx, oy + 10, tw, E.T, E.shirt);
+  if (E.jacket) c.rect(tx, oy + 10, 1, E.T, 'k');
+  if (E.shirt === 'n' || E.jacket) c.rect(7, oy + 10, 3, 1, 'w');
+  if (E.tie) { c.rect(8, oy + 11, 1, E.T - 2, 'r'); c.px(8, oy + 10, 'r'); }
+  leg(f, E.pants, 8);
+  arm(f, E.shirt, true);
+  head(c, E, oy);
+  return c;
+}
+function bag(c, oy) {                                            // the paper boy's canvas bag, papers sticking out
+  c.rect(2, oy + 11, 5, 7, 'o'); c.rect(2, oy + 11, 5, 1, 'y'); c.rect(3, oy + 9, 3, 2, 'n'); c.px(4, oy + 10, 'd'); c.px(4, oy + 14, 'y');
+}
+const HEAD = [        // 9 wide, facing right: H hair, s skin
+  '.HHHHHH..',
+  'HHHHHHHH.',
+  'HHHHHHHH.',
+  'HHssssss.',
+  'Hsssssss.',
+  'Hsssssss.',
+  '.ssssssss',
+  '.sssssss.',
+  '..sssss..',
+  '...sss...',
+];
+function head(c, E, oy) {
+  const x0 = 4;
+  HEAD.forEach((row, j) => [...row].forEach((v, i) => { if (v === '.') return; c.px(x0 + i, oy + j, v === 'H' ? E.hair : 's'); }));
+  if (E.white) { c.px(x0 + 3, oy + 1, 'd'); c.px(x0 + 6, oy + 2, 'd'); }
+  if (E.cap) { c.rect(x0, oy, 9, 3, 'r'); c.rect(x0 + 5, oy + 3, 5, 1, 'r'); c.px(x0 + 9, oy + 3, 'r'); c.rect(x0, oy + 3, 2, 1, 'r'); }
+  if (E.glasses) {                                               // two round lenses joined by a bridge
+    for (const lx of [x0 + 2, x0 + 6]) { c.box(lx, oy + 3, 3, 3, 'k'); c.px(lx + 1, oy + 4, 'w'); }
+    c.px(x0 + 5, oy + 4, 'k');
+  } else { c.px(x0 + 4, oy + 4, 'k'); c.px(x0 + 4, oy + 5, 'k'); c.px(x0 + 7, oy + 4, 'k'); c.px(x0 + 7, oy + 5, 'k'); }
+  c.px(x0 + 5, oy + 8, 'e'); c.px(x0 + 6, oy + 8, 'e');         // a small smile
+}
+const RUNNERS = {};
+for (const era of Object.keys(ERA)) {
+  const frames = [0, 1, 2, 3, 4, 5].map((f) => runner(era, f).out('k').rows());
+  RUNNERS[era] = { fps: 12, key: KEY, sheet: frames[0].map((_, y) => frames.map((fr) => fr[y]).join(' ')) };
+}
+
+/* ---------------- the stops along the way: one prop per milestone ---------------- */
+function house() {                                               // Omaha, 1930: a snowy cottage with a lit window
+  const c = cv(44, 36);
+  c.rect(31, 3, 5, 10, 'r'); c.rect(30, 1, 7, 3, 'w'); c.rect(31, 7, 5, 1, 'e');
+  c.rect(4, 15, 36, 21, 'o');
+  for (let y = 18; y < 36; y += 3) c.rect(4, y, 36, 1, 'y');
+  c.tri(22, 1, 15, 21, 'r'); c.tri(22, 1, 9, 13, 'w');
+  c.rect(1, 15, 42, 1, 'e');
+  c.rect(19, 23, 7, 13, 'e'); c.px(24, 30, 'g'); c.rect(19, 23, 7, 1, 'k');
+  for (const x of [8, 30]) { c.rect(x, 20, 7, 7, 'k'); c.rect(x + 1, 21, 5, 5, 'g'); c.rect(x + 3, 21, 1, 5, 'k'); c.rect(x + 1, 23, 5, 1, 'k'); c.rect(x - 1, 27, 9, 1, 'w'); }
+  return c.out('k');
+}
+function stockBoard() {                                          // 1942: a board with a chart that climbs
+  const c = cv(34, 40);
+  c.rect(8, 24, 2, 14, 'e'); c.rect(24, 24, 2, 14, 'e'); c.rect(6, 34, 22, 2, 'e');
+  c.rect(2, 2, 30, 22, 'n'); c.rect(2, 2, 30, 5, 'u');
+  for (const y of [11, 16, 21]) c.rect(4, y, 26, 1, 'd');
+  c.line(5, 20, 10, 14, 'r'); c.line(10, 14, 14, 17, 'r'); c.line(14, 17, 20, 9, 'r'); c.line(20, 9, 24, 12, 'r'); c.line(24, 12, 29, 6, 'r');
+  c.px(28, 6, 'r'); c.px(29, 8, 'r');
+  c.px(5, 4, 'w'); c.px(7, 4, 'w'); c.px(9, 4, 'w');
+  c.disc(27, 4.5, 2, 'g');
+  return c.out('k');
+}
+function bike() {                                                // 1944: the paper route
+  const c = cv(38, 27);
+  for (const cx of [7, 31]) { c.ring(cx, 19, 6, 'k', 1); c.px(cx - 1, 18, 'd'); c.px(cx, 18, 'd'); c.px(cx - 1, 19, 'd'); c.px(cx, 19, 'g'); c.line(cx - 4, 19, cx + 4, 19, 'd'); c.line(cx, 15, cx, 23, 'd'); c.px(cx, 19, 'g'); c.px(cx - 1, 18, 'g'); }
+  const rear = [7, 19], bb = [18, 19], seat = [13, 9], head = [27, 9], front = [31, 19];
+  const L = (a, b) => { c.line(a[0], a[1], b[0], b[1], 'r'); c.line(a[0] + 1, a[1], b[0] + 1, b[1], 'r'); };
+  L(rear, bb); L(bb, seat); L(seat, head); L(bb, head); L(head, front);
+  c.rect(10, 7, 6, 2, 'k'); c.rect(26, 5, 5, 1, 'k'); c.px(26, 6, 'k');
+  c.rect(28, 10, 8, 5, 'o'); c.rect(28, 10, 8, 1, 'y');
+  c.rect(29, 6, 6, 4, 'n'); c.rect(29, 8, 6, 1, 'd'); c.px(31, 7, 'd'); c.px(33, 7, 'd');
+  return c.out('k');
+}
+function book() {                                                // 1950: a book, and an idea
+  const c = cv(30, 46);
+  c.disc(15, 5, 4.5, 'g'); c.rect(13, 9, 5, 2, 'y'); c.rect(13, 11, 5, 1, 'd');
+  for (const [x0, y0, x1, y1] of [[1, 5, 4, 5], [26, 5, 29, 5], [4, 0, 6, 2], [25, 0, 23, 2]]) c.line(x0, y0, x1, y1, 'g');
+  c.rect(5, 14, 20, 30, 'u'); c.rect(5, 14, 3, 30, 'k'); c.rect(25, 15, 2, 28, 'n'); c.rect(6, 43, 21, 1, 'n');
+  c.box(10, 17, 13, 24, 'g'); c.rect(12, 21, 9, 2, 'g'); c.rect(14, 25, 5, 2, 'g'); c.disc(16.5, 33, 3, 'g'); c.px(16, 32, 'y');
+  c.rect(21, 42, 2, 4, 'r');
+  return c.out('k');
+}
+function partners() {                                            // 1956: seven partners
+  const c = cv(58, 28), shirts = ['r', 'o', 'u', 'n', 'y', 'd', 'r'];
+  for (let i = 0; i < 7; i++) {
+    const x = 1 + i * 8, hairs = ['e', 'e', 'w', 'e', 'k', 'e', 'w'];
+    c.disc(x + 3, 3, 1.6, 'g'); c.px(x + 3, 3, 'y');
+    c.rect(x + 1, 8, 4, 4, 's'); c.rect(x + 1, 7, 4, 2, hairs[i]);
+    c.px(x + 2, 10, 'k'); c.px(x + 4, 10, 'k');
+    c.rect(x, 12, 6, 7, shirts[i]); c.rect(x, 12, 1, 5, 's'); c.rect(x + 5, 12, 1, 5, 's');
+    c.rect(x + 1, 19, 2, 6, 'u'); c.rect(x + 3, 19, 2, 6, 'u'); c.rect(x + 1, 25, 2, 1, 'k'); c.rect(x + 3, 25, 2, 1, 'k');
+  }
+  return c.out('k');
+}
+function vault() {                                               // 1962: the first million
+  const c = cv(44, 50);
+  c.rect(8, 0, 28, 10, 'g'); c.rect(8, 8, 28, 2, 'y'); c.text('1M', 18, 3, 'k', 1);
+  c.rect(4, 12, 36, 36, 'd'); c.rect(4, 12, 36, 2, 'f');
+  c.disc(22, 30, 15, 'k'); c.disc(22, 30, 13.5, 'f'); c.ring(22, 30, 8.5, 'g', 2);
+  for (const [dx, dy] of [[0, -8], [0, 8], [-8, 0], [8, 0], [6, 6], [-6, -6], [6, -6], [-6, 6]]) c.px(22 + dx - (dx < 0 ? 0 : 0), 30 + dy, 'g');
+  c.line(22, 22, 22, 38, 'g'); c.line(14, 30, 30, 30, 'g'); c.disc(22, 30, 2.2, 'y');
+  for (let i = 0; i < 8; i++) { const a = i * Math.PI / 4; c.px(22 + Math.round(11.2 * Math.cos(a)), 30 + Math.round(11.2 * Math.sin(a)), 'w'); }
+  c.rect(0, 44, 8, 2, 'g'); c.rect(0, 46, 8, 2, 'y'); c.rect(1, 42, 6, 2, 'g'); c.rect(36, 44, 8, 2, 'g'); c.rect(36, 46, 8, 2, 'y'); c.rect(37, 42, 6, 2, 'g');
+  return c.out('k');
+}
+function mill() {                                                // 1965: a struggling textile mill
+  const c = cv(62, 60);
+  c.rect(50, 14, 8, 46, 'r'); c.rect(49, 18, 10, 2, 'e'); c.rect(49, 26, 10, 2, 'e'); c.rect(49, 11, 10, 4, 'w');
+  c.disc(55, 7, 2.6, 'n'); c.disc(58, 3.5, 2.1, 'n'); c.disc(54, 3, 1.5, 'd');
+  c.rect(2, 32, 46, 28, 'r');
+  for (let y = 35, j = 0; y < 60; y += 3, j++) { c.rect(2, y, 46, 1, 'e'); for (let x = 2 + (j % 2) * 3; x < 48; x += 6) c.px(x, y - 1, 'e'); }
+  for (let i = 0; i < 3; i++) {                                  // the sawtooth roof
+    const x0 = 2 + i * 15;
+    for (let y = 21; y < 32; y++) { const w = Math.round((y - 21 + 1) * 15 / 11); c.rect(x0, y, w, 1, 'e'); }
+    for (let y = 21; y < 25; y++) { const w = Math.round((y - 21 + 1) * 15 / 11); c.rect(x0 + Math.max(0, w - 5), y, Math.min(5, w), 1, 'w'); }
+    c.rect(x0, 21, 2, 11, 'k');
+  }
+  for (let i = 0; i < 3; i++) for (let j = 0; j < 2; j++) { const x = 7 + i * 13 + (i > 1 ? 0 : 0), y = 38 + j * 9; c.rect(x, y, 6, 6, 'k'); c.rect(x + 1, y + 1, 4, 4, (i + j) % 3 === 0 ? 'g' : 'h'); c.rect(x + 3, y + 1, 1, 4, 'k'); }
+  c.rect(21, 50, 7, 10, 'e'); c.px(26, 55, 'g');
+  return c.out('k');
+}
+function tower() {                                               // 1985: a gold skyline
+  const c = cv(50, 66);
+  c.rect(23, 0, 2, 5, 'k'); c.px(23, 0, 'r'); c.px(24, 0, 'r');
+  c.rect(2, 32, 12, 34, 'g'); c.rect(34, 24, 13, 42, 'g'); c.rect(14, 10, 20, 56, 'g'); c.rect(18, 5, 12, 6, 'g');
+  c.rect(28, 10, 6, 56, 'y'); c.rect(9, 32, 5, 34, 'y'); c.rect(42, 24, 5, 42, 'y');
+  for (let y = 15; y < 56; y += 5) for (const x of [17, 22]) c.rect(x, y, 3, 3, (y + x) % 3 === 0 ? 'w' : 'y');
+  for (let y = 36; y < 60; y += 5) c.rect(5, y, 3, 3, 'y');
+  for (let y = 28; y < 60; y += 5) for (const x of [37, 42]) if (x < 45) c.rect(x, y, 3, 3, 'y');
+  c.rect(15, 54, 18, 10, 'u'); c.text('1B', 20, 57, 'g', 1);
+  return c.out('k');
+}
+function trophy() {                                              // 2008: number one
+  const c = cv(36, 46);
+  c.rect(10, 0, 14, 9, 'g'); c.rect(11, 9, 12, 2, 'g'); c.rect(13, 11, 8, 1, 'g'); c.rect(10, 7, 14, 2, 'y');
+  c.ring(8.5, 4.5, 3.5, 'g', 1.6); c.ring(25.5, 4.5, 3.5, 'g', 1.6);
+  c.px(13, 2, 'w'); c.px(13, 3, 'w'); c.px(14, 2, 'w');
+  c.rect(15, 12, 4, 5, 'g'); c.rect(11, 17, 12, 3, 'y'); c.rect(11, 17, 12, 1, 'g');
+  c.rect(3, 20, 28, 25, 'd'); c.rect(3, 20, 28, 2, 'f'); c.rect(3, 43, 28, 2, 'shade' in KEY ? 'd' : 'd');
+  stamp(c, D35['1'], 14, 26, 'k', 2); stamp(c, D35['1'], 14, 26, 'k', 2);
+  c.rect(4, 22, 1, 20, 'f');
+  return c.out('k');
+}
+function bigCoin() {                                             // 2026: a coin as tall as the hero
+  const c = cv(34, 36);
+  c.rect(13, 30, 8, 4, 'e');
+  c.disc(17, 16, 15.5, 'y'); c.disc(17, 16, 14, 'g'); c.ring(17, 16, 11, 'y', 1);
+  stamp(c, DOLLAR, 12, 11, 'y', 2);
+  c.px(7, 7, 'w'); c.px(8, 6, 'w'); c.px(9, 5, 'w'); c.px(7, 8, 'w'); c.px(6, 9, 'w');
+  return c.out('k');
+}
+const STOPART = { house: house(), stockBoard: stockBoard(), bike: bike(), book: book(), partners: partners(), vault: vault(), mill: mill(), tower: tower(), trophy: trophy(), bigCoin: bigCoin() };
+for (const k of Object.keys(STOPART)) STOPART[k] = { key: KEY, art: STOPART[k].rows() };
+
+/* ---------------- a poof of snow and sparkle where the runner grows up ---------------- */
+const POOF = { key: KEY, fps: 12, frames: (() => {
+  const f = [];
+  let c = cv(22, 30);
+  for (const [x, y, r] of [[11, 15, 3.4], [7, 19, 2.6], [15, 19, 2.6], [11, 9, 2.6], [6, 12, 2], [16, 12, 2]]) c.disc(x, y, r, 'w');
+  for (const [x, y] of [[9, 18], [13, 20], [5, 20]]) c.px(x, y, 'h');
+  f.push(c.rows());
+  c = cv(22, 30);
+  for (const [x, y, r] of [[11, 15, 5.2], [5, 20, 3.6], [17, 20, 3.6], [11, 6, 3.4], [4, 10, 2.8], [18, 10, 2.8]]) c.disc(x, y, r, 'w');
+  for (const [x, y] of [[9, 18], [13, 21], [4, 22], [16, 22], [8, 12], [14, 9]]) c.px(x, y, 'h');
+  for (const [x, y] of [[2, 4], [19, 5], [1, 17], [20, 16]]) { c.px(x, y, 'g'); c.px(x - 1, y, 'g'); c.px(x + 1, y, 'g'); c.px(x, y - 1, 'g'); c.px(x, y + 1, 'g'); }
+  f.push(c.rows());
+  c = cv(22, 30);
+  for (const [x, y, r] of [[3, 7, 1.8], [18, 6, 1.8], [2, 19, 1.8], [19, 20, 1.8], [11, 2, 1.6], [11, 27, 1.6]]) c.disc(x, y, r, 'w');
+  for (const [x, y] of [[6, 3], [16, 3], [1, 12], [20, 12], [5, 26], [17, 26]]) { c.px(x, y, 'g'); c.px(x, y - 1, 'g'); c.px(x, y + 1, 'g'); }
+  f.push(c.rows());
+  return f;
+})() };
+
+/* ---------------- a small coin that spins: face, three-quarter, edge, three-quarter ---------------- */
+const COIN = { key: KEY, fps: 8, frames: [8, 6, 2, 6].map((w) => {
+  const c = cv(8, 8);
+  for (let y = 0; y < 8; y++) for (let x = 0; x < w; x++) {
+    const dx = (x + 0.5 - w / 2) / (w / 2), dy = (y + 0.5 - 4) / 4, d = dx * dx + dy * dy;
+    if (d <= 1) c.px(4 - w / 2 + x, y, d > 0.62 ? 'k' : 'g');
+  }
+  if (w >= 6) { c.px(3, 2, 'w'); c.px(4 - w / 2 + w - 3, 5, 'y'); }
+  return c.rows();
+}) };
+
+/* ---------------- the world: snow, hills, trees, a sun ---------------- */
+const SCENERY = {
+  snowA: { key: KEY, art: ['........', '..w..w..', '.wwwwwww', 'wwwwwwww', 'wwnwwwnw', 'nnnnnnnn', 'ndnnnndn', 'dddddddd'] },
+  snowB: { key: KEY, art: ['........', '....w...', 'w..wwww.', 'wwwwwwww', 'wnwwwwwn', 'nnnnnnnn', 'nnndnnnd', 'dddddddd'] },
+  earthA: { key: KEY, art: ['eeeeeeee', 'eekeeeee', 'eeeeeeee', 'eeeeekee', 'eeeeeeee', 'keeeeeee', 'eeeeeekk', 'eeeeeeee'] },
+  earthB: { key: KEY, art: ['eeeeeeee', 'eeeeeeke', 'ekeeeeee', 'eeeeeeee', 'eeekeeee', 'eeeeeeee', 'eeeekeee', 'eeeeeeee'] },
+  deep: { key: KEY, art: ['eeeeeeee', 'ekeeekee', 'eeeeeeee', 'eeekeeee', 'eeeeeeee', 'eekeeeke', 'eeeeeeee', 'eeeeeeee'] },
+  sun: { key: KEY, art: (() => { const c = cv(24, 24); c.disc(12, 12, 11.2, 'y'); c.disc(11, 11, 9.6, 'g'); c.px(6, 5, 'w'); c.px(7, 4, 'w'); c.px(5, 6, 'w'); return c.rows(); })() },
+  pine: { key: KEY, art: (() => {
+    const c = cv(18, 30);
+    c.rect(8, 26, 3, 4, 'e');
+    c.tri(9, 1, 11, 5, 'p'); c.tri(9, 7, 18, 7, 'p'); c.tri(9, 14, 25, 9, 'p');
+    c.tri(9, 1, 4, 2, 'w'); c.rect(4, 11, 3, 1, 'w'); c.rect(12, 11, 2, 1, 'w'); c.tri(9, 7, 11, 3, 'w'); c.rect(2, 18, 3, 1, 'w'); c.rect(13, 18, 3, 1, 'w'); c.tri(9, 14, 18, 3, 'w'); c.rect(1, 25, 4, 1, 'w'); c.rect(14, 25, 3, 1, 'w');
+    return c.out('k').rows();
+  })() },
+  pineSmall: { key: KEY, art: (() => {
+    const c = cv(12, 20);
+    c.rect(5, 17, 2, 3, 'e');
+    c.tri(6, 1, 8, 3, 'p'); c.tri(6, 5, 12, 5, 'p'); c.tri(6, 9, 16, 6, 'p');
+    c.tri(6, 1, 3, 1, 'w'); c.tri(6, 5, 7, 2, 'w'); c.tri(6, 9, 11, 2, 'w'); c.rect(1, 16, 3, 1, 'w'); c.rect(9, 16, 2, 1, 'w');
+    return c.out('k').rows();
+  })() },
+  snowman: { key: KEY, art: (() => {
+    const c = cv(16, 26);
+    c.line(2, 12, 5, 14, 'e'); c.line(13, 11, 10, 14, 'e'); c.line(2, 12, 1, 10, 'e'); c.line(13, 11, 14, 9, 'e');
+    c.disc(8, 20, 5.2, 'w'); c.disc(8, 12.5, 4, 'w'); c.disc(8, 6, 3.4, 'w');
+    for (const [x, y] of [[10, 20], [11, 21], [10, 22], [11, 19], [10, 13], [11, 12], [10, 12]]) c.px(x, y, 'n');
+    c.px(7, 5, 'k'); c.px(10, 5, 'k'); c.px(11, 6, 'y'); c.px(12, 6, 'y'); c.px(7, 8, 'k'); c.px(8, 9, 'k'); c.px(9, 8, 'k');
+    c.px(8, 12, 'k'); c.px(8, 15, 'k'); c.px(8, 18, 'k');
+    c.rect(4, 2, 8, 1, 'k'); c.rect(5, -1 + 1, 6, 1, 'k'); c.rect(5, 0, 6, 2, 'k'); c.rect(5, 1, 6, 1, 'r');
+    return c.out('k').rows();
+  })() },
+  cloudBig: { key: { w: 'white', h: 'haze' }, art: [
+    '.............wwww.................', '...........wwwwwwww...............', '..........wwwwwwwwwwwwwwww........', '..........wwwwwwwwwwwwwwwww.......',
+    '......wwwwwwwwwwwwwwwwwwwwww......', '.....wwwwwwwwwwwwwwwwwwwwwwwwww...', '....wwwwwwwwwwwwwwwwwwwwwwwwwwww..', '....wwwwwwwwwwwwwwwwwwwwwwwwwwwww.',
+    '...hwwwwwwwwwwwwwwwwwwwwwwwwwwwww.', '....hwwwwwwhhwwwwwwwwwhhhhwwwwwwh.', '....hhwwwwhhhhwwwwwwwwhhhhhwwwwhh.', '.....hhhhhh..hhhhhhhhh....hhhhhh..', '......hhhh....hhhhhhhh.....hhhh...'] },
+  cloudMid: { key: { w: 'white', h: 'haze' }, art: [
+    '.........wwww...........', '........wwwwww..........', '.......wwwwwwwwwwww.....', '....wwwwwwwwwwwwwwww....', '...wwwwwwwwwwwwwwwwww...', '...wwwwwwwwwwwwwwwwww...',
+    '..hwwwwwwwwwwwwwwwwwh...', '...hwwwwhwwwwwwwwwwhh...', '...hhhhhhhhhhhhhhhhh....', '....hhhh.hhhhhhhhhh.....'] },
+  cloudSmall: { key: { w: 'white', h: 'haze' }, art: [
+    '......wwww....', '...wwwwwwww...', '..wwwwwwwwwww.', '.wwwwwwwwwwww.', '.hwwwwwwwwwww.', '..hhhhhhhhhhh.'] },
+};
+
+/* ---------------- the film: ten stops along one long hill ---------------- */
+const BPM = 120;
+const beat = (n) => n * 60 / BPM;            // quarter notes
+const bar = (n) => beat(4 * n);              // 4/4 bars
+
+const SPEED = 30;                            // the ground, px/s: 1 px every 2 frames
+const GROUND = 137;                          // the row the runner's soles and the ball rest on
+const FOCUS = 200;                           // the screen x a stop is centred on when its caption lands
+const HERO_X = 110;                          // the runner's left edge; the ball rolls behind it
+const DUR_S = 36;
+
+// One stop per milestone. t is the moment its caption lands and its prop is centred on FOCUS; r is the snowball's radius from then on.
+const STOPS = [
+  { t: 1,  prop: 'house',      age: 0,  year: 1930, head: 'WARREN BUFFETT', sub: 'FROM $0 TO BILLIONS', r: 4,  ramp: 'w', scale: 3 },
+  { t: 4,  prop: 'stockBoard', age: 11, year: 1942, head: 'FIRST STOCK', sub: '3 SHARES AT $38 EACH', r: 5,  ramp: 'w', scale: 3 },
+  { t: 7,  prop: 'bike',       age: 14, year: 1944, head: 'PAPER ROUTE', sub: '$592.50 EARNED IN 1944', r: 6,  ramp: 'w', scale: 3 },
+  { t: 10, prop: 'book',       age: 19, year: 1950, head: 'THE INTELLIGENT INVESTOR', sub: 'HE READS IT AT 19', r: 8,  ramp: 'w', scale: 2 },
+  { t: 13, prop: 'partners',   age: 25, year: 1956, head: 'SEVEN PARTNERS', sub: '$105,000 FROM THEM, $100 FROM HIM', r: 10, ramp: 'w', scale: 3 },
+  { t: 16, prop: 'vault',      age: null, year: 1962, head: 'FIRST MILLION', sub: 'HIS STAKE PASSES $1,000,000', r: 14, ramp: 'g', scale: 3 },
+  { t: 19, prop: 'mill',       age: 34, year: 1965, head: 'BERKSHIRE HATHAWAY', sub: 'A TEXTILE MILL. HE TAKES CONTROL', r: 18, ramp: 'w', scale: 2 },
+  { t: 22, prop: 'tower',      age: 55, year: 1985, head: 'FIRST BILLION', sub: 'FORBES 400 LISTS HIM AT $1 BILLION', r: 26, ramp: 'g', scale: 3 },
+  { t: 25, prop: 'trophy',     age: 77, year: 2008, head: "WORLD'S RICHEST", sub: '$62 BILLION, FORBES', r: 34, ramp: 'g', scale: 3 },
+  { t: 28, prop: 'bigCoin',    age: 96, year: 2026, head: '$143.7 BILLION', sub: 'AFTER GIVING AWAY $60 BILLION+', r: 46, ramp: 'g', scale: 3 },
+];
+// the runner grows up: [sprite, from, until]
+// each age takes over 0.6 s before the stop it belongs to, after the last caption has gone: the kid is 0 and 11, the paper boy 14, then 19 and 25, then 1962 to 55, then 77 and 96
+const AGES = [['kid', 0], ['paper', STOPS[2].t - 0.6], ['young', STOPS[3].t - 0.6], ['man', STOPS[5].t - 0.6], ['elder', STOPS[8].t - 0.6]];
+
+const FEED_AT = 0.15, FEED_DUR = 0.6;          // a stop tosses its coin this long after its caption lands; the ball swells on arrival
+const RAMP = {
+  w: ['white', 'white', 'white', 'snow', 'snow', 'far', 'far'],
+  g: ['white', 'gold', 'gold', 'gold', 'gold', 'orange', 'orange'],
+};
+const propOf = (k) => { const a = STOPART[k].art; return { w: a[0].length, h: a.length }; };
+const stopX = (s) => Math.round(FOCUS + SPEED * s.t - propOf(s.prop).w / 2);
+const stopY = (s) => GROUND + 1 - propOf(s.prop).h;
+const headH = (s) => 7 * s.scale;
+const stag = (text, total) => { const n = [...text].filter((c) => c !== ' ').length; return n > 1 ? Math.min(0.0625, total / (n - 1)) : 0; };   // seconds between letters
+const SUB_Y = (s) => 10 + headH(s) + 2 + 6;   // the small line sits below the headline and its drop
+
+const layers = [];
+layers.push({ id: 'SKY', kind: 'sky', bands: [[0, 'bg'], [50, 'sky2'], [98, 'haze']], dither: 6 });
+layers.push({ id: 'SUN', kind: 'sprite', sprite: 'sun', x: 262, y: 140, shake: false,
+  keys: STOPS.map((s, i) => ({ at: s.t, to: { dy: -7 * (i + 1) }, spring: 'SLIDE' })) });
+layers.push({ id: 'CLOUDS', kind: 'strip', width: 800, speed: 10, place: [
+  ['cloudBig', 36, 16], ['cloudSmall', 140, 58], ['cloudMid', 226, 8], ['cloudBig', 350, 40], ['cloudSmall', 452, 20],
+  ['cloudMid', 540, 56], ['cloudBig', 640, 12], ['cloudSmall', 760, 44]] });
+layers.push({ id: 'FAR', kind: 'ridge', width: 720, speed: 10, y: 126, bumps: [[40, 90, 18], [130, 70, 12], [230, 100, 22], [340, 80, 14], [440, 110, 20], [560, 90, 16], [660, 80, 12]], fill: 'far', edge: 'haze' });
+layers.push({ id: 'NEAR', kind: 'ridge', width: 1080, speed: 20, y: 136, bumps: [[60, 90, 14], [170, 120, 20], [300, 80, 10], [420, 110, 16], [560, 90, 12], [690, 130, 18], [830, 90, 10], [960, 100, 14]], fill: 'shade', edge: 'far' });
+layers.push({ id: 'GROUND', kind: 'tiles', y: 132, speed: SPEED, extend: 'earth',
+  tiles: { A: 'snowA', B: 'snowB', C: 'earthA', D: 'earthB', E: 'deep' },
+  map: ['ABBABAABBABABBAABABBABAABBABAB', 'CDCCDCDDCDCCDDCDCDCCDCDDCDCCDC', 'EEEEEEEEEEEEEEEEEEEEEEEEEEEEEE'] });
+// the trees stand behind the stops
+const TREES = [];
+STOPS.forEach((s, i) => {
+  const mid = stopX(s) + Math.floor(propOf(s.prop).w / 2) + 45;
+  TREES.push([i % 3 === 1 ? 'pine' : 'pineSmall', mid - 6, GROUND - (i % 3 === 1 ? 29 : 19) - 1]);
+});
+TREES.push(['pine', stopX(STOPS[0]) + 62, GROUND - 29 - 1], ['pineSmall', stopX(STOPS[2]) - 40, GROUND - 20], ['pine', stopX(STOPS[6]) - 44, GROUND - 30]);
+layers.push({ id: 'TREES', kind: 'strip', width: 30 * DUR_S + 500, speed: SPEED, place: TREES.map(([n, x, y]) => [n, x, y - 2]) });
+layers.push({ id: 'STOPS', kind: 'strip', width: 30 * DUR_S + 500, speed: SPEED,
+  place: [['snowman', stopX(STOPS[0]) + 60, GROUND - 25], ...STOPS.map((s) => [s.prop, stopX(s), stopY(s)])] });
+layers.push({ id: 'BALL', kind: 'ball', heroX: HERO_X, gap: 6, ground: GROUND, speed: SPEED, spring: 'HOP',
+  radius: STOPS.map((s, i) => [i === 0 ? 0 : s.t + FEED_AT + FEED_DUR, s.r]) });
+AGES.forEach(([sp, a], i) => {
+  const L = { id: `RUN_${sp.toUpperCase()}`, kind: 'sprite', sprite: sp, x: HERO_X, y: GROUND - 25 };
+  if (i > 0) L.enter = { at: a, from: { op: 0 }, fade: 'DISSOLVE' };
+  if (i < AGES.length - 1) L.exit = { at: AGES[i + 1][1] + 0.3, to: { op: 0 }, fade: 'DISSOLVE' };
+  layers.push(L);
+  if (i > 0) layers.push({ id: `POOF_${i}`, kind: 'sprite', sprite: 'poof', x: HERO_X - 1, y: GROUND - 28, show: [a, a + 0.25], phase: -Math.round(a * 12) });
+});
+[[5, 16.3, 18.4], [7, 22.3, 24.4], [8, 25.3, 27.4], [9, 28.2, 30.6]].forEach(([seed, a, b], i) => layers.push({ id: `GLINTS_${i + 1}`, kind: 'sparkles', sprite: 'spark', box: [70 + i * 4, 12, 250 - i * 4, 58], n: 3 + (i % 2), every: beat(2), seed, show: [a, b] }));
+layers.push({ id: 'FEED', kind: 'feed', sprite: 'coin', burst: 'spark', ball: 'BALL',
+  shots: STOPS.slice(1).map((s) => ({ at: s.t + FEED_AT, x0: FOCUS, y0: stopY(s) - 2, dur: FEED_DUR, peak: 30 })) });
+layers.push({ id: 'SNOW', kind: 'snow', n: 46, floor: GROUND - 2 });
+// the captions: a headline that drops in, a small line under it, and the age and year at the bottom
+STOPS.forEach((s, i) => {
+  const id = `S${i + 1}`, x = 160, hold = 2.5;
+  layers.push({ id: `${id}_HEAD`, kind: 'text', text: s.head, scale: s.scale, anchor: 'C', x, y: 10, fill: RAMP[s.ramp], outline: 'ink', depth: [0, 2], side: 'suit',
+    ...(i === 0 ? {} : { enter: { at: s.t, from: { dy: -(10 + headH(s) + 6), op: 0 }, spring: 'DROP', bounce: true, stagger: stag(s.head, 0.45) } }),
+    exit: { at: s.t + hold - 0.2, to: { op: 0 }, fade: 'DISSOLVE', stagger: stag(s.head, 0.25) },
+    ...(s.ramp === 'g' ? { shine: { at: [s.t + 0.9], dur: 0.4, width: 4, color: 'white' } } : {}), ...(i === 0 ? {} : { accent: 'land' }) });
+  layers.push({ id: `${id}_SUB`, kind: 'text', text: s.sub, anchor: 'C', x, y: SUB_Y(s), fill: 'white', outline: 'ink',
+    ...(i === 0 ? {} : { enter: { at: s.t + 0.4, from: { op: 0 }, fade: 'DISSOLVE', stagger: stag(s.sub, 0.35) } }),
+    exit: { at: s.t + hold - 0.2, to: { op: 0 }, fade: 'DISSOLVE', stagger: stag(s.sub, 0.25) } });
+  layers.push({ id: `${id}_AGE`, kind: 'text', text: s.age == null ? String(s.year) : `AGE ${s.age} · ${s.year}`, anchor: 'L', x: 12, y: 163, fill: 'gold', outline: 'ink',
+    show: [i === 0 ? 0 : s.t - 0.3, s.t + 2.8],
+    ...(i === 0 ? {} : { enter: { at: s.t - 0.3, from: { op: 0 }, fade: 'DISSOLVE', stagger: 0.02 } }),
+    exit: { at: s.t + 2.6, to: { op: 0 }, fade: 'DISSOLVE', stagger: 0.02 } });
+});
+layers.push({ id: 'AGE_LAST', kind: 'text', text: 'AGE 96 · 2026', anchor: 'L', x: 12, y: 163, fill: 'gold', outline: 'ink', show: [30.7, DUR_S],
+  enter: { at: 30.7, from: { op: 0 }, fade: 'DISSOLVE', stagger: 0.02 } });
+// the ending: two beats of a sentence he is known for, then his name
+layers.push({ id: 'END_1', kind: 'text', text: 'WET SNOW.', scale: 3, anchor: 'C', x: 160, y: 10, fill: RAMP.w, outline: 'ink', depth: [0, 2], side: 'suit',
+  enter: { at: 30.9, from: { dy: -40, op: 0 }, spring: 'DROP', bounce: true, stagger: 0.05 },
+  exit: { at: 32.4, to: { op: 0 }, fade: 'DISSOLVE', stagger: 0.03 }, accent: 'land' });
+layers.push({ id: 'END_2', kind: 'text', text: 'A REALLY LONG HILL.', scale: 2, anchor: 'C', x: 160, y: 12, fill: RAMP.g, outline: 'ink', depth: [0, 2], side: 'suit',
+  enter: { at: 32.8, from: { dy: -40, op: 0 }, spring: 'DROP', bounce: true, stagger: 0.025 }, shine: { at: [34.3], dur: 0.4, width: 4, color: 'white' }, accent: 'land' });
+layers.push({ id: 'END_3', kind: 'text', text: '– WARREN BUFFETT', anchor: 'C', x: 160, y: 32, fill: 'white', outline: 'ink',
+  enter: { at: 33.4, from: { op: 0 }, fade: 'DISSOLVE', stagger: 0.02 } });
+layers.push({ id: 'CREDIT_1', kind: 'text', text: 'UNOFFICIAL FAN ANIMATION', anchor: 'R', x: 311, y: 152, fill: 'white', outline: 'ink' });
+layers.push({ id: 'CREDIT_2', kind: 'text', text: 'SOURCES: FORBES, CNBC, PBS, PRESS', anchor: 'R', x: 311, y: 163, fill: 'white', outline: 'ink' });
+
+const FILM = {
+  title: 'Warren Buffett, from $0 to billions: a pixel history',
+  alt: 'A pixel-art history of Warren Buffett. A runner jogs right across a snowy landscape while a snowball rolls after him and grows with every stop. Omaha, 1930: WARREN BUFFETT, from $0 to billions. 1942, age 11: FIRST STOCK, 3 shares at $38 each. 1944, age 14: PAPER ROUTE, $592.50 earned in 1944. 1950, age 19: THE INTELLIGENT INVESTOR, he reads it at 19. 1956, age 25: SEVEN PARTNERS put in $105,000, $100 of it his. 1962: FIRST MILLION, his stake passes $1,000,000. 1965: BERKSHIRE HATHAWAY, a textile mill he takes control of. 1985, age 55: FIRST BILLION, the Forbes 400 lists him at $1 billion. 2008, age 77: WORLD\'S RICHEST, $62 billion, Forbes. 2026, age 96: $143.7 BILLION, after giving away $60 billion and more. Then: WET SNOW. A REALLY LONG HILL. Warren Buffett. Unofficial fan animation; sources Forbes, CNBC, PBS and press reports.',
+  W: 1920, H: 1080, FPS: 60, DUR: DUR_S, BPM,
+  loop: 'none',
+  blur: false,
+  px: { w: 320, h: 180, scale: 6, margin: 8 },
+  palette: {
+    bg: '#83B7E6', sky2: '#B4D6F3', haze: '#E1F0FB', far: '#A5C1E2', snow: '#EAF3FC', white: '#FFFFFF', shade: '#8EA7D0', ink: '#1B2140',
+    earth: '#6A4B3C', wood: '#B97A45', skin: '#F0B48C', suit: '#2D4A85', red: '#D8434B', gold: '#FFC83D', orange: '#E8892B', pine: '#2F7D5B',
+  },
+  poster: 29.2,
+  sprites: {
+    kid: RUNNERS.kid, paper: RUNNERS.paper, young: RUNNERS.young, man: RUNNERS.man, elder: RUNNERS.elder,
+    ...STOPART, ...SCENERY,
+    poof: POOF, coin: COIN,
+    spark: { fps: 20, key: { w: 'white', c: 'snow', y: 'gold' }, sheet: [
+      '....... ....... ...y... ....... .......', '....... ....... ...c... ...y... .......', '....... ...c... ...w... ....... .......',
+      '...w... ..cwc.. ycwwwcy .y.w.y. ...y...', '....... ...c... ...w... ....... .......', '....... ....... ...c... ...y... .......', '....... ....... ...y... ....... .......'] },
+  },
+  shake: [{ at: STOPS[7].t + FEED_AT + FEED_DUR, px: 2, dur: 0.3 }, { at: STOPS[9].t + FEED_AT + FEED_DUR, px: 3, dur: 0.4 }],
+  layers,
+};
+
+/* ===== CORE BEGIN: shared/core.js, synced by tools/sync.mjs. Do not edit it here. ===== */
+/* ==========================================================================
+ * CORE: the deterministic runtime every motion-* engine shares.
+ * Source: shared/core.js in the motion-launch-videos repo, copied into each
+ * template by tools/sync.mjs. Do not edit it inside a film.
+ *
+ * seek(t) is a pure function of (t mod DUR): same t, same pixels, whatever was
+ * drawn before. No timers, no Date, no Math.random, no state between calls.
+ *   - Springs are closed-form step responses, one per target change, snapped
+ *     to exactly 1 once settled. A Prop is a base value plus its springs.
+ *     Springs still settling when the loop ends carry over the seam.
+ *   - Periodic motion runs a whole number of cycles per loop (cyc, wave,
+ *     loopNoise), so it is exact at the seam by construction.
+ *   - Randomness is seeded (mulberry32, hash).
+ *   - Continuous motion reads the exact t; discrete state (typing, drawings
+ *     held on twos, sprite frames, line boil) reads the quantised q, so every
+ *     subframe of one output frame agrees on it.
+ *   - Motion blur averages 1 to 64 subframes on a trailing 270-degree
+ *     shutter, one per 5 px of movement, never across a hard cut.
+ * The engine below describes its vertical through hooks (build, draw, disp,
+ * checks, stills, layout, visible, lastChange) and calls boot(ENGINE) last.
+ * The core keeps its internals to itself and exports the helpers listed at
+ * its end, so an engine can name its own functions freely.
+ * ========================================================================== */
+const CORE = (() => {
+const { W, H, FPS, DUR } = FILM;
+const NFR = Math.round(DUR * FPS);                 // output frames in the loop
+const CX = W / 2, CY = H / 2;
+const U = Math.min(W, H) / 1080;                   // scale for built-in pixel constants
+const PAL = FILM.palette;
+const USED = new Set();                            // palette roles the film draws with
+const col = (k) => PAL[k] || k;                    // look a role up (while drawing)
+const role = (k) => { USED.add(k); return PAL[k] || k; };   // resolve and register a role (at build time)
+const GRID = FILM.grid || {};
+const MARGIN = GRID.margin != null ? GRID.margin : Math.round(104 * U);
+const UNIT = GRID.unit || 8;
+const MEASURE = W - 2 * MARGIN;
+const LOOP = FILM.loop || 'hold';                  // 'hold': ends on a still copy of frame 0; 'cycle': periodic, continuous over the seam; 'none'
+const BLUR = FILM.blur !== false;                  // false: one sample per frame (cartoon, pixel art)
+const SHUTTER = 0.75;                              // 270 degrees, trailing
+const MIN_SAMPLES = 4, MAX_SAMPLES = 64, PX_PER_SAMPLE = 5;   // Uint16 sums hold up to 257 x 255
+const TAU = Math.PI * 2;
+
+const canvas = document.getElementById('c');
+canvas.width = W; canvas.height = H;
+canvas.setAttribute('role', 'img');
+canvas.setAttribute('aria-label', FILM.alt || FILM.title || '');
+if (FILM.title) document.title = FILM.title;
+document.documentElement.style.background = PAL.bg;
+document.body.style.background = PAL.bg;
+// CPU raster everywhere: Chrome moves a canvas from GPU to CPU after repeated getImageData
+// reads, which changes antialiasing mid-render. Pin every 2D context from its first call.
+// An alpha channel, though every frame fills it opaque: on an opaque canvas Chromium draws text with
+// LCD subpixel antialiasing (red and blue fringes on every glyph), whatever the command line says.
+const ctx = canvas.getContext('2d', { willReadFrequently: true, alpha: true });
+const mkCanvas = (w = W, h = H) => { const c = document.createElement('canvas'); c.width = w; c.height = h; return c; };
+const mk2d = (w, h) => { const c = mkCanvas(w, h); return [c, c.getContext('2d', { willReadFrequently: true })]; };
+const mctx = mkCanvas().getContext('2d', { willReadFrequently: true });   // measuring only
+
+/* ---------------- springs: closed-form step responses ---------------- */
+// [zeta, omega]. Underdamped (zeta < 1) overshoots and lands; zeta = 1 glides in without overshoot.
+// Engines add their own (boot merges ENGINE.springs, then FILM.springs).
+const SP = {
+  SLAM: [0.60, 30.0], LAND: [0.72, 28.0], PUNCH: [0.65, 31.0], FADE: [1, 32.4],
+  FOCUS: [1, 19.5], EXIT: [1, 32.4], PAN: [1, 32.4], DRAW: [1, 32.4],
+  LINE: [0.80, 15.6], MASK: [1, 19.5], TICK: [1, 32.4],
+};
+const spring = (sp) => { const s = typeof sp === 'string' ? SP[sp] : sp; if (!s) throw new Error(`unknown spring ${sp}`); return s; };
+const settle = (sp) => 16 / (sp[0] * sp[1]);       // after this the response snaps to exactly 1
+function S(tau, sp) {
+  const z = sp[0], w = sp[1];
+  if (tau <= 0) return 0;
+  if (tau >= settle(sp)) return 1;                 // residual < 2e-6 of the move: snap, so loops are bit-exact
+  if (z < 1) {
+    const wd = w * Math.sqrt(1 - z * z);
+    return 1 - Math.exp(-z * w * tau) * (Math.cos(wd * tau) + (z * w / wd) * Math.sin(wd * tau));
+  }
+  return 1 - (1 + w * tau) * Math.exp(-w * tau);
+}
+function dS(tau, sp) {                             // d S / d tau, per second
+  const z = sp[0], w = sp[1];
+  if (tau <= 0 || tau >= settle(sp)) return 0;
+  if (z < 1) { const wd = w * Math.sqrt(1 - z * z); return (w * w / wd) * Math.exp(-z * w * tau) * Math.sin(wd * tau); }
+  return w * w * tau * Math.exp(-w * tau);
+}
+// the visible landing: the first crossing of the target when underdamped, 95 % when critically damped
+function landT(sp) {
+  sp = spring(sp);
+  const z = sp[0], w = sp[1];
+  if (z < 1) { const wd = w * Math.sqrt(1 - z * z); return (Math.PI - Math.atan(wd / (z * w))) / wd; }
+  let a = 0, b = settle(sp);
+  for (let i = 0; i < 40; i++) { const m = (a + b) / 2; if (S(m, sp) < 0.95) a = m; else b = m; }
+  return b;
+}
+
+// A property = base value + one spring per target change (superposed). set() is an instant jump
+// that cancels earlier springs; use it only while the element is invisible, at a hard cut, or hidden
+// inside fast motion blur. Events are added in time order. In a looping film, springs still settling
+// at the end of the loop carry over the seam into its start (only while no set() has happened yet),
+// so the film is continuous there; the value a Prop ends on must equal the value it starts from.
+const PROPS = [];
+class Prop {
+  constructor(v0, name) { this.v0 = v0; this.last = v0; this.ev = []; this.tLast = -Infinity; this.name = name || '?'; this.tail = null; this.firstSet = Infinity; PROPS.push(this); }
+  order(t) { if (t < this.tLast - 1e-9) throw new Error(`${this.name}: event at ${t} added after one at ${this.tLast}`); this.tLast = t; this.tail = null; }
+  to(t, v, sp) { this.order(t); this.ev.push({ t, d: v - this.last, sp: spring(sp), set: false }); this.last = v; return this; }
+  set(t, v) { this.order(t); this.ev.push({ t, v, set: true }); this.last = v; return this; }
+  seam() {                                         // the springs that carry over the seam
+    if (this.tail) return this.tail;
+    let k = -1;
+    this.firstSet = Infinity;
+    for (let i = 0; i < this.ev.length; i++) if (this.ev[i].set) { k = i; if (this.firstSet === Infinity) this.firstSet = this.ev[i].t; }
+    this.tail = LOOP === 'none' ? [] : this.ev.slice(k + 1).filter((e) => e.d !== 0 && e.t + settle(e.sp) > DUR);
+    return this.tail;
+  }
+  at(t) {
+    let v = this.v0, i0 = 0;
+    const ev = this.ev;
+    for (let i = 0; i < ev.length; i++) if (ev[i].set && ev[i].t <= t) { v = ev[i].v; i0 = i + 1; }
+    for (let i = i0; i < ev.length; i++) { const e = ev[i]; if (!e.set) v += e.d * S(t - e.t, e.sp); }
+    const tail = this.seam();
+    if (tail.length && t < this.firstSet) for (const e of tail) v += e.d * (S(t + DUR - e.t, e.sp) - 1);
+    return v;
+  }
+  vel(t) {                                         // per second
+    let v = 0, i0 = 0;
+    const ev = this.ev;
+    for (let i = 0; i < ev.length; i++) if (ev[i].set && ev[i].t <= t) i0 = i + 1;
+    for (let i = i0; i < ev.length; i++) { const e = ev[i]; if (!e.set) v += e.d * dS(t - e.t, e.sp); }
+    const tail = this.seam();
+    if (tail.length && t < this.firstSet) for (const e of tail) v += e.d * dS(t + DUR - e.t, e.sp);
+    return v;
+  }
+  active(a, b) {                                   // does the value change anywhere in (a, b]?
+    for (const e of this.ev) {
+      if (e.set) { if (e.t > a && e.t <= b) return true; }
+      else if (e.d !== 0 && e.t < b && e.t + settle(e.sp) > a) return true;
+    }
+    if (a < this.firstSet) for (const e of this.seam()) if (e.t - DUR < b && e.t - DUR + settle(e.sp) > a) return true;
+    return false;
+  }
+  settleEnd() { let m = -Infinity; for (const e of this.ev) m = Math.max(m, e.set ? e.t : e.t + settle(e.sp)); return m; }
+  lastSet(a, b) { let m = -Infinity; for (const e of this.ev) if (e.set && e.t > a && e.t <= b && e.t > m) m = e.t; return m; }
+}
+
+/* ---------------- periodic motion and seeded randomness ---------------- */
+// n whole cycles per loop: exact at the seam by construction. Use these for anything that never stops
+// (an idle bob, a spin, a drifting field) and set ENGINE.always, or declare its windows with activeIn.
+const cyc = (t, n, phase = 0) => TAU * (n * t / DUR + phase);
+const wave = (t, n, phase = 0) => Math.sin(cyc(t, n, phase));
+function mulberry32(a) {
+  return function () {
+    a |= 0; a = (a + 0x6D2B79F5) | 0;
+    let t = Math.imul(a ^ (a >>> 15), 1 | a);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+// three integers to [0, 1), well mixed: a pure replacement for Math.random keyed by what it decides
+function hash(a, b = 0, c = 0) {
+  let h = Math.imul((a | 0) ^ 0x3C6EF372, 0x85EBCA6B);
+  h = Math.imul(h ^ (h >>> 13) ^ (b | 0), 0xC2B2AE35);
+  h = Math.imul(h ^ (h >>> 16) ^ (c | 0), 0x27D4EB2F);
+  h ^= h >>> 15; h = Math.imul(h, 0x85EBCA6B); h ^= h >>> 13; h = Math.imul(h, 0xC2B2AE35); h ^= h >>> 16;
+  return (h >>> 0) / 4294967296;
+}
+// smooth noise in [-1, 1] that loops exactly: three whole harmonics (n, 2n+1, 4n+3 cycles per loop) with seeded phases
+function loopNoise(t, n, seed) {
+  return (Math.sin(cyc(t, n, hash(seed, 1))) + 0.5 * Math.sin(cyc(t, 2 * n + 1, hash(seed, 2))) + 0.25 * Math.sin(cyc(t, 4 * n + 3, hash(seed, 3)))) / 1.75;
+}
+function shuffled(arr, seed) {                     // Fisher-Yates on a copy, seeded
+  const r = mulberry32(seed), a = arr.slice();
+  for (let i = a.length - 1; i > 0; i--) { const j = Math.floor(r() * (i + 1)); const x = a[i]; a[i] = a[j]; a[j] = x; }
+  return a;
+}
+
+/* ---------------- time ---------------- */
+const wrapT = (t) => ((t % DUR) + DUR) % DUR;
+const frameOf = (t) => Math.ceil(t * FPS - 1e-9);  // all subframes of output frame n map to n
+const typed = (q, ts, n) => Math.max(0, Math.min(n, Math.ceil((q - ts) * FPS - 1e-6)));   // one character per frame
+const noteSec = (v) => (typeof v === 'number' && v >= 1 ? 4 * 60 / FILM.BPM / v : v);     // 16 -> a 16th note
+const drawing = (q, fps) => Math.floor(q * fps + 1e-6);    // index of the held drawing (12 fps = on twos at 24, fives at 60)
+
+/* ---------------- colour ---------------- */
+function rgbOf(hex) { const h = String(hex).replace('#', ''); const n = parseInt(h.length === 3 ? h.replace(/./g, '$&$&') : h.slice(0, 6), 16); return [(n >> 16) & 255, (n >> 8) & 255, n & 255]; }
+const hexOf = (r, g, b) => '#' + [r, g, b].map((v) => Math.max(0, Math.min(255, Math.round(v))).toString(16).padStart(2, '0')).join('').toUpperCase();
+function mix(a, b, k) { const x = rgbOf(a), y = rgbOf(b); return hexOf(x[0] + (y[0] - x[0]) * k, x[1] + (y[1] - x[1]) * k, x[2] + (y[2] - x[2]) * k); }
+function hueChroma(r, g, b) {
+  const mx = Math.max(r, g, b), mn = Math.min(r, g, b), C = mx - mn;
+  if (C === 0) return [0, 0];
+  let h;
+  if (mx === r) h = 60 * (((g - b) / C) % 6); else if (mx === g) h = 60 * ((b - r) / C + 2); else h = 60 * ((r - g) / C + 4);
+  return [h < 0 ? h + 360 : h, C];
+}
+const hueDist = (a, b) => { const d = Math.abs(a - b) % 360; return d > 180 ? 360 - d : d; };
+function lum(hex) { const c = rgbOf(hex).map((v) => { v /= 255; return v <= 0.04045 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4); }); return 0.2126 * c[0] + 0.7152 * c[1] + 0.0722 * c[2]; }
+const contrast = (a, b) => { const x = lum(a), y = lum(b); return (Math.max(x, y) + 0.05) / (Math.min(x, y) + 0.05); };
+function inksClash(a, b) {                         // two inks may share a pixel only when that cannot make a new hue
+  const [ha, ca] = hueChroma(...rgbOf(a)), [hb, cb] = hueChroma(...rgbOf(b));
+  return ca >= 40 && cb >= 40 && hueDist(ha, hb) > 13;
+}
+
+/* ---------------- fonts and type ---------------- */
+const face = (r) => { const f = FILM.fonts && FILM.fonts[r]; if (!f) throw new Error(`no font role "${r}"`); return f; };
+const fontStr = (r, size) => { const f = face(r); return `${f.style === 'italic' ? 'italic ' : ''}${f.weight} ${size}px "${f.family}"`; };
+function setFont(c, f) { c.font = f; c.fontKerning = 'normal'; c.letterSpacing = '0px'; c.textBaseline = 'alphabetic'; c.textAlign = 'left'; }
+function capRatio(r) { setFont(mctx, fontStr(r, 1000)); return mctx.measureText('H').actualBoundingBoxAscent / 1000; }
+const TEXT = {};                                   // font role -> every character it draws (checked against the font's cmap)
+const useText = (r, s) => { face(r); TEXT[r] = (TEXT[r] || '') + s; return s; };
+function textByFace() {
+  const out = {};
+  for (const [r, s] of Object.entries(TEXT)) { const f = face(r), k = `${f.family}|${f.weight}`; out[k] = (out[k] || '') + s; }
+  return out;
+}
+
+// One line of type, one glyph at a time: the font's kerning recovered from pair widths, optical
+// pairs on top (1/1000 em), then a fixed tracking, a tracking solved to span `justify` px, or a
+// size solved (`fit`) so the ink spans the measure (or `fit: <px>`). `cap: <px>` sizes from a cap
+// height. x and anchor ('L', 'R', 'C') place the ink edge or centre. Measured once, after the fonts load.
+function measureRun(o, size) {
+  const font = fontStr(o.font || 'display', size);
+  setFont(mctx, font);
+  const ch = Array.from(o.text), n = ch.length;
+  const met = ch.map((c) => mctx.measureText(c));
+  const adv = met.map((m) => m.width);
+  const gap = [];
+  for (let i = 0; i < n - 1; i++) {
+    const kern = mctx.measureText(ch[i] + ch[i + 1]).width - adv[i] - adv[i + 1];
+    gap.push(adv[i] + kern + ((o.pairs || {})[ch[i] + ch[i + 1]] || 0) / 1000 * size);
+  }
+  const pens = (T) => { const x = [0]; for (let i = 0; i < n - 1; i++) x.push(x[i] + gap[i] + T); return x; };
+  const inkW = (x) => (x[n - 1] + met[n - 1].actualBoundingBoxRight) - (x[0] - met[0].actualBoundingBoxLeft);
+  return { font, ch, n, met, pens, inkW };
+}
+function layoutText(o) {
+  const r = o.font || 'display';
+  useText(r, o.text);
+  let size = o.size != null ? o.size : o.cap != null ? o.cap / capRatio(r) : 100;
+  const width = o.fit ? (o.fit === true ? MEASURE : o.fit) : null;
+  if (width) for (let k = 0; k < 3; k++) {         // ink width is linear in size; converge
+    const m = measureRun(o, size);
+    size *= width / m.inkW(m.pens((o.track || 0) / 1000 * size));
+  }
+  const m = measureRun(o, size), { ch, n, met } = m;
+  const T = o.justify != null && n > 1 ? (o.justify - m.inkW(m.pens(0))) / (n - 1) : (o.track || 0) / 1000 * size;
+  const x = m.pens(T);
+  const inkL0 = x[0] - met[0].actualBoundingBoxLeft, inkR0 = x[n - 1] + met[n - 1].actualBoundingBoxRight;
+  const anchor = o.anchor || 'L';
+  const ax = o.x != null ? o.x : anchor === 'R' ? W - MARGIN : anchor === 'C' ? CX : MARGIN;
+  const shift = anchor === 'R' ? ax - inkR0 : anchor === 'C' ? ax - (inkL0 + inkR0) / 2 : ax - inkL0;
+  let slot = 0;
+  const glyphs = ch.map((c, i) => {
+    const sp = /\s/.test(c);
+    const g = { ch: c, i, x: x[i] + shift, space: sp, slot: sp ? -1 : slot,
+      inkL: x[i] + shift - met[i].actualBoundingBoxLeft, inkR: x[i] + shift + met[i].actualBoundingBoxRight,
+      asc: met[i].actualBoundingBoxAscent, desc: met[i].actualBoundingBoxDescent };
+    if (!sp) slot++;
+    return g;
+  });
+  setFont(mctx, m.font);
+  const capH = mctx.measureText('H').actualBoundingBoxAscent;
+  const ink = glyphs.filter((g) => !g.space);
+  const base = o.baseline != null ? o.baseline : 0;
+  return { id: o.id, text: o.text, role: r, font: m.font, size, baseline: base, glyphs, slots: slot,
+    trackPx: T, trackEm: T / size * 1000, inkL: inkL0 + shift, inkR: inkR0 + shift, capH, capTop: base - capH,
+    top: base - Math.max(...ink.map((g) => g.asc)), bottom: base + Math.max(...ink.map((g) => g.desc)) };
+}
+
+// A canvas filter blurs a layer the size of the whole canvas (about 25 ms at 1080 px). Blurred
+// glyphs are instead drawn once into small sprites, blur quantised to steps nobody can see, in a
+// bounded cache. A sprite is a pure function of (font, glyph, colour, blur): a hit and a miss give
+// the same pixels, so seek() stays pure.
+const SPRITES = new Map();
+let spritePx = 0;
+const SPRITE_BUDGET = 24e6;
+const blurQ = (b) => (b < 4 ? Math.round(b * 4) / 4 : b < 10 ? Math.round(b * 2) / 2 : Math.round(b));
+function glyphSprite(font, ch, color, b) {
+  const key = font + '|' + ch + '|' + color + '|' + b;
+  let s = SPRITES.get(key);
+  if (s) { SPRITES.delete(key); SPRITES.set(key, s); return s; }
+  setFont(mctx, font);
+  const m = mctx.measureText(ch), pad = Math.ceil(3 * b) + 2;
+  const c = mkCanvas(Math.max(1, Math.ceil(m.actualBoundingBoxLeft + m.actualBoundingBoxRight) + 2 * pad), Math.max(1, Math.ceil(m.actualBoundingBoxAscent + m.actualBoundingBoxDescent) + 2 * pad));
+  const x = c.getContext('2d', { willReadFrequently: true });
+  setFont(x, font);
+  x.fillStyle = color; x.filter = `blur(${b}px)`;
+  const ox = pad + m.actualBoundingBoxLeft, oy = pad + m.actualBoundingBoxAscent;
+  x.fillText(ch, ox, oy);
+  s = { c, ox, oy, px: c.width * c.height };
+  SPRITES.set(key, s); spritePx += s.px;
+  for (const [k, v] of SPRITES) { if (spritePx <= SPRITE_BUDGET) break; SPRITES.delete(k); spritePx -= v.px; }
+  return s;
+}
+function fillGlyph(c, ch, x, y, color, a, blur) {
+  if (!(a > 0.002)) return;
+  c.globalAlpha = a > 1 ? 1 : a;
+  c.filter = 'none';
+  const bq = blur > 0.05 ? blurQ(blur) : 0;
+  if (bq > 0) { const s = glyphSprite(c.font, ch, color, bq); c.drawImage(s.c, x - s.ox, y - s.oy); return; }
+  c.fillStyle = color;
+  c.fillText(ch, x, y);
+}
+// Draw a laid-out line. fx(g) may return { dx, dy, op, blur, sx, sy, rot, color, ch, pivot } per glyph
+// ('base' scales and turns about the glyph's foot on the baseline, 'mid' about its centre), or null to hide it.
+function drawText(c, L, color, fx) {
+  setFont(c, L.font);
+  for (const g of L.glyphs) {
+    if (g.space) continue;
+    const e = fx ? fx(g) : {};
+    if (!e) continue;
+    const op = e.op != null ? e.op : 1;
+    if (!(op > 0.002)) continue;
+    const dx = e.dx || 0, dy = e.dy || 0, x = g.x + dx, y = L.baseline + dy;
+    const sx = e.sx != null ? e.sx : 1, sy = e.sy != null ? e.sy : 1, rot = e.rot || 0;
+    const cc = e.color || color, ch = e.ch || g.ch;
+    if (rot || sx !== 1 || sy !== 1) {
+      const px = (g.inkL + g.inkR) / 2 + dx, py = e.pivot === 'base' ? y : y - L.capH / 2;
+      c.save(); c.translate(px, py); c.rotate(rot); c.scale(sx, sy); c.translate(-px, -py);
+      fillGlyph(c, ch, x, y, cc, op, e.blur || 0);
+      c.restore();
+    } else fillGlyph(c, ch, x, y, cc, op, e.blur || 0);
+  }
+  c.globalAlpha = 1; c.filter = 'none';
+}
+
+/* ---------------- SVG paths ---------------- */
+// A path from SVG path data: Path2D to draw it, its length and points for trims and morphs.
+// Measured once through a hidden SVG element (the only DOM the core touches besides the canvas).
+let svgRoot = null;
+function svgPath(d) {
+  if (!svgRoot) {
+    svgRoot = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+    svgRoot.setAttribute('style', 'position:absolute;left:0;top:0;width:0;height:0;overflow:hidden');
+    document.body.appendChild(svgRoot);
+  }
+  const el = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+  el.setAttribute('d', d);
+  svgRoot.appendChild(el);
+  const len = el.getTotalLength(), bb = el.getBBox();
+  return { d, p2d: new Path2D(d), len, box: [bb.x, bb.y, bb.x + bb.width, bb.y + bb.height],
+    points: (n) => { const out = []; for (let i = 0; i < n; i++) { const p = el.getPointAtLength(len * i / n); out.push([p.x, p.y]); } return out; } };
+}
+
+/* ---------------- registries the engine fills while it builds ---------------- */
+const CUTS = [];                                   // hard cuts: motion blur never averages across them
+const ACTIVE = [];                                 // [a, b] windows where something moves outside the Props
+const ACCENTS = [];                                // { t, what }: accent frames (stills and the palette gate)
+const WARN = [];                                   // timeline warnings for the critique
+const CONTRAST = [];                               // { id, fg, bg, min }: text that must read
+let ENGINE = null;
+const cutAt = (t) => { if (t > 1e-9 && t < DUR && !CUTS.includes(t)) CUTS.push(t); };
+const activeIn = (a, b) => { ACTIVE.push([a, b]); };
+const accentAt = (t, what) => { ACCENTS.push({ t, what }); };
+const needContrast = (id, fg, bg, min) => { CONTRAST.push({ id, fg, bg: bg || 'bg', min }); };
+
+/* ---------------- frame ---------------- */
+function draw(c, tIn) {
+  const t = wrapT(tIn);
+  let nq = frameOf(t);
+  if (nq >= NFR) nq -= NFR;                        // the last subframes of the loop belong to frame 0
+  const q = nq / FPS;
+  c.setTransform(1, 0, 0, 1, 0, 0);
+  c.globalCompositeOperation = 'source-over'; c.globalAlpha = 1; c.filter = 'none';
+  c.fillStyle = PAL.bg; c.fillRect(0, 0, W, H);
+  ENGINE.draw(c, t, q, nq);
+  c.setTransform(1, 0, 0, 1, 0, 0);
+  c.globalCompositeOperation = 'source-over'; c.globalAlpha = 1; c.filter = 'none';
+}
+let isReady = false;
+function seek(t) { if (!isReady) return false; draw(ctx, Number(t)); return true; }
+
+/* ---------------- motion blur ---------------- */
+// Subframes on a trailing shutter, clamped to a hard cut so the first frame after it is not a
+// double exposure. How many: 1 when nothing changes (exact: the mean of identical samples is the
+// sample), else one per 5 px of the engine's measured displacement, 4 to 64.
+function shutterTimes(n, k) {
+  const tn = n / FPS, out = [];
+  for (let i = k - 1; i >= 0; i--) {
+    let t = k === 1 ? tn : tn - i * SHUTTER / (FPS * (k - 1));
+    for (const cut of CUTS) if (tn >= cut && t < cut) t = cut;
+    if (ENGINE.seamCut && tn === 0 && t < 0) t = 0;   // a cut at the loop point itself
+    out.push(t);
+  }
+  return out;
+}
+function motionAt(n) {
+  if (!BLUR) return { samples: 1, disp: 0 };
+  const ta = wrapT(shutterTimes(n, 2)[0]), tb = wrapT(n / FPS);
+  const spans = ta === tb ? [] : ta < tb ? [[ta, tb]] : [[ta, DUR], [0, tb]];   // a shutter clamped flat against a cut cannot move
+  let moving = false;
+  for (const [a, b] of spans) if (ENGINE.always || ACTIVE.some(([x, y]) => x < b && y > a) || PROPS.some((p) => p.active(a, b))) { moving = true; break; }
+  if (!moving) return { samples: 1, disp: 0 };
+  const minS = ENGINE.minSamples || MIN_SAMPLES;    // an engine whose every sample is costly (WebGL) may allow 2
+  const disp = ENGINE.disp ? ENGINE.disp(ta, tb) : PX_PER_SAMPLE * minS;
+  return { samples: Math.max(minS, Math.min(MAX_SAMPLES, Math.ceil(disp / PX_PER_SAMPLE))), disp };
+}
+let SUM = null;
+function renderFrame(n) {
+  if (!isReady) return 0;
+  const { samples } = motionAt(n);
+  const times = shutterTimes(n, samples);
+  if (samples === 1) { draw(ctx, times[0]); return 1; }
+  if (ENGINE.accumulate) { ENGINE.accumulate(ctx, times); return samples; }
+  if (!SUM) SUM = new Uint16Array(W * H * 4); else SUM.fill(0);
+  for (const t of times) {
+    draw(ctx, t);
+    const px = ctx.getImageData(0, 0, W, H).data;
+    for (let i = 0; i < px.length; i++) SUM[i] += px[i];
+  }
+  const out = ctx.createImageData(W, H), o = out.data, half = samples >> 1;
+  for (let i = 0; i < o.length; i++) o[i] = ((SUM[i] + half) / samples) | 0;
+  ctx.putImageData(out, 0, 0);
+  return samples;
+}
+
+/* ---------------- analysis (never called by seek) ---------------- */
+function accentFrames() { return ACCENTS.map((m) => ({ what: m.what, t: Math.round(m.t * 1000) / 1000, frame: Math.round(m.t * FPS) % NFR })); }
+
+// Off-palette scan. Default: pixels with chroma >= 40 whose hue is more than 13 degrees from every
+// chromatic palette colour (two inks mixed into a new one), counted as `area` only where the 4
+// neighbours are off too (patches 3+ px across, not the 1-px antialiasing fringe). strict: any pixel
+// that is not exactly a palette colour (pixel art).
+function offPalette(frames, mode, strict) {
+  const cols = Object.values(PAL).map(rgbOf);
+  const hues = cols.map((c) => hueChroma(...c)).filter(([, c]) => c >= 40).map(([h]) => h);
+  const exact = new Set(cols.map(([r, g, b]) => (r << 16) | (g << 8) | b));
+  const out = [];
+  for (const n of frames) {
+    if (mode === 'seek') seek(n / FPS); else renderFrame(n);
+    const px = ctx.getImageData(0, 0, W, H).data, off = new Uint8Array(W * H);
+    let count = 0; const seen = {};
+    for (let p = 0, i = 0; p < W * H; p++, i += 4) {
+      let bad;
+      if (strict) bad = !exact.has((px[i] << 16) | (px[i + 1] << 8) | px[i + 2]);
+      else { const [h, C] = hueChroma(px[i], px[i + 1], px[i + 2]); bad = C >= 40 && !hues.some((hp) => hueDist(h, hp) <= 13); }
+      if (bad) { off[p] = 1; count++; const k = `${px[i]},${px[i + 1]},${px[i + 2]}`; seen[k] = (seen[k] || 0) + 1; }
+    }
+    let area = strict ? count : 0;
+    if (!strict) for (let y = 1; y < H - 1; y++) for (let x = 1; x < W - 1; x++) { const p = y * W + x; if (off[p] && off[p - 1] && off[p + 1] && off[p - W] && off[p + W]) area++; }
+    const top = Object.entries(seen).sort((a, b) => b[1] - a[1]).slice(0, 3).map(([k, v]) => `(${k})x${v}`).join(' ');
+    out.push({ frame: n, count, area, top });
+  }
+  return out;
+}
+
+// the last moment anything on screen can change: spring settles, active windows, accents, and the
+// engine's own discrete state (typing, blinking, snaps)
+function lastChange() {
+  let t = -Infinity, what = 'nothing moves';
+  const see = (v, w) => { if (v > t) { t = v; what = w; } };
+  for (const p of PROPS) see(p.settleEnd(), `${p.name} settles`);
+  for (const w of ACTIVE) see(w[1], 'an active window ends');
+  for (const m of ACCENTS) see(m.t + 3 / FPS, `the accent on ${m.what} ends`);
+  if (ENGINE.lastChange) ENGINE.lastChange(see);
+  return { t, what };
+}
+function loopChecks(add) {
+  for (const p of PROPS) for (const e of p.ev) if (e.t >= DUR - 1e-9 || e.t < 0) { add('timeline', 'WARN', `${p.name}: an event at ${e.t.toFixed(3)} s is outside the loop (0 to ${DUR})`); break; }
+  if (LOOP === 'hold') {
+    const last = lastChange(), need = DUR - (1 + SHUTTER) / FPS, hold = Math.floor((DUR - last.t) * FPS + 1e-6);
+    add('loop tail', last.t <= need ? 'PASS' : 'FAIL', `last change at ${last.t.toFixed(3)} s (${last.what}); still hold at least ${hold} frames (needs >= 2; loopcheck counts identical pixels)`);
+  } else if (LOOP === 'cycle') {
+    const open = PROPS.filter((p) => Math.abs(p.last - p.v0) > 1e-6);
+    add('loop closes', open.length ? 'FAIL' : 'PASS', open.length
+      ? `${open.slice(0, 6).map((p) => `${p.name} ends at ${+p.last.toFixed(3)} but starts at ${+p.v0.toFixed(3)}`).join('; ')}${open.length > 6 ? ` and ${open.length - 6} more` : ''}: the loop jumps`
+      : `${PROPS.length} props return to where they start; springs still settling at the end carry over the seam`);
+    if (ENGINE.cycles) for (const c of ENGINE.cycles()) {
+      const k = DUR / c.period;
+      add(`cycle: ${c.what}`, Math.abs(k - Math.round(k)) < 1e-6 ? 'PASS' : 'FAIL', `${+k.toFixed(4)} cycles per loop (period ${+c.period.toFixed(4)} s); must be whole`);
+    }
+  }
+}
+// frames where nothing is on screen (a blank flash between scenes), from the engine's visible(t)
+function emptyRuns() {
+  const runs = [];
+  let start = -1;
+  for (let n = 0; n <= NFR; n++) {
+    const empty = n < NFR && !ENGINE.visible(n / FPS);
+    if (empty && start < 0) start = n;
+    if (!empty && start >= 0) { runs.push([start, n - 1]); start = -1; }
+  }
+  return runs;
+}
+// Collision and live-area helpers for engines' checks. Boxes are [x0, y0, x1, y1] in canvas px.
+function checkLiveArea(add, id, b, bleed) {
+  if (bleed) return;
+  const out = [];
+  if (b[0] < MARGIN - 1) out.push(`left ${b[0].toFixed(1)} < ${MARGIN}`);
+  if (b[2] > W - MARGIN + 1) out.push(`right ${b[2].toFixed(1)} > ${W - MARGIN}`);
+  if (b[1] < MARGIN - 1) out.push(`top ${b[1].toFixed(1)} < ${MARGIN}`);
+  if (b[3] > H - MARGIN + 1) out.push(`bottom ${b[3].toFixed(1)} > ${H - MARGIN}`);
+  add(`live area: ${id}`, out.length ? 'FAIL' : 'PASS', out.join(', ') || `${b.map((v) => v.toFixed(0)).join(', ')}`);
+}
+function checkSpacing(add, items, tight = 16 * U) {  // items: [{ id, b }] on screen together at rest
+  for (let i = 0; i < items.length; i++) for (let j = i + 1; j < items.length; j++) {
+    const a = items[i].b, b = items[j].b;
+    const dx = Math.max(0, a[0] - b[2], b[0] - a[2]), dy = Math.max(0, a[1] - b[3], b[1] - a[3]);
+    const gap = dx === 0 && dy === 0 ? -1 : Math.hypot(dx, dy);
+    if (gap < 0) add(`collision: ${items[i].id} / ${items[j].id}`, 'FAIL', 'boxes overlap at rest');
+    else if (gap < tight) add(`cramped: ${items[i].id} / ${items[j].id}`, 'WARN', `${gap.toFixed(1)} px apart (< ${tight.toFixed(0)} px)`);
+  }
+}
+function critique() {
+  const checks = [];
+  const add = (name, status, detail) => checks.push({ name, status, detail });
+  if (ENGINE.checks) ENGINE.checks(add);
+  for (const c of CONTRAST) {
+    const r = contrast(col(c.fg), col(c.bg));
+    add(`contrast: ${c.id}`, r < c.min ? 'FAIL' : 'PASS', `${r.toFixed(2)}:1 on ${c.bg} (needs ${c.min}:1)`);
+  }
+  const stray = [...USED].filter((k) => !(k in PAL));
+  add('palette roles', stray.length ? 'FAIL' : 'PASS', stray.length ? `not in the palette: ${stray.join(', ')}` : `${USED.size} roles used, all in the palette`);
+  loopChecks(add);
+  if (ENGINE.visible) {
+    const minRun = Math.max(2, Math.round(FPS / 15));
+    for (const [a, b] of emptyRuns()) if (b - a + 1 >= minRun)
+      add('blank frames', 'WARN', `frames ${a}-${b} (t ${(a / FPS).toFixed(3)}-${(b / FPS).toFixed(3)}) show nothing: start the next entrance sooner, or pop it in at the cut`);
+  }
+  for (const w of WARN) add('timeline', 'WARN', w);
+  return checks;
+}
+// review stills: the engine's plan (each scene in and at rest, each transition) plus every accent frame
+function stillsPlan() {
+  const plan = [], seen = new Set();
+  const push = (frame, name, what) => { frame = Math.max(0, Math.min(NFR - 1, Math.round(frame))); if (seen.has(frame)) return; seen.add(frame); plan.push({ frame, name, what }); };
+  if (ENGINE.stills) ENGINE.stills(push);
+  for (const m of accentFrames()) push(m.frame, `accent-${m.what}`, `accent on ${m.what}`);
+  return plan.sort((a, b) => a.frame - b.frame);
+}
+function layoutTable() {
+  return { film: { W, H, FPS, DUR, frames: NFR, bpm: FILM.BPM, loop: LOOP, blur: BLUR, margin: MARGIN, measure: MEASURE, engine: ENGINE.name },
+    ...(ENGINE.layout ? ENGINE.layout() : {}), cuts: CUTS, accents: accentFrames(), warnings: WARN };
+}
+
+/* ---------------- boot ---------------- */
+function filmChars() {                              // every character any string in FILM holds, to load the fonts with
+  const s = new Set('H0');
+  const walk = (v, d) => { if (typeof v === 'string') { for (const c of v) s.add(c); } else if (v && typeof v === 'object' && d < 12) for (const k in v) walk(v[k], d + 1); };
+  walk(FILM, 0);
+  return [...s].join('');
+}
+function boot(E) {
+  ENGINE = E;
+  Object.assign(SP, E.springs || {}, FILM.springs || {});
+  for (const [k, v] of Object.entries(SP)) if (!(v[0] > 0 && v[0] <= 1 && v[1] > 0)) throw new Error(`spring ${k}: zeta must be in (0, 1] and omega > 0`);
+  window.DURATION = DUR; window.FPS = FPS; window.WIDTH = W; window.HEIGHT = H;
+  window.FILM_META = { title: FILM.title, poster: FILM.poster || 0, bg: PAL.bg, palette: PAL, loop: LOOP, blur: BLUR,
+    engine: E.name, strictPalette: !!E.strictPalette, seamCut: !!E.seamCut, gif: E.gif || null };
+  Object.assign(window, { seek, renderFrame, motionAt, layoutTable, critique, stillsPlan, textByFace, accentFrames, misFrames: accentFrames, offPalette });
+  const roles = Object.keys(FILM.fonts || {}), sample = filmChars();
+  window.ready = Promise.all(roles.map((r) => document.fonts.load(fontStr(r, 100), sample)))
+    .then((sets) => { if (sets.some((s) => !s.length)) throw new Error('a font face failed to load'); return E.build(); })
+    .then(() => {
+      for (const p of PROPS) p.seam();
+      CUTS.sort((a, b) => a - b);
+      isReady = true;
+      seek(0);
+      return true;
+    });
+  // Preview: requestAnimationFrame is the only time source and it only calls seek().
+  // Space pauses, the arrow keys step one frame, ?t=3.5 opens paused at a time.
+  if (!/[?&]capture\b/.test(location.search)) {
+    window.ready.then(() => {
+      const m = /[?&]t=([\d.]+)/.exec(location.search);
+      let paused = !!m, pos = m ? Number(m[1]) : 0, last = null;
+      const tick = (ts) => {
+        if (!paused && last !== null) pos = wrapT(pos + (ts - last) / 1000);
+        last = ts; seek(pos); requestAnimationFrame(tick);
+      };
+      addEventListener('keydown', (e) => {
+        if (e.key === ' ') { paused = !paused; e.preventDefault(); }
+        if (e.key === 'ArrowRight') { paused = true; pos = wrapT(Math.round(pos * FPS + 1) / FPS); }
+        if (e.key === 'ArrowLeft') { paused = true; pos = wrapT(Math.round(pos * FPS - 1) / FPS); }
+      });
+      requestAnimationFrame(tick);
+    });
+  }
+}
+
+  return { W, H, FPS, DUR, NFR, CX, CY, U, PAL, col, role, GRID, MARGIN, UNIT, MEASURE, LOOP, BLUR, SHUTTER, TAU,
+    canvas, ctx, mkCanvas, mk2d, mctx,
+    SP, spring, settle, S, dS, landT, Prop, PROPS,
+    cyc, wave, mulberry32, hash, loopNoise, shuffled,
+    wrapT, frameOf, typed, noteSec, drawing,
+    rgbOf, hexOf, mix, hueChroma, hueDist, lum, contrast, inksClash,
+    face, fontStr, setFont, capRatio, useText, measureRun, layoutText, blurQ, glyphSprite, fillGlyph, drawText,
+    svgPath, CUTS, ACTIVE, ACCENTS, WARN, CONTRAST, cutAt, activeIn, accentAt, needContrast,
+    checkLiveArea, checkSpacing, seek, boot };
+})();
+const { W, H, FPS, DUR, NFR, CX, CY, U, PAL, col, role, GRID, MARGIN, UNIT, MEASURE, LOOP, BLUR, SHUTTER, TAU,
+  canvas, ctx, mkCanvas, mk2d, mctx,
+  SP, spring, settle, S, dS, landT, Prop, PROPS,
+  cyc, wave, mulberry32, hash, loopNoise, shuffled,
+  wrapT, frameOf, typed, noteSec, drawing,
+  rgbOf, hexOf, mix, hueChroma, hueDist, lum, contrast, inksClash,
+  face, fontStr, setFont, capRatio, useText, measureRun, layoutText, blurQ, glyphSprite, fillGlyph, drawText,
+  svgPath, CUTS, ACTIVE, ACCENTS, WARN, CONTRAST, cutAt, activeIn, accentAt, needContrast,
+  checkLiveArea, checkSpacing, seek, boot } = CORE;
+/* ===== CORE END ===== */
+
+/* ==========================================================================
+ * ENGINE: motion-pixel. Pixel art on a small logical canvas: every pixel is a
+ * palette index, every position a whole logical pixel. The frame is drawn into
+ * an indexed framebuffer and scaled up by a whole number with no smoothing, so
+ * every output pixel is exactly one palette colour. Sprites and tiles from
+ * ASCII art, parallax strips and ridges, items on the hero's path, a built-in
+ * bitmap font, Bayer-dithered fades, palette cycling, blinks, shine, sparkles
+ * and screen shake. Everything reads the frame's own time q: a pixel film is a
+ * function of its frame number, and motion blur is off.
+ * ========================================================================== */
+const PXS = FILM.px || {};
+const K = Math.max(1, Math.round(PXS.scale || 1));             // output px per logical px
+const PW = PXS.w || Math.floor(W / K), PH = PXS.h || Math.floor(H / K);
+const PM = PXS.margin != null ? PXS.margin : 8;                // live-area inset, logical px
+const ROLES = Object.keys(PAL);
+const IDX = Object.fromEntries(ROLES.map((r, i) => [r, i]));
+const BGI = IDX.bg != null ? IDX.bg : 0;
+const LE = new Uint8Array(new Uint32Array([1]).buffer)[0] === 1;
+const LUT = new Uint32Array(ROLES.map((r) => { const [R, G, B] = rgbOf(PAL[r]); return (LE ? ((255 << 24) | (B << 16) | (G << 8) | R) : ((R << 24) | (G << 16) | (B << 8) | 255)) >>> 0; }));
+const ix = (r) => { role(r); return r in IDX ? IDX[r] : BGI; };  // a role's palette index, registered for the palette check
+const mod = (a, n) => ((a % n) + n) % n;
+const whole = (v) => typeof v === 'number' && Math.abs(v - Math.round(v)) < 1e-9;
+
+/* ---------------- the bitmap font: 5 x 7 caps, digits, punctuation, a few symbols ---------------- */
+// One string per row, '#' is ink. Widths vary (I, 1 and punctuation are narrow); a glyph advances by
+// its width plus the layer's `track` (1 font px by default). At scale k every font pixel is k x k.
+const GLYPHS = {
+  ' ': ['...', '...', '...', '...', '...', '...', '...'],
+  A: ['.###.', '#...#', '#...#', '#####', '#...#', '#...#', '#...#'], B: ['####.', '#...#', '#...#', '####.', '#...#', '#...#', '####.'],
+  C: ['.###.', '#...#', '#....', '#....', '#....', '#...#', '.###.'], D: ['####.', '#...#', '#...#', '#...#', '#...#', '#...#', '####.'],
+  E: ['#####', '#....', '#....', '####.', '#....', '#....', '#####'], F: ['#####', '#....', '#....', '####.', '#....', '#....', '#....'],
+  G: ['.###.', '#...#', '#....', '#.###', '#...#', '#...#', '.####'], H: ['#...#', '#...#', '#...#', '#####', '#...#', '#...#', '#...#'],
+  I: ['###', '.#.', '.#.', '.#.', '.#.', '.#.', '###'], J: ['....#', '....#', '....#', '....#', '....#', '#...#', '.###.'],
+  K: ['#...#', '#..#.', '#.#..', '##...', '#.#..', '#..#.', '#...#'], L: ['#....', '#....', '#....', '#....', '#....', '#....', '#####'],
+  M: ['#...#', '##.##', '#.#.#', '#.#.#', '#...#', '#...#', '#...#'], N: ['#...#', '##..#', '#.#.#', '#..##', '#...#', '#...#', '#...#'],
+  O: ['.###.', '#...#', '#...#', '#...#', '#...#', '#...#', '.###.'], P: ['####.', '#...#', '#...#', '####.', '#....', '#....', '#....'],
+  Q: ['.###.', '#...#', '#...#', '#...#', '#.#.#', '#..#.', '.##.#'], R: ['####.', '#...#', '#...#', '####.', '#.#..', '#..#.', '#...#'],
+  S: ['.####', '#....', '#....', '.###.', '....#', '....#', '####.'], T: ['#####', '..#..', '..#..', '..#..', '..#..', '..#..', '..#..'],
+  U: ['#...#', '#...#', '#...#', '#...#', '#...#', '#...#', '.###.'], V: ['#...#', '#...#', '#...#', '#...#', '#...#', '.#.#.', '..#..'],
+  W: ['#...#', '#...#', '#...#', '#.#.#', '#.#.#', '##.##', '#...#'], X: ['#...#', '#...#', '.#.#.', '..#..', '.#.#.', '#...#', '#...#'],
+  Y: ['#...#', '#...#', '.#.#.', '..#..', '..#..', '..#..', '..#..'], Z: ['#####', '....#', '...#.', '..#..', '.#...', '#....', '#####'],
+  0: ['.###.', '#...#', '#..##', '#.#.#', '##..#', '#...#', '.###.'], 1: ['.#.', '##.', '.#.', '.#.', '.#.', '.#.', '###'],
+  2: ['.###.', '#...#', '....#', '...#.', '..#..', '.#...', '#####'], 3: ['####.', '....#', '....#', '.###.', '....#', '....#', '####.'],
+  4: ['...#.', '..##.', '.#.#.', '#..#.', '#####', '...#.', '...#.'], 5: ['#####', '#....', '####.', '....#', '....#', '#...#', '.###.'],
+  6: ['.###.', '#....', '#....', '####.', '#...#', '#...#', '.###.'], 7: ['#####', '....#', '...#.', '..#..', '.#...', '.#...', '.#...'],
+  8: ['.###.', '#...#', '#...#', '.###.', '#...#', '#...#', '.###.'], 9: ['.###.', '#...#', '#...#', '.####', '....#', '....#', '.###.'],
+  '.': ['.', '.', '.', '.', '.', '.', '#'], ',': ['..', '..', '..', '..', '.#', '.#', '#.'], ':': ['.', '#', '.', '.', '.', '#', '.'],
+  ';': ['..', '.#', '..', '..', '.#', '.#', '#.'], '!': ['#', '#', '#', '#', '#', '.', '#'], '?': ['.###.', '#...#', '....#', '...#.', '..#..', '.....', '..#..'],
+  "'": ['#', '#', '.', '.', '.', '.', '.'], '’': ['#', '#', '.', '.', '.', '.', '.'], '"': ['#.#', '#.#', '...', '...', '...', '...', '...'],
+  '-': ['....', '....', '....', '####', '....', '....', '....'], '–': ['.....', '.....', '.....', '#####', '.....', '.....', '.....'],
+  '+': ['.....', '..#..', '..#..', '#####', '..#..', '..#..', '.....'], '=': ['.....', '.....', '#####', '.....', '#####', '.....', '.....'],
+  '/': ['....#', '....#', '...#.', '..#..', '.#...', '#....', '#....'], '(': ['..#', '.#.', '#..', '#..', '#..', '.#.', '..#'], ')': ['#..', '.#.', '..#', '..#', '..#', '.#.', '#..'],
+  '[': ['###', '#..', '#..', '#..', '#..', '#..', '###'], ']': ['###', '..#', '..#', '..#', '..#', '..#', '###'],
+  '<': ['...#', '..#.', '.#..', '#...', '.#..', '..#.', '...#'], '>': ['#...', '.#..', '..#.', '...#', '..#.', '.#..', '#...'],
+  '&': ['.##..', '#..#.', '#.#..', '.#...', '#.#.#', '#..#.', '.##.#'], '#': ['.#.#.', '.#.#.', '#####', '.#.#.', '#####', '.#.#.', '.#.#.'],
+  '%': ['##...', '##..#', '...#.', '..#..', '.#...', '#..##', '...##'], '*': ['.....', '#.#.#', '.###.', '#####', '.###.', '#.#.#', '.....'],
+  '_': ['.....', '.....', '.....', '.....', '.....', '.....', '#####'], '@': ['.###.', '#...#', '#.###', '#.#.#', '#.###', '#....', '.####'],
+  $: ['..#..', '.####', '#.#..', '.###.', '..#.#', '####.', '..#..'], '€': ['..###', '.#...', '####.', '.#...', '####.', '.#...', '..###'],
+  '♥': ['.....', '##.##', '#####', '#####', '.###.', '..#..', '.....'], '★': ['..#..', '..#..', '#####', '.###.', '.###.', '##.##', '.....'],
+  '→': ['.....', '..#..', '...#.', '#####', '...#.', '..#..', '.....'], '←': ['.....', '..#..', '.#...', '#####', '.#...', '..#..', '.....'],
+  '▶': ['#....', '##...', '###..', '####.', '###..', '##...', '#....'], '·': ['.', '.', '.', '#', '.', '.', '.'],
+};
+const FONT_H = 7, BAD_GLYPHS = [];
+for (const [ch, rows] of Object.entries(FILM.glyphs || {})) {  // a film may add or redraw glyphs: 7 rows of '#' and '.'
+  if (Array.isArray(rows) && rows.length === FONT_H && rows.every((r) => typeof r === 'string' && r.length === rows[0].length && r.length > 0 && !/[^#.]/.test(r))) GLYPHS[ch] = rows;
+  else BAD_GLYPHS.push(ch);
+}
+const FONT = {};
+for (const [ch, rows] of Object.entries(GLYPHS)) FONT[ch] = { w: rows[0].length, rows, ink: rows.join('').split('#').length - 1 };
+
+/* ---------------- the framebuffer: one palette index per logical pixel ---------------- */
+const FB = new Uint8Array(PW * PH);
+const OWN = new Uint8Array(PW * PH);                         // analysis only: the fill pixels of the traced layer
+let TRACE = null, IMG = null, IMG32 = null;
+// ordered 4 x 4 Bayer dither: a pixel at opacity op is drawn where op beats its cell's threshold
+const BAYER = [0, 8, 2, 10, 12, 4, 14, 6, 3, 11, 1, 9, 15, 7, 13, 5];
+const shows = (op, u, v) => op >= 1 || (op > 0 && op * 16 > BAYER[((v & 3) << 2) | (u & 3)] + 0.5);
+function present(c) {                                        // scale up by K, every pixel a palette colour
+  if (!IMG) { IMG = c.createImageData(W, H); IMG32 = new Uint32Array(IMG.data.buffer); IMG32.fill(LUT[BGI]); }
+  const w = Math.min(PW, Math.floor(W / K)), h = Math.min(PH, Math.floor(H / K));
+  for (let y = 0; y < h; y++) {
+    const row = y * K * W;
+    let o = row;
+    for (let x = 0; x < w; x++) { const v = LUT[FB[y * PW + x]]; for (let a = 0; a < K; a++) IMG32[o++] = v; }
+    for (let b = 1; b < K; b++) IMG32.copyWithin(row + b * W, row, row + W);
+  }
+  c.putImageData(IMG, 0, 0);
+}
+// one sprite frame, top-left at (x0, y0): whole scale k, flip, dithered opacity, a per-pixel colour map
+function blit(fr, x0, y0, o) {
+  const w = fr.w, h = fr.h, px = fr.px, k = (o && o.k) || 1, flip = o && o.flip, op = o && o.op != null ? o.op : 1, map = o && o.map;
+  if (!(op > 0) || x0 >= PW || y0 >= PH || x0 + w * k <= 0 || y0 + h * k <= 0) return;
+  for (let j = 0; j < h; j++) for (let i = 0; i < w; i++) {
+    let c = px[j * w + (flip ? w - 1 - i : i)];
+    if (c < 0) continue;
+    if (map) c = map(c, i, j);
+    for (let b = 0; b < k; b++) {
+      const y = y0 + j * k + b;
+      if (y < 0 || y >= PH) continue;
+      for (let a = 0; a < k; a++) {
+        const x = x0 + i * k + a;
+        if (x < 0 || x >= PW || (op < 1 && !shows(op, i, j))) continue;   // dither cells are the sprite's own pixels
+        FB[y * PW + x] = c;
+      }
+    }
+  }
+}
+
+/* ---------------- sprites: ASCII art to palette indices ---------------- */
+const SPR = {}, ERR = [], ODD = [];                           // ODD: positions that are not whole pixels
+function compileSprite(name, s) {
+  const key = s.key || {}, errs = [];
+  let frames = s.frames || (s.art ? [s.art] : []);
+  if (s.sheet) {                                             // rows holding every frame side by side, one space apart
+    const cols = s.sheet[0].split(' ');
+    frames = cols.map((_, f) => s.sheet.map((row) => row.split(' ')[f] || ''));
+    s.sheet.forEach((row, y) => { if (row.split(' ').length !== cols.length) errs.push(`sheet row ${y} holds ${row.split(' ').length} frames, row 0 holds ${cols.length}`); });
+  }
+  const h = frames.length ? frames[0].length : 0, w = h ? frames[0][0].length : 0;
+  if (!frames.length || !w) errs.push('no pixels (give it art, sheet or frames)');
+  const bad = new Set();
+  const out = frames.map((rows, f) => {
+    const px = new Int16Array(w * h).fill(-1);
+    if (rows.length !== h) errs.push(`frame ${f} has ${rows.length} rows, frame 0 has ${h}`);
+    rows.forEach((row, y) => {
+      if (row.length !== w) errs.push(`frame ${f} row ${y} is ${row.length} px wide, frame 0 is ${w}`);
+      for (let x = 0; x < Math.min(w, row.length); x++) {
+        const ch = row[x];
+        if (ch === '.') continue;
+        if (!(ch in key)) { bad.add(ch); continue; }
+        if (y < h) px[y * w + x] = ix(key[ch]);
+      }
+    });
+    return { w, h, px };
+  });
+  if (bad.size) errs.push(`characters not in the key: ${[...bad].map((c) => `"${c}"`).join(' ')}`);
+  for (const r of Object.values(key)) ix(r);
+  SPR[name] = { name, w, h, n: out.length, fps: s.fps || 0, frames: out, errs, used: false };
+}
+const sprite = (name, where) => { const s = SPR[name]; if (!s) { ERR.push(`${where}: no sprite "${name}"`); return null; } s.used = true; return s; };
+const fpsOf = (sp, fps) => (fps != null ? fps : sp.fps);  // a layer's fps overrides its sprite's; 0 holds one frame
+function pick(sp, q, phase = 0, fps) {                     // the frame a sprite shows at q (drawing() holds it on the grid)
+  const f = fpsOf(sp, fps);
+  return sp.frames[sp.n > 1 && f ? mod(drawing(q, f) + (phase | 0), sp.n) : mod(phase | 0, sp.n)];
+}
+function colourMap(spec) {                                 // palette cycling: `of` steps through `roles`, in bands
+  return [].concat(spec).map((c) => ({ of: ix(c.of), seq: c.roles.map(ix), fps: c.fps || 8, band: c.band || 0 }));
+}
+function cycled(list, c, d, q) {
+  for (const e of list) if (c === e.of) return e.seq[mod(drawing(q, e.fps) - (e.band ? Math.floor(d / e.band) : 0), e.seq.length)];
+  return c;
+}
+
+/* ---------------- motion: whole-pixel springs ---------------- */
+// enter springs from `from` to rest, keys to new targets, exit to the last state. Each Prop starts where it
+// ends, so a cycle loop closes; `set` jumps only happen at an entrance, where the thing was hidden.
+const SKEYS = { dx: 0, dy: 0, op: 1 };
+const stateOf = (s) => { const o = {}; if (s) for (const k of Object.keys(SKEYS)) if (s[k] != null) o[k] = s[k]; return o; };
+function motion(name, spec, delay) {
+  const en = spec.enter, ex = spec.exit, ev = [];
+  const rest = { ...SKEYS, op: spec.op != null ? spec.op : 1 };
+  const from = { ...rest, ...stateOf(en && en.from) };
+  let land = null;
+  if (en) {
+    const t = en.at + delay(en), to = {};
+    for (const k of Object.keys(from)) if (from[k] !== rest[k]) to[k] = rest[k];
+    ev.push([t, from, en, true], [t, to, en, false]);
+    land = t + (to.dx != null || to.dy != null ? landT(en.spring || 'LAND') : landT(en.fade || 'FADE'));
+  }
+  for (const k of spec.keys || []) ev.push([k.at + delay(k), stateOf(k.to), k, false]);
+  if (ex) ev.push([ex.at + delay(ex), stateOf(ex.to), ex, false]);
+  ev.sort((a, b) => a[0] - b[0] || (b[3] ? 1 : 0) - (a[3] ? 1 : 0));
+  const end = { ...rest };
+  for (const [, v] of ev) Object.assign(end, v);
+  const v0 = LOOP === 'none' ? (en ? from : rest) : end;
+  const P = {};
+  for (const k of Object.keys(SKEYS)) P[k] = new Prop(v0[k], `${name}.${k}`);
+  for (const [t, vals, s, isSet] of ev) for (const [k, v] of Object.entries(vals)) {
+    if (isSet) P[k].set(t, v); else P[k].to(t, v, k === 'op' ? s.fade || 'FADE' : s.spring || 'LAND');
+  }
+  for (const [k, v] of Object.entries({ ...stateOf(en && en.from), ...Object.assign({}, ...(spec.keys || []).map((x) => stateOf(x.to))), ...stateOf(ex && ex.to) }))
+    if (k !== 'op' && !whole(v)) ODD.push(`${name} ${k} ${v}`);
+  return { P, land, t0: en ? en.at + delay(en) : null, bounce: !!(en && en.bounce), sign: from.dy < 0 ? -1 : 1 };
+}
+function stateAt(M, q) {                                   // rounded to whole pixels; a bounce reflects dy off the rest line
+  let dy = M.P.dy.at(q);
+  if (M.bounce) dy = M.sign * Math.abs(dy);
+  return { dx: Math.round(M.P.dx.at(q)), dy: Math.round(dy), op: M.P.op.at(q) };
+}
+
+/* ---------------- layers ---------------- */
+const LAYERS = [], BYID = {}, SHAKES = [];
+const DRAW = {}, BUILD = {};
+function shownAt(L, q) {
+  const s = L.spec.show;
+  if (!s) return true;
+  return s[0] <= s[1] ? q >= s[0] - 1e-9 && q < s[1] - 1e-9 : q >= s[0] - 1e-9 || q < s[1] - 1e-9;
+}
+const offAt = (speed, q) => Math.floor(speed * q + 1e-6);   // whole pixels scrolled by q
+function blinkOn(L, q) {
+  const [period, duty = 0.5] = L.spec.blink, t0 = L.spec.show ? L.spec.show[0] : 0;
+  return mod(q - t0, period) < duty * period - 1e-9;
+}
+
+// sky: horizontal bands of colour, each change dithered over `dither` rows
+BUILD.sky = (L) => {
+  const b = L.spec.bands.map(([y, r]) => [y, ix(r)]).sort((p, q) => p[0] - q[0]), d = L.spec.dither != null ? L.spec.dither : 4;
+  L.a = new Int16Array(PH); L.b = new Int16Array(PH); L.op = new Float32Array(PH);
+  for (let y = 0; y < PH; y++) {
+    let i = 0;
+    while (i + 1 < b.length && b[i + 1][0] <= y) i++;
+    L.a[y] = b[i][1]; L.b[y] = b[i][1];
+    const nx = b[i + 1];
+    if (nx && d > 0 && y >= nx[0] - d) { L.b[y] = nx[1]; L.op[y] = (y - (nx[0] - d) + 1) / (d + 1); }
+  }
+  for (const [y] of b) if (!whole(y)) ODD.push(`${L.id} band ${y}`);
+};
+DRAW.sky = (L) => {
+  for (let y = 0; y < PH; y++) {
+    const a = L.a[y], b = L.b[y], op = L.op[y], r = y * PW;
+    if (!op) FB.fill(a, r, r + PW); else for (let x = 0; x < PW; x++) FB[r + x] = shows(op, x, y) ? b : a;
+  }
+};
+// fill: the whole frame in one colour at a dithered opacity (fades to and from a colour)
+BUILD.fill = (L) => { L.c = ix(L.spec.color || 'bg'); L.M = motion(L.id, L.spec, () => 0); };
+DRAW.fill = (L, q) => {
+  const op = stateAt(L.M, q).op;
+  if (!(op > 0.002)) return;
+  for (let y = 0; y < PH; y++) for (let x = 0; x < PW; x++) if (shows(op, x, y)) FB[y * PW + x] = L.c;
+};
+// strip: sprites placed along a band `width` px long that scrolls left at `speed` px/s and repeats
+BUILD.strip = (L) => {
+  L.items = (L.spec.place || []).map(([name, x, y], i) => { for (const v of [x, y]) if (!whole(v)) ODD.push(`${L.id} place ${i}`); return { sp: sprite(name, L.id), x, y }; }).filter((p) => p.sp);
+  L.width = L.spec.width;
+};
+DRAW.strip = (L, q, sx, sy) => {
+  const off = offAt(L.spec.speed || 0, q);
+  for (const p of L.items) {
+    const fr = pick(p.sp, q);
+    for (let x = mod(p.x - off + p.sp.w, L.width) - p.sp.w; x < PW; x += L.width) blit(fr, x + sx, p.y + sy);
+  }
+};
+// ridge: rounded hills from bumps [x, width, height] on the line y, filled to the bottom, a 1 px edge on top
+BUILD.ridge = (L) => {
+  const s = L.spec, w = s.width, tops = new Int16Array(w);
+  for (let x = 0; x < w; x++) {
+    let hm = 0;
+    for (const [cx, bw, bh] of s.bumps) for (const c of [cx - w, cx, cx + w]) { const r = (x + 0.5 - c) / (bw / 2); if (Math.abs(r) < 1) hm = Math.max(hm, bh * Math.sqrt(1 - r * r)); }
+    tops[x] = s.y - Math.round(hm);
+  }
+  L.tops = tops; L.width = w; L.fill = ix(s.fill); L.edge = s.edge ? ix(s.edge) : -1;
+  for (const v of [s.y, ...s.bumps.flat()]) if (!whole(v)) ODD.push(`${L.id} ${v}`);
+};
+DRAW.ridge = (L, q, sx, sy) => {
+  const off = offAt(L.spec.speed || 0, q), w = L.width, T = L.tops;
+  for (let X = 0; X < PW; X++) {
+    const wx = mod(X - sx + off, w), top = T[wx] + sy;
+    const edgeTo = Math.max(top, Math.max(T[mod(wx - 1, w)], T[mod(wx + 1, w)]) + sy - 1);
+    for (let y = Math.max(0, top); y < PH; y++) FB[y * PW + X] = L.edge >= 0 && y <= edgeTo ? L.edge : L.fill;
+  }
+};
+// tiles: a map of characters, each a tile sprite, scrolling and repeating; `extend` fills below it
+BUILD.tiles = (L) => {
+  const s = L.spec;
+  L.map = s.map; L.cols = Math.max(...s.map.map((r) => r.length));
+  L.tile = {};
+  for (const [ch, name] of Object.entries(s.tiles || {})) { const sp = sprite(name, L.id); if (sp) L.tile[ch] = sp; }
+  const any = Object.values(L.tile)[0];
+  L.tw = any ? any.w : 8; L.th = any ? any.h : 8;
+  L.width = L.cols * L.tw;
+  L.ext = s.extend ? ix(s.extend) : -1;
+  L.errs = [];
+  for (const [ch, sp] of Object.entries(L.tile)) if (sp.w !== L.tw || sp.h !== L.th) L.errs.push(`tile "${ch}" (${sp.name}) is ${sp.w} x ${sp.h}, not ${L.tw} x ${L.th}`);
+  s.map.forEach((r, i) => { if (r.length !== L.cols) L.errs.push(`map row ${i} is ${r.length} tiles, not ${L.cols}`); for (const ch of r) if (ch !== '.' && ch !== ' ' && !L.tile[ch]) L.errs.push(`map character "${ch}" has no tile`); });
+  for (const v of [s.x || 0, s.y]) if (!whole(v)) ODD.push(`${L.id} ${v}`);
+};
+DRAW.tiles = (L, q, sx, sy) => {
+  const s = L.spec, off = mod(offAt(s.speed || 0, q), L.width), x0 = (s.x || 0) + sx - (off % L.tw), c0 = Math.floor(off / L.tw);
+  L.map.forEach((row, r) => {
+    const y = s.y + r * L.th + sy;
+    for (let m = -1; m * L.tw + x0 < PW; m++) {
+      const sp = L.tile[row[mod(c0 + m, L.cols)]];
+      if (sp) blit(pick(sp, q), x0 + m * L.tw, y);
+    }
+  });
+  if (L.ext >= 0) { const y0 = Math.max(0, s.y + L.map.length * L.th + sy); if (y0 < PH) FB.fill(L.ext, y0 * PW, PH * PW); }
+};
+// sprite: a character or prop at (x, y) (top-left), animated at its fps, with hops, dust and springs
+BUILD.sprite = (L) => {
+  const s = L.spec;
+  L.sp = sprite(s.sprite, L.id); L.air = s.air ? sprite(s.air, L.id) : null;
+  const du = typeof s.dust === 'string' ? { sprite: s.dust } : s.dust;
+  L.dust = du ? sprite(du.sprite, L.id) : null; L.dustSpeed = du && du.speed || 0;
+  L.k = Math.max(1, Math.round(s.scale || 1));
+  L.M = motion(L.id, s, () => 0);
+  L.jumps = (s.jumps || []).map((j) => ({ at: j.at, h: j.h != null ? j.h : 16, dur: j.dur || 60 / (FILM.BPM || 120) }));
+  L.map = s.cycle ? colourMap(s.cycle) : null;
+  for (const v of [s.x, s.y, ...L.jumps.map((j) => j.h)]) if (!whole(v)) ODD.push(`${L.id} ${v}`);
+};
+function hopAt(L, q) {                                     // height above the ground: a parabola per hop
+  for (const j of L.jumps) { const u = mod(q - j.at, DUR) / j.dur; if (u > 0 && u < 1) return 4 * j.h * u * (1 - u); }
+  return 0;
+}
+const bobAt = (b, q, i = 0) => (b ? Math.round(b[1] * Math.sin(cyc(q, b[0]) - i * (b[2] || 0))) : 0);   // [cycles per loop, px, lag per glyph]
+function spriteBox(L, q) {                                 // where the sprite is at q, in logical px
+  const e = stateAt(L.M, q), sp = L.sp, jy = Math.round(hopAt(L, q));
+  return { x: L.spec.x + e.dx, y: L.spec.y + e.dy - jy + bobAt(L.spec.bob, q), w: sp.w * L.k, h: sp.h * L.k, e, air: jy > 0 };
+}
+DRAW.sprite = (L, q, sx, sy) => {
+  if (!L.sp || (L.spec.blink && !blinkOn(L, q))) return;
+  const b = spriteBox(L, q);
+  if (!(b.e.op > 0.002)) return;
+  if (L.dust) for (const j of L.jumps) {                    // a puff where the feet land, left behind at the ground's speed
+    const tau = mod(q - j.at - j.dur, DUR), f = drawing(tau, L.dust.fps || 12);
+    if (f < L.dust.n) blit(L.dust.frames[f], L.spec.x + b.e.dx + Math.floor((b.w - L.dust.w) / 2) - offAt(L.dustSpeed, tau) + sx, L.spec.y + b.e.dy + b.h - L.dust.h + sy);
+  }
+  const sp = b.air && L.air ? L.air : L.sp, map = L.map;
+  blit(pick(sp, q, L.spec.phase || 0, L.spec.fps), b.x + sx, b.y + sy, { k: L.k, flip: L.spec.flip, op: b.e.op, map: map && ((c, i, j) => cycled(map, c, i + j, q)) });
+};
+// items: pickups placed along the ground by the time they reach a line (the hero), collected there
+BUILD.items = (L) => { L.sp = sprite(L.spec.sprite, L.id); L.burst = L.spec.burst ? sprite(L.spec.burst, L.id) : null; };
+function linkItems(L) {                                    // after every layer is built: the collector, the path
+  const s = L.spec, by = s.by ? BYID[s.by] : null;
+  if (s.by && !(by && by.kind === 'sprite')) ERR.push(`${L.id}: by "${s.by}" is not a sprite layer`);
+  L.by = by && by.sp ? by : null;
+  // the line where an item's centre is when it is collected: by default it touches the collector's front edge
+  L.line = s.line != null ? s.line : L.by && L.sp ? L.by.spec.x + L.by.sp.w * L.by.k - 2 + Math.floor(L.sp.w / 2) : Math.floor(PW / 3);
+  L.len = Math.round((s.speed || 0) * DUR);                 // the world is one loop long: each item passes the line once
+  if (!L.sp) { L.items = []; return; }
+  L.items = (s.at || []).map((t, i) => {
+    const X = Math.round((s.speed || 0) * t), tq = s.speed ? X / s.speed : t;
+    let y = Array.isArray(s.y) ? s.y[i] : s.y;
+    if (s.y === 'path' && L.by) { const b = spriteBox(L.by, tq); y = b.y + Math.floor((b.h - L.sp.h) / 2); }
+    if (typeof y !== 'number') { ERR.push(`${L.id}: item ${i} has no y`); y = 0; }
+    if (!whole(y)) ODD.push(`${L.id} item ${i} y ${y}`);
+    return { i, t, tq, X, y };
+  });
+}
+function itemX(L, it, q) {                                 // px past the line: negative once it has been passed
+  const back = L.line + L.sp.w + 8;
+  return L.len ? mod(it.X - offAt(L.spec.speed, q) + back, L.len) - back : it.X;
+}
+DRAW.items = (L, q, sx, sy) => {
+  if (!L.sp) return;
+  const s = L.spec, sp = L.sp;
+  for (const it of L.items) {
+    const d = itemX(L, it, q);
+    if (s.pickup && d < 0) {
+      if (L.burst) {
+        const f = drawing(mod(q - it.tq, DUR), L.burst.fps || 20);
+        if (f < L.burst.n) blit(L.burst.frames[f], L.line - Math.floor(L.burst.w / 2) + sx, it.y + Math.floor((sp.h - L.burst.h) / 2) + sy);
+      }
+      continue;
+    }
+    blit(pick(sp, q, s.phase === 'index' ? it.i : 0), L.line - Math.floor(sp.w / 2) + d + sx, it.y + sy);
+  }
+};
+// text: the bitmap font at a whole scale, with fill bands, outline, extrusion, per-letter springs
+BUILD.text = (L) => {
+  const s = L.spec, k = Math.max(1, Math.round(s.scale || 1)), track = s.track != null ? s.track : 1;
+  L.k = k;
+  const chars = Array.from(String(s.text));
+  L.missing = [...new Set(chars.filter((c) => !FONT[c]))];
+  let pen = 0;
+  const gl = [];
+  for (const ch of chars) { const f = FONT[ch]; if (!f) continue; gl.push({ ch, f, x: pen * k }); pen += f.w + track; }
+  L.w = Math.max(0, pen - track) * k; L.h = FONT_H * k;
+  const anchor = s.anchor || 'L';
+  L.x0 = anchor === 'C' ? s.x - Math.floor(L.w / 2) : anchor === 'R' ? s.x - L.w : s.x;
+  L.y0 = s.y;
+  const fills = [].concat(s.fill || 'white');
+  L.rowIdx = Array.from({ length: FONT_H }, (_, r) => ix(fills[Math.min(fills.length - 1, Math.floor(r * fills.length / FONT_H))]));
+  L.fillRoles = [...new Set(fills)];
+  L.outline = s.outline ? ix(s.outline) : -1;
+  const dep = s.depth || [0, 0], dn = Math.max(Math.abs(dep[0]), Math.abs(dep[1]));
+  L.side = dn ? ix(s.side || s.outline || 'ink') : -1;
+  L.shineIdx = s.shine ? ix(s.shine.color || 'white') : -1;
+  L.map = s.cycle ? colourMap(s.cycle) : null;
+  const pad = 1 + dn;
+  // every glyph as three pixel lists, relative to its own top-left: fill (with its font row), outline around
+  // the fill, and the drop (`depth`) of the outlined shape, kept outside the letter so counters stay open
+  for (const g of gl) {
+    const gw = g.f.w * k, GW = gw + 2 * pad + 2, GH = L.h + 2 * pad + 2, o = pad + 1, m = new Uint8Array(GW * GH), fill = [], side = [], line = [];
+    const at = (u, v) => (v + o) * GW + u + o;
+    for (let fy = 0; fy < FONT_H; fy++) for (let fx = 0; fx < g.f.w; fx++) if (g.f.rows[fy][fx] === '#')
+      for (let b = 0; b < k; b++) for (let a = 0; a < k; a++) { const u = fx * k + a, v = fy * k + b; m[at(u, v)] = 1; fill.push(u, v, fy); }
+    if (L.outline >= 0) for (let v = -1; v <= L.h; v++) for (let u = -1; u <= gw; u++) {
+      if (m[at(u, v)]) continue;
+      let near = false;
+      for (let b = -1; b <= 1 && !near; b++) for (let a = -1; a <= 1; a++) if (!(s.round && a && b) && m[at(u + a, v + b)] === 1) { near = true; break; }
+      if (near) { m[at(u, v)] = 3; line.push(u, v); }
+    }
+    if (dn) {
+      const outside = new Uint8Array(GW * GH), stack = [0];   // flood from the border: what is not enclosed by the letter
+      outside[0] = 1;
+      while (stack.length) {
+        const p = stack.pop(), x = p % GW, y = (p / GW) | 0;
+        for (const [a, b] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) { const X = x + a, Y = y + b, P = Y * GW + X; if (X >= 0 && Y >= 0 && X < GW && Y < GH && !outside[P] && !m[P]) { outside[P] = 1; stack.push(P); } }
+      }
+      const shape = [];
+      for (let p = 0; p < m.length; p++) if (m[p]) shape.push(p);
+      for (let st = 1; st <= dn; st++) {
+        const du = Math.round(dep[0] * st / dn), dv = Math.round(dep[1] * st / dn);
+        for (const p of shape) { const P = p + dv * GW + du; if (P >= 0 && P < m.length && !m[P] && outside[P]) { m[P] = 2; side.push((P % GW) - o, ((P / GW) | 0) - o); } }
+      }
+    }
+    Object.assign(g, { fill, side, line });
+  }
+  const ranks = orderRanks(gl.map((g) => g.f.ink > 0), s.enter && s.enter.order);
+  gl.forEach((g, i) => {
+    const r = ranks[i];
+    const delay = (spec) => (spec && spec.stagger ? noteSec(spec.stagger) * r : 0);
+    g.M = motion(`${L.id}#${i}`, s, delay);
+  });
+  L.glyphs = gl;
+  const box = [Infinity, Infinity, -Infinity, -Infinity], bob = s.bob ? Math.abs(s.bob[1]) : 0;   // every pixel it draws, at rest
+  for (const g of gl) for (const [list, step] of [[g.fill, 3], [g.side, 2], [g.line, 2]]) for (let j = 0; j < list.length; j += step) {
+    const x = L.x0 + g.x + list[j], y = L.y0 + list[j + 1];
+    if (x < box[0]) box[0] = x; if (y < box[1]) box[1] = y; if (x + 1 > box[2]) box[2] = x + 1; if (y + 1 > box[3]) box[3] = y + 1;
+  }
+  L.box = isFinite(box[0]) ? [box[0], box[1] - bob, box[2], box[3] + bob] : [L.x0, L.y0, L.x0, L.y0];
+  L.words = s.text.split(/\s+/).filter((w) => /[A-Za-z0-9]/.test(w)).length;
+  const on = L.outline >= 0 ? s.outline : s.on || 'bg';
+  const worst = L.fillRoles.reduce((a, r) => (contrast(col(r), col(on)) < contrast(col(a), col(on)) ? r : a), L.fillRoles[0]);
+  needContrast(L.id, worst, on, k >= 2 ? 3 : 4.5);
+  for (const v of [s.x, s.y]) if (!whole(v)) ODD.push(`${L.id} ${v}`);
+};
+function orderRanks(ink, how) {                           // stagger rank of each glyph; spaces take none
+  const idx = ink.map((v, i) => (v ? i : -1)).filter((i) => i >= 0), rank = new Array(ink.length).fill(0);
+  const seq = how === 'reverse' ? idx.slice().reverse() : how === 'random' ? shuffled(idx, 0x5EED) : idx;
+  seq.forEach((g, r) => { rank[g] = r; });
+  return rank;
+}
+function shineBand(L, q) {                                 // the glint's span on the diagonal u + v, or null
+  const sh = L.spec.shine;
+  if (!sh) return null;
+  const dur = sh.dur || 0.4, width = sh.width || 3;
+  for (const at of [].concat(sh.at)) {
+    const ph = mod(q - at, DUR);
+    if (ph < dur) { const lo = Math.floor(-width + (L.w + L.h + 2 * width) * ph / dur); return [lo, lo + width]; }
+  }
+  return null;
+}
+DRAW.text = (L, q, sx, sy) => {
+  if (L.spec.blink && !blinkOn(L, q)) return;
+  const st = L.glyphs.map((g) => stateAt(g.M, q)), band = shineBand(L, q), map = L.map, own = TRACE === L;
+  for (let pass = 0; pass < 3; pass++) L.glyphs.forEach((g, i) => {   // drops, then outlines, then fills: nothing cuts a fill
+    const e = st[i];
+    if (!(e.op > 0.002)) return;
+    const ox = L.x0 + g.x + e.dx + sx, oy = L.y0 + e.dy + sy + bobAt(L.spec.bob, q, i);
+    const put = (u, v, c, mine) => {
+      const x = ox + u, y = oy + v;
+      if (x < 0 || y < 0 || x >= PW || y >= PH || (e.op < 1 && !shows(e.op, Math.floor(u / L.k), Math.floor(v / L.k)))) return;   // cells are font pixels
+      FB[y * PW + x] = c;
+      if (mine) OWN[y * PW + x] = 1;
+    };
+    if (pass === 0) for (let j = 0; j < g.side.length; j += 2) put(g.side[j], g.side[j + 1], L.side, false);
+    else if (pass === 1) for (let j = 0; j < g.line.length; j += 2) put(g.line[j], g.line[j + 1], L.outline, false);
+    else for (let j = 0; j < g.fill.length; j += 3) {
+      const u = g.fill[j], v = g.fill[j + 1], d = g.x + u + v;
+      let c = L.rowIdx[g.fill[j + 2]];
+      if (band && d >= band[0] && d < band[1]) c = L.shineIdx;
+      else if (map) c = cycled(map, c, d, q);
+      put(u, v, c, own);
+    }
+  });
+};
+// sparkles: one-shot twinkles at seeded spots in a box, n of them spread over each `every` seconds
+BUILD.sparkles = (L) => { L.sp = sprite(L.spec.sprite, L.id); for (const v of L.spec.box) if (!whole(v)) ODD.push(`${L.id} box ${v}`); };
+DRAW.sparkles = (L, q, sx, sy) => {
+  const s = L.spec, sp = L.sp;
+  if (!sp) return;
+  const every = s.every || 1, n = s.n || 3, laps = Math.max(1, Math.round(DUR / every)), [x0, y0, x1, y1] = s.box;
+  for (let j = 0; j < n; j++) {
+    const tt = mod(q - every * j / n, DUR), c = Math.floor(tt / every + 1e-9), f = drawing(tt - c * every, sp.fps || 20);
+    if (f >= sp.n) continue;
+    const cc = mod(c, laps);
+    const x = x0 + Math.floor(hash(s.seed || 7, j, cc) * Math.max(1, x1 - x0 - sp.w + 1)), y = y0 + Math.floor(hash((s.seed || 7) + 1, j, cc) * Math.max(1, y1 - y0 - sp.h + 1));
+    blit(sp.frames[f], x + sx, y + sy);
+  }
+};
+
+// ball: a snowball that rolls behind the runner and swells at each stop, drawn a pixel at a time. It is the one thing in
+// this film the engine's vocabulary lacks: a shaded, turning disc whose size steps up on springs, in whole pixels.
+const BALL_RAMP = ['shade', 'far', 'snow', 'white'];
+const BALL_LIGHT = (() => { const l = [-0.45, -0.55, 0.70], n = Math.hypot(...l); return l.map((v) => v / n); })();
+BUILD.ball = (L) => {
+  const s = L.spec, steps = s.radius;                       // [[t, r], ...] in time order; the first is the starting size
+  L.heroX = s.heroX; L.gap = s.gap != null ? s.gap : 6; L.ground = s.ground; L.speed = s.speed || 0;
+  L.r = new Prop(steps[0][1], `${L.id}.r`);
+  for (let i = 1; i < steps.length; i++) L.r.to(steps[i][0], steps[i][1], s.spring || 'HOP');
+  L.steps = steps;
+  // how far it has turned by each frame: rolling without slipping, it turns speed / r radians a second
+  L.ang = new Float64Array(NFR + 1);
+  for (let n = 1; n <= NFR; n++) L.ang[n] = L.ang[n - 1] + (L.speed / FPS) / Math.max(2, L.r.at(n / FPS));
+  // flecks: seeded spots on the disc in the ball's own frame; they turn with it. A third of them are gold.
+  L.flecks = Array.from({ length: 128 }, (_, i) => ({ rho: 0.12 + 0.74 * Math.sqrt(hash(77, i, 1)), a: hash(77, i, 2) * TAU, gold: i % 3 === 0 }));
+  L.ix = { ink: ix('ink'), gold: ix('gold'), orange: ix('orange'), ramp: BALL_RAMP.map(ix) };
+  for (const v of [L.heroX, L.gap, L.ground, ...steps.map((p) => p[1])]) if (!whole(v)) ODD.push(`${L.id} ${v}`);
+};
+DRAW.ball = (L, q, sx, sy) => {
+  const R = Math.max(2, Math.round(L.r.at(q))), I = L.ix;
+  const cx = L.heroX - L.gap - R + sx, cy = L.ground - R + sy;
+  const th = L.ang[Math.min(NFR, Math.round(q * FPS))];
+  const put = (x, y, c) => { if (x >= 0 && x < PW && y >= 0 && y < PH) FB[y * PW + x] = c; };
+  const d2 = (x, y) => (x + 0.5 - cx) ** 2 + (y + 0.5 - cy) ** 2;
+  const inside = (x, y) => d2(x, y) <= R * R;
+  const sw = Math.round(R * 0.95);                           // its shadow on the snow
+  for (let x = cx - sw; x <= cx + sw; x++) put(x, cy + R, I.ramp[0]);
+  for (let x = cx - Math.round(sw * 0.7); x <= cx + Math.round(sw * 0.7); x++) put(x, cy + R + 1, I.ramp[0]);
+  for (let y = cy - R; y < cy + R; y++) for (let x = cx - R; x < cx + R; x++) {
+    if (!inside(x, y)) continue;
+    if (!(inside(x - 1, y) && inside(x + 1, y) && inside(x, y - 1) && inside(x, y + 1))) { put(x, y, I.ink); continue; }
+    const nx = (x + 0.5 - cx) / R, ny = (y + 0.5 - cy) / R, nz = Math.sqrt(Math.max(0, 1 - nx * nx - ny * ny));
+    const lam = nx * BALL_LIGHT[0] + ny * BALL_LIGHT[1] + nz * BALL_LIGHT[2];
+    const v = Math.min(1, Math.max(0, (lam + 0.1) / 1.0)) * 3, i = Math.min(2, Math.floor(v)), f = v - i;
+    put(x, y, I.ramp[f > (BAYER[((y & 3) << 2) | (x & 3)] + 0.5) / 16 ? i + 1 : i]);   // a dither between two tones of the ramp: it does not move
+  }
+  const inner = (x, y) => d2(x, y) <= (R - 1.6) ** 2;
+  const n = Math.min(L.flecks.length, Math.round(R * 1.3));
+  for (let i = 0; i < n; i++) {
+    const fl = L.flecks[i], a = fl.a + th, px = Math.floor(cx + fl.rho * R * Math.cos(a)), py = Math.floor(cy + fl.rho * R * Math.sin(a));
+    const gold = fl.gold && R >= 9;
+    if (R < 8) { if (inner(px, py)) put(px, py, gold ? I.gold : I.ramp[0]); continue; }
+    if (gold) { if (inner(px, py) && inner(px + 1, py + 1)) { put(px, py, I.gold); put(px + 1, py, I.gold); put(px, py + 1, I.gold); put(px + 1, py + 1, I.orange); } }
+    else if (inner(px, py) && inner(px + 1, py)) { put(px, py, I.ramp[0]); put(px + 1, py, I.ramp[0]); }
+  }
+};
+
+// snow: flakes that fall and drift left with the world, each on its own even step (10, 12, 15, 20 or 30 px/s), gone at the ground
+BUILD.snow = (L) => {
+  const s = L.spec, n = s.n || 40, sp = [10, 12, 15, 20, 30];
+  L.floor = s.floor != null ? s.floor : PH;
+  L.fl = Array.from({ length: n }, (_, i) => {
+    const k = Math.floor(hash(31, i, 3) * sp.length);
+    return { x: Math.floor(hash(31, i, 1) * (PW + 8)), y: Math.floor(hash(31, i, 2) * L.floor), v: sp[k], vx: sp[Math.max(0, k - 1)] / 2, big: k >= 3, ph: hash(31, i, 5) * TAU, rate: 0.8 + hash(31, i, 6) * 1.4 };
+  });
+  L.c = ix(s.color || 'white');
+  if (!whole(L.floor)) ODD.push(`${L.id} floor ${L.floor}`);
+};
+DRAW.snow = (L, q, sx, sy) => {
+  for (const f of L.fl) {
+    const y = mod(f.y + Math.floor(f.v * q + 1e-6), L.floor), x = mod(f.x - Math.floor(f.vx * q + 1e-6) + Math.round(1.5 * Math.sin(f.ph + f.rate * q)), PW + 8) - 4;
+    for (let j = 0; j < (f.big ? 2 : 1); j++) for (let i = 0; i < (f.big ? 2 : 1); i++) { const X = x + i + sx, Y = y + j + sy; if (X >= 0 && X < PW && Y >= 0 && Y < PH) FB[Y * PW + X] = L.c; }
+  }
+};
+
+// feed: each stop tosses a coin over the runner into the snowball; the ball swells when it lands, with a sparkle
+BUILD.feed = (L) => {
+  const s = L.spec;
+  L.sp = sprite(s.sprite, L.id); L.burst = s.burst ? sprite(s.burst, L.id) : null;
+  L.ball = BYID[s.ball];
+  if (!L.ball || L.ball.kind !== 'ball') ERR.push(`${L.id}: ball "${s.ball}" is not a ball layer`);
+  L.shots = s.shots;
+  for (const v of s.shots.flatMap((o) => [o.x0, o.y0, o.peak])) if (!whole(v)) ODD.push(`${L.id} shot ${v}`);
+};
+function feedAim(L, sh) {                                  // where the coin lands: the ball's upper right, at the size it has as the coin arrives
+  const B = L.ball, R = Math.max(2, Math.round(B.r.at(sh.at + sh.dur - 0.02))), cx = B.heroX - B.gap - R, cy = B.ground - R;
+  return [cx + Math.round(R * 0.62), cy - Math.round(R * 0.62)];
+}
+DRAW.feed = (L, q, sx, sy) => {
+  if (!L.sp) return;
+  for (const sh of L.shots) {
+    const u = (q - sh.at) / sh.dur;
+    if (u <= 0) continue;
+    const [x1, y1] = feedAim(L, sh);
+    if (u < 1) {
+      const x = Math.round(sh.x0 + (x1 - sh.x0) * u), y = Math.round(sh.y0 + (y1 - sh.y0) * u - 4 * sh.peak * u * (1 - u));
+      blit(pick(L.sp, q), x - (L.sp.w >> 1) + sx, y - (L.sp.h >> 1) + sy);
+    } else if (L.burst) {
+      const f = drawing(q - (sh.at + sh.dur), L.burst.fps || 20);
+      if (f < L.burst.n) blit(L.burst.frames[f], x1 - (L.burst.w >> 1) + sx, y1 - (L.burst.h >> 1) + sy);
+    }
+  }
+};
+
+/* ---------------- shake and the frame ---------------- */
+function shakeAt(q) {                                      // whole-pixel offsets, a new one every 2 frames, decaying
+  let sx = 0, sy = 0;
+  for (const e of SHAKES) {
+    const tau = mod(q - e.at, DUR);
+    if (tau >= e.dur) continue;
+    const a = e.px * (1 - tau / e.dur), k = Math.floor(tau * (e.hz || 30) + 1e-6);
+    sx += Math.round((hash(e.n, k, 1) * 2 - 1) * a); sy += Math.round((hash(e.n, k, 2) * 2 - 1) * a);
+  }
+  return [sx, sy];
+}
+function renderFB(q, upto = Infinity) {                   // the whole frame at q into FB (analysis may stop at a layer)
+  FB.fill(BGI);
+  const [sx, sy] = shakeAt(q);
+  for (const L of LAYERS) {
+    if (L.n > upto) break;
+    if (!shownAt(L, q)) continue;
+    const still = L.spec.shake === false || L.kind === 'sky' || L.kind === 'fill';
+    DRAW[L.kind](L, q, still ? 0 : sx, still ? 0 : sy);
+  }
+}
+const qOf = (t) => (frameOf(wrapT(t)) % NFR) / FPS;
+
+/* ---------------- build ---------------- */
+function build() {
+  for (const [name, s] of Object.entries(FILM.sprites || {})) compileSprite(name, s);
+  (FILM.layers || []).forEach((spec, n) => {
+    const L = { spec, id: spec.id || `${spec.kind}${n}`, kind: spec.kind, n };
+    if (!BUILD[spec.kind]) { ERR.push(`${L.id}: unknown kind "${spec.kind}"`); return; }
+    if (BYID[L.id]) ERR.push(`duplicate layer id ${L.id}`);
+    BYID[L.id] = L; LAYERS.push(L);
+    BUILD[spec.kind](L);
+  });
+  for (const L of LAYERS) if (L.kind === 'items') linkItems(L);
+  (FILM.shake || []).forEach((e, n) => {
+    let at = e.at;
+    if (e.on) { const L = BYID[e.on], lands = L && L.glyphs ? L.glyphs.map((g) => g.M.land).filter((v) => v != null) : L && L.M && L.M.land != null ? [L.M.land] : []; if (!lands.length) ERR.push(`shake on "${e.on}": no entrance to land`); at = lands.length ? Math.min(...lands) : 0; }
+    SHAKES.push({ n: n + 1, at, px: e.px || 2, dur: e.dur || 0.2, hz: e.hz });
+    if (!whole(e.px || 2)) ODD.push(`shake ${n} px ${e.px}`);
+  });
+  for (const L of LAYERS) if (L.spec.accent) {
+    const lands = L.glyphs ? L.glyphs.map((g) => g.M.land).filter((v) => v != null) : L.M && L.M.land != null ? [L.M.land] : [];
+    if (L.spec.accent === 'land' && lands.length) accentAt(Math.max(...lands), L.id);
+    else if (typeof L.spec.accent === 'number') accentAt(L.spec.accent, L.id);
+  }
+}
+
+/* ---------------- analysis ---------------- */
+function visible(t) {
+  const q = qOf(t);
+  for (const L of LAYERS) {
+    if (!shownAt(L, q)) continue;
+    if (L.kind === 'sky' || L.kind === 'ridge' || L.kind === 'tiles' || L.kind === 'strip') return true;
+    if (L.kind === 'fill' && stateAt(L.M, q).op > 0.5 && L.c !== BGI) return true;
+    if (L.kind === 'text' && L.glyphs.some((g) => stateAt(g.M, q).op > 0.5)) return true;
+    if (L.kind === 'sprite' && L.sp && stateAt(L.M, q).op > 0.5) return true;
+    if (L.kind === 'items' && L.items.some((it) => { const d = itemX(L, it, q); return !(L.spec.pickup && d < 0) && L.line + d < PW; })) return true;
+  }
+  return false;
+}
+const scrolls = () => LAYERS.filter((L) => ['strip', 'ridge', 'tiles', 'items'].includes(L.kind) && L.spec.speed);
+function cycles() {
+  const out = [], seen = new Set();
+  const add = (what, period) => { if (period > 0 && isFinite(period) && !seen.has(what)) { seen.add(what); out.push({ what, period }); } };
+  for (const L of scrolls()) add(`${L.id} scrolls`, (L.kind === 'items' ? L.len : L.width) / Math.abs(L.spec.speed));
+  const anim = (sp, who, fps) => { const f = sp ? fpsOf(sp, fps) : 0; if (sp && sp.n > 1 && f) add(`${who} ${sp.name} (${sp.n} frames)`, sp.n / f); };
+  for (const L of LAYERS) {
+    const s = L.spec;
+    if (L.kind === 'sprite') { anim(L.sp, L.id, s.fps); if (L.air && L.jumps.length) anim(L.air, L.id); }
+    if (L.kind === 'items') anim(L.sp, L.id);
+    if (L.kind === 'strip') for (const p of L.items) anim(p.sp, L.id);
+    if (L.kind === 'tiles') for (const sp of Object.values(L.tile)) anim(sp, L.id);
+    if (s.blink) add(`${L.id} blinks`, s.blink[0]);
+    if (s.bob) add(`${L.id} bobs`, DUR / s.bob[0]);
+    if (s.cycle) for (const c of [].concat(s.cycle)) add(`${L.id} cycles ${c.of}`, c.roles.length / (c.fps || 8));
+    if (L.kind === 'sparkles') add(`${L.id} twinkles`, s.every || 1);
+  }
+  return out;
+}
+function lastChange(see) {                                // a hold loop must be still at the end: report what never stops
+  for (const L of scrolls()) see(DUR, `${L.id} scrolls`);
+  for (const L of LAYERS) {
+    const s = L.spec;
+    if (s.blink || s.cycle || s.bob) see(s.show ? s.show[1] : DUR, `${L.id} ${s.blink ? 'blinks' : s.cycle ? 'cycles' : 'bobs'}`);
+    if (L.kind === 'sparkles') see(s.show ? s.show[1] : DUR, `${L.id} twinkles`);
+    if (L.kind === 'sprite') { if (L.sp && L.sp.n > 1 && fpsOf(L.sp, s.fps)) see(DUR, `${L.id} animates`); for (const j of L.jumps) see(j.at + j.dur + (L.dust ? L.dust.n / (L.dust.fps || 12) : 0), `${L.id} lands a hop`); }
+    if (s.shine) for (const at of [].concat(s.shine.at)) see(at + (s.shine.dur || 0.4), `${L.id} shines`);
+  }
+  for (const e of SHAKES) see(e.at + e.dur, 'the shake');
+}
+const cr = (a, b) => contrast(PAL[ROLES[a]], PAL[ROLES[b]]);
+function backdrop(L, q) {                                  // worst contrast between the text's fill and the pixels touching it
+  TRACE = L; OWN.fill(0); renderFB(q, L.n); TRACE = null;
+  let worst = Infinity, pair = null;
+  for (let p = 0; p < PW * PH; p++) if (OWN[p]) {
+    const x = p % PW, y = (p / PW) | 0;
+    for (const [a, b] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+      const X = x + a, Y = y + b;
+      if (X < 0 || Y < 0 || X >= PW || Y >= PH || OWN[Y * PW + X]) continue;
+      const r = cr(FB[p], FB[Y * PW + X]);
+      if (r < worst) { worst = r; pair = [ROLES[FB[p]], ROLES[FB[Y * PW + X]]]; }
+    }
+  }
+  return { worst, pair };
+}
+function textShownAt(L, q, full) { return shownAt(L, q) && !(L.spec.blink && !blinkOn(L, q)) && L.glyphs.length && L.glyphs[full ? 'every' : 'some']((g) => { const e = stateAt(g.M, q); return full ? e.op >= 0.999 && e.dx === 0 && e.dy === 0 : e.op > 0.5; }); }
+function checks(add) {
+  const exact = PW * K === W && PH * K === H && whole(PXS.scale || 1);
+  add('pixel grid', exact ? 'PASS' : 'FAIL', `${PW} x ${PH} logical px at x${K} = ${PW * K} x ${PH * K}${exact ? '' : `, but the canvas is ${W} x ${H}: set W = px.w x scale, H = px.h x scale`}`);
+  if (K % 2) add('pixel grid: chroma', 'WARN', `x${K} is odd: yuv420p stores colour per 2 x 2 output px, so pixel edges soften in the MP4; use an even scale`);
+  add('motion blur', BLUR ? 'FAIL' : 'PASS', BLUR ? 'blur averages subframes into colours outside the palette: set FILM.blur: false' : 'off: one sample per frame');
+  const hexes = ROLES.map((r) => String(PAL[r]).toUpperCase()), dup = ROLES.filter((r, i) => hexes.indexOf(hexes[i]) !== i);
+  add('palette size', ROLES.length > 256 ? 'FAIL' : ROLES.length > 16 || dup.length ? 'WARN' : 'PASS',
+    `${ROLES.length} colours${ROLES.length > 16 ? ' (more than 16 stops reading as pixel art)' : ''}${dup.length ? `; same hex as another role: ${dup.join(', ')}` : ''}`);
+  for (const sp of Object.values(SPR)) add(`sprite: ${sp.name}`, sp.errs.length ? 'FAIL' : sp.used ? 'PASS' : 'WARN',
+    sp.errs.length ? sp.errs.slice(0, 3).join('; ') + (sp.errs.length > 3 ? ` and ${sp.errs.length - 3} more` : '') : `${sp.w} x ${sp.h}, ${sp.n} frame${sp.n > 1 ? 's' : ''}${sp.fps && sp.n > 1 ? ` at ${sp.fps} fps` : ''}${sp.used ? '' : ', not used by any layer'}`);
+  for (const e of ERR) add('reference', 'FAIL', e);
+  for (const L of LAYERS) if (L.kind === 'ball') { const top = L.ground - 2 * Math.max(...L.steps.map((p) => p[1])); add(`ball: ${L.id}`, top >= 44 ? 'PASS' : 'WARN', `radii ${L.steps.map((p) => p[1]).join(', ')}; the biggest tops out at row ${top} (the captions end at row 43)`); }
+  add('bitmap font', BAD_GLYPHS.length ? 'FAIL' : 'PASS', BAD_GLYPHS.length ? `FILM.glyphs ${BAD_GLYPHS.map((c) => `"${c}"`).join(' ')}: each needs ${FONT_H} rows of '#' and '.', all one width` : `${Object.keys(FONT).length} glyphs, ${FONT_H} px tall${FILM.glyphs ? `, ${Object.keys(FILM.glyphs).length} from FILM.glyphs` : ''}`);
+  for (const L of LAYERS) if (L.kind === 'tiles') add(`tiles: ${L.id}`, L.errs.length ? 'FAIL' : 'PASS', L.errs.slice(0, 3).join('; ') || `${L.cols} x ${L.map.length} tiles of ${L.tw} x ${L.th}, repeats every ${L.width} px`);
+  add('whole pixels', ODD.length ? 'FAIL' : 'PASS', ODD.length ? `not whole: ${ODD.slice(0, 6).join(', ')}${ODD.length > 6 ? ` and ${ODD.length - 6} more` : ''}` : 'every position, offset and hop height is a whole logical pixel; springs round every frame');
+  for (const L of scrolls()) {
+    const v = Math.abs(L.spec.speed), per = v / FPS, even = whole(FPS / v) || whole(v / FPS);
+    add(`scroll steps: ${L.id}`, even ? 'PASS' : 'WARN', even ? (per >= 1 ? `${per} px every frame` : `1 px every ${FPS / v} frames`) : `${+per.toFixed(3)} px a frame: its 1 px steps come unevenly apart (a judder); use FPS / n or n x FPS px/s`);
+  }
+  const texts = LAYERS.filter((L) => L.kind === 'text');
+  const samples = Array.from({ length: Math.ceil(NFR / 3) }, (_, i) => (i * 3) / FPS);
+  for (const L of texts) {
+    add(`glyphs: ${L.id}`, L.missing.length ? 'FAIL' : 'PASS', L.missing.length ? `not in the bitmap font: ${L.missing.map((c) => `"${c}" U+${c.codePointAt(0).toString(16).toUpperCase().padStart(4, '0')}`).join(', ')}` : `${new Set(Array.from(L.spec.text)).size} characters, all in the bitmap font`);
+    const cap = FONT_H * L.k * K;
+    add(`legibility: ${L.id}`, cap >= 35 ? 'PASS' : 'FAIL', `caps ${FONT_H * L.k} logical px tall = ${cap} px at x${K} (needs 35 or more)`);
+    const b = L.box, out = [];
+    if (b[0] < PM) out.push(`left ${b[0]} < ${PM}`); if (b[1] < PM) out.push(`top ${b[1]} < ${PM}`);
+    if (b[2] > PW - PM) out.push(`right ${b[2]} > ${PW - PM}`); if (b[3] > PH - PM) out.push(`bottom ${b[3]} > ${PH - PM}`);
+    if (!L.spec.bleed) add(`live area: ${L.id}`, out.length ? 'FAIL' : 'PASS', out.join(', ') || `logical box ${b.join(', ')} inside ${PM} to ${PW - PM} x ${PM} to ${PH - PM}`);
+    const rest = samples.filter((q) => textShownAt(L, q, true));
+    if (rest.length) {
+      const pick8 = Array.from({ length: Math.min(8, rest.length) }, (_, i) => rest[Math.floor(i * rest.length / Math.min(8, rest.length))]);
+      let worst = { worst: Infinity, pair: null }, at = 0;
+      for (const q of pick8) { const r = backdrop(L, q); if (r.worst < worst.worst) { worst = r; at = q; } }
+      const need = L.k >= 2 ? 3 : 4.5;
+      if (worst.pair) add(`backdrop: ${L.id}`, worst.worst < need ? 'FAIL' : 'PASS', `${worst.worst.toFixed(2)}:1, ${worst.pair[0]} against ${worst.pair[1]} at ${at.toFixed(2)} s, the worst of ${pick8.length} frames at rest (needs ${need}:1)`);
+    } else add(`backdrop: ${L.id}`, 'WARN', 'never fully at rest and opaque: nothing to measure');
+  }
+  let maxWords = 0, when = 0;                              // display type (scale 2 and up) on screen at once
+  for (const q of samples) { const w = texts.filter((L) => L.k >= 2 && textShownAt(L, q, false)).reduce((s, L) => s + L.words, 0); if (w > maxWords) { maxWords = w; when = q; } }
+  add('words', maxWords > 4 ? 'FAIL' : 'PASS', `${maxWords} words of display type on screen at once${maxWords ? ` (at ${when.toFixed(2)} s)` : ''}; at most 4`);
+  for (let i = 0; i < texts.length; i++) for (let j = i + 1; j < texts.length; j++) {
+    const A = texts[i], B = texts[j];
+    if (!samples.some((q) => textShownAt(A, q, false) && textShownAt(B, q, false))) continue;
+    const a = A.box, b = B.box, dx = Math.max(0, a[0] - b[2], b[0] - a[2]), dy = Math.max(0, a[1] - b[3], b[1] - a[3]);
+    if (!dx && !dy) add(`collision: ${A.id} / ${B.id}`, 'FAIL', 'their boxes overlap while both are on screen');
+    else if (Math.max(dx, dy) < 2) add(`cramped: ${A.id} / ${B.id}`, 'WARN', `${Math.max(dx, dy)} px apart (under 2 logical px)`);
+  }
+  for (const L of LAYERS) if (L.kind === 'items' && L.spec.pickup && L.by) {
+    const miss = L.items.filter((it) => { const b = spriteBox(L.by, it.tq), x = L.line - Math.floor(L.sp.w / 2); return !(x < b.x + b.w && x + L.sp.w > b.x && it.y < b.y + b.h && it.y + L.sp.h > b.y); });
+    add(`pickups: ${L.id}`, miss.length ? 'FAIL' : 'PASS', miss.length ? `${L.by.id} is not there to collect item${miss.length > 1 ? 's' : ''} ${miss.map((it) => `${it.i} (${it.tq.toFixed(3)} s)`).join(', ')}: move it onto the path (y: 'path') or time a hop` : `${L.items.length} items, each collected where ${L.by.id} is`);
+  }
+  for (const L of LAYERS) {                                // an entrance must start from nothing: a visible layer would pop
+    const Ms = L.glyphs ? L.glyphs.map((g) => g.M) : L.M ? [L.M] : [];
+    const seen = (M, q) => {                                // drawn and inside the canvas at q
+      if (L.kind === 'sprite' && !L.sp) return false;
+      const e = stateAt(M, q), b = L.kind === 'sprite' ? spriteBox(L, q) : L.box ? { x: L.box[0] + e.dx, y: L.box[1] + e.dy, w: L.box[2] - L.box[0], h: L.box[3] - L.box[1] } : { x: 0, y: 0, w: PW, h: PH };
+      return shownAt(L, q) && e.op > 0.002 && !(L.spec.blink && !blinkOn(L, q)) && b.x < PW && b.y < PH && b.x + b.w > 0 && b.y + b.h > 0;
+    };
+    const pops = Ms.filter((M) => M.t0 != null && LOOP !== 'none' && seen(M, mod(M.t0 - 1 / FPS, DUR)));
+    if (pops.length) add(`entrance: ${L.id}`, 'WARN', `on screen the frame before its entrance at ${pops[0].t0.toFixed(3)} s, so it pops to its entrance state: give it an exit (or keys) that hides it first, or a show window`);
+  }
+  if (LOOP === 'cycle') {                                  // the seam: the film drawn on to t = DUR, unwrapped, must be frame 0
+    const f0 = new Uint8Array(PW * PH), diff = (upto) => { renderFB(0, upto); f0.set(FB); renderFB(DUR, upto); let c = 0; for (let p = 0; p < FB.length; p++) if (FB[p] !== f0[p]) c++; return c; };
+    const n = diff(Infinity);
+    let culprit = '';
+    if (n) for (const L of LAYERS) if (diff(L.n)) { culprit = L.id; break; }
+    const prev = new Uint8Array(PW * PH), steps = [];      // for scale: how much changes frame to frame
+    for (let f = 0; f < NFR; f += Math.max(1, Math.floor(NFR / 120))) { renderFB(f / FPS); prev.set(FB); renderFB((f + 1) / FPS); let c = 0; for (let p = 0; p < FB.length; p++) if (FB[p] !== prev[p]) c++; steps.push(c); }
+    add('seam', n ? 'FAIL' : 'PASS', n ? `drawn on to t = ${DUR} s the film differs from frame 0 in ${n} logical px, first in layer ${culprit}: something jumps at the loop point (a period that is not whole, a value that does not return)`
+      : `the film drawn on to t = ${DUR} s is frame 0, pixel for pixel; frame to frame it changes a median of ${steps.sort((x, y) => x - y)[steps.length >> 1]} logical px`);
+  }
+}
+function stills(push) {
+  const F = (t) => Math.round(mod(t, DUR) * FPS);
+  for (const L of LAYERS) {
+    const s = L.spec;
+    if (L.kind === 'text' && s.enter) {
+      const lands = L.glyphs.map((g) => g.M.land).filter((v) => v != null);
+      if (lands.length) { push(F(Math.min(...lands)), `${L.id}-lands`, `${L.id}: the first letter lands`); push(F(Math.max(...lands) + 0.5), `${L.id}-rest`, `${L.id} landed`); }
+    }
+    if (L.kind === 'text' && s.exit) push(F(s.exit.at + 0.25), `${L.id}-exit`, `${L.id} leaving`);
+    if (L.kind === 'text' && s.show && s.show[0] > 0 && !s.enter) push(F(s.show[0] + 0.05), `${L.id}-in`, `${L.id} appears`);
+    if (s.shine) { const at = [].concat(s.shine.at)[0]; push(F(at + (s.shine.dur || 0.4) / 2), `${L.id}-shine`, `${L.id} glint`); }
+    if (L.kind === 'sprite' && L.jumps.length) { const j = L.jumps[0]; push(F(j.at + j.dur / 2), `${L.id}-hop`, `${L.id} at the top of a hop`); push(F(j.at + j.dur + 2 / FPS), `${L.id}-lands`, `${L.id} lands, dust`); }
+    if (L.kind === 'items' && L.burst && L.items.length) { const it = L.items[1] || L.items[0]; push(F(it.tq + 2 / (L.burst.fps || 20)), `${L.id}-pickup`, `${L.id}: a pickup sparkles`); }
+  }
+  for (const e of SHAKES) push(F(e.at + 2 / FPS), 'shake', 'the screen shakes');
+  for (const L of LAYERS) if (L.kind === 'feed') for (const sh of L.shots.slice(0, 2).concat(L.shots.slice(-1))) { push(F(sh.at + sh.dur / 2), `${L.id}-flight`, 'a coin in flight'); push(F(sh.at + sh.dur + 0.1), `${L.id}-lands`, 'the coin lands, the ball swells'); }
+  push(F(FILM.poster || 0), 'poster', 'the poster frame');
+}
+function layout() {
+  return {
+    px: { w: PW, h: PH, scale: K, margin: PM, live: [PM, PM, PW - PM, PH - PM], output: [PW * K, PH * K] },
+    palette: ROLES.map((r, i) => `${i} ${r} ${PAL[r]}`), gif: GIF,
+    sprites: Object.values(SPR).map((s) => ({ name: s.name, w: s.w, h: s.h, frames: s.n, fps: s.fps, period: s.n > 1 && s.fps ? s.n / s.fps : null })),
+    layers: LAYERS.map((L) => ({ id: L.id, kind: L.kind,
+      ...(L.kind === 'text' ? { text: L.spec.text, scale: L.k, box: L.box, width: L.w, capPx: FONT_H * L.k * K } : {}),
+      ...(L.spec.speed ? { speed: L.spec.speed, repeat: L.kind === 'items' ? L.len : L.width, pxPerFrame: L.spec.speed / FPS } : {}),
+      ...(L.kind === 'sprite' && L.sp ? { box: [L.spec.x, L.spec.y, L.spec.x + L.sp.w * L.k, L.spec.y + L.sp.h * L.k], hops: L.jumps.length } : {}),
+      ...(L.kind === 'items' ? { line: L.line, items: L.items.map((it) => ({ t: +it.t.toFixed(3), x: it.X, y: it.y })) } : {}) })),
+    shakes: SHAKES.map((e) => ({ at: +e.at.toFixed(3), px: e.px, dur: e.dur })),
+  };
+}
+
+// the GIF: nearest-neighbour to a whole multiple of the logical width, no dither, the palette exactly.
+const GIF = (() => {
+  const g = FILM.gif || {};
+  let m = 1;
+  for (let d = K; d >= 1; d--) if (K % d === 0 && PW * d <= 720) { m = d; break; }
+  return { scale: 'neighbor', dither: 'none', colors: Math.max(3, Math.min(255, ROLES.length)), width: g.width || PW * m, fps: g.fps || 20 };
+})();
+
+boot({
+  name: 'pixel',
+  springs: { DROP: [0.4, 11], HOP: [0.5, 18], DISSOLVE: [1, 12], SLIDE: [1, 14] },
+  build, draw: (c, t, q) => { renderFB(q); present(c); },
+  disp: () => 0,                                           // blur is off: one sample per frame, nothing to measure
+  checks, cycles, lastChange, stills, layout, visible,
+  always: LOOP === 'cycle', strictPalette: true, gif: GIF,
+});
+})();
+</script>
+</body>
+</html>
