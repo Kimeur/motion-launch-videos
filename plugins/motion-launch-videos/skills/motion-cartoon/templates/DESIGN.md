@@ -36,8 +36,21 @@ What it is like, in three words: <curious, bouncy, helpful>. Original: <new desi
 
 ## The stage
 
-- Ground line at y = <848>. Sunburst centred at (<540>, <500>), <16> rays, turning <1> ray width per loop.
-- Titles: <DEMO COPY, FICTIONAL PRODUCT> at baseline <960>.
+- Ground line at y = <848>, pinned to the bottom. Sunburst centred at (<540>, <500>), <16> rays, turning <1> ray width per loop.
+- Titles: <DEMO COPY, FICTIONAL PRODUCT> at baseline <960>, pinned <'g'>.
+
+## Formats
+
+Every number above is 1080 x 1080 px. Each other delivered format has a patch in `FILM.formats`; the pins map the rest (engine.md, Formats).
+
+| Format | Canvas | Patch | Staging |
+|---|---|---|---|
+| 1:1 | 1080 x 1080 | none: the base | <as above> |
+| 9:16 | 1080 x 1920 | <stage.raise 280; PIP scale 1.4, bubble over the shoulder, JOY hop h 280> | <the ground at 1408; the performance fills the middle; hops rise into the tall frame> |
+| 16:9 | 1920 x 1080 | <PIP x 330, sunburst x 330; bubble and sign (one hand) to the right> | <Pip left of centre, the sign and bubble in the open space> |
+
+- Pins: the ground `'b'` (its distance from the bottom); titles <`'g'`: their height above the ground>; characters centred.
+- Composition at each format (from `render.mjs stills --format`): <1:1 x %, 9:16 x %, 16:9 x %>.
 
 ## The performance
 
