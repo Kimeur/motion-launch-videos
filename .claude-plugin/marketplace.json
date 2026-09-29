@@ -5,13 +5,13 @@
     "url": "https://github.com/Kimeur"
   },
   "metadata": {
-    "description": "A Claude Code plugin for short looping launch videos made in code: kinetic type, shapes, cartoons, 3D, charts, pixel art, particles and app UI."
+    "description": "A Claude Code plugin for short launch and social videos made in code: kinetic type, shapes, cartoons, 3D, charts, pixel art, particles, app UI, photo reels, captions and overlays."
   },
   "plugins": [
     {
       "name": "motion-launch-videos",
       "source": "./plugins/motion-launch-videos",
-      "description": "Eight skills for short looping launch videos made in code: kinetic type, flat shapes, cartoons, 3D type and logos, data charts, pixel art, particles and app UI. Each film is one self-contained HTML file driven by a pure seek(t), rendered to MP4 with real motion blur and a verified seamless loop.",
+      "description": "Eleven skills for short launch and social videos made in code: kinetic type, flat shapes, cartoons, 3D type and logos, data charts, pixel art, particles, app UI, photo reels, captioned clips and transparent overlays. Each film is one self-contained HTML file driven by a pure seek(t), rendered at 1:1, 9:16 or 16:9 to MP4 with real motion blur, sound when needed and a verified seamless loop.",
       "category": "creative",
       "tags": [
         "motion-graphics",
@@ -23,7 +23,10 @@
         "data-visualization",
         "pixel-art",
         "particles",
-        "ui"
+        "ui",
+        "captions",
+        "photo",
+        "overlays"
       ]
     }
   ]

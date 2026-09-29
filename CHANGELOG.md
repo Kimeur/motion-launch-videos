@@ -1,5 +1,27 @@
 # Changelog
 
+## 2.1.0
+
+Three new styles, every style in three formats, sound, transparency, and a guide to what each video is for.
+
+- **New skills:**
+  - `motion-photo`: product and photo reels from the user's own images (Ken Burns crops, parallax cutouts, carousels, a before/after slider, mosaics, price and feature tags). Its critique checks image resolution, text contrast on the pixels behind it and subjects kept in every crop.
+  - `motion-captions`: captioned clips from the user's own voice-over, podcast or interview (pop captions, a karaoke line, subtitles, an audiogram), from word-level JSON, SRT or VTT, every word lit on the frame it is said. Its critique checks that every word is shown unchanged, reading speed, the platforms' safe zones and the voice's alignment.
+  - `motion-overlays`: lower thirds, title and chapter cards, social handles, end screens, corner bugs, callouts and badges for video editors, delivered with transparency.
+- **Formats.** Any film renders at 1:1, 9:16, 16:9 or 4:5 with `--format`. Positions follow pins (the centre or an edge), `FILM.formats` patches what a frame needs laid out differently, and every engine and demo is designed for all three standard formats; each example has posters at 9:16 and 16:9. A composition row in the critique fails content left in a corner of a frame it was not designed for.
+- **Sound.** `FILM.audio` mixes the user's own music or voice-over with sound effects synthesised in the page from the film's cues, accents and cuts: deterministic, wrapping round the loop, normalised to a loudness target and checked by `verify`.
+- **Transparency.** `FILM.transparent` renders ProRes 4444 and VP9 with alpha for editors, with motion blur that keeps edge colours.
+- **Video types.** `video-types.md`, linked from every skill, matches 18 kinds of video (feature highlight, what's new, app store preview, testimonial, event promo, countdown, intro, ad...) to their length, formats, beats and styles, with the platforms' formats and safe zones.
+- **Checks.**
+  - `loopcheck` compares the step from the last frame to frame 0 with the film's other frame steps, block by block and tile by tile, which catches seams in motion drawn from the frame number, and measures the 0.1 ms step on block averages so moving photos cannot fool it.
+  - Images and audio embed with `__ASSET:path__`.
+  - CI (`.github/workflows/check.yml`) runs the repo checks on every push and the smoke test at every format weekly.
+- **Fixes:**
+  - option values are no longer read as times in `at`, `frame` and `mp4frames`;
+  - GIFs keep a 480x480 GIF's pixel count at any format;
+  - the cartoon sign no longer leaves an ink dot as it vanishes;
+  - `verify` compares first and last frames only in a hold loop.
+
 ## 2.0.0
 
 Seven new styles, each its own skill in the same plugin, on a shared core.
