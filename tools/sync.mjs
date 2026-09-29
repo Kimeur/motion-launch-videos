@@ -6,11 +6,13 @@
 //
 // What it syncs, for each folder in plugins/*/skills/*:
 //   shared/scripts/*.mjs    -> <skill>/scripts/         the render, build, fonts and cmap scripts, identical everywhere
+//   shared/reference/video-types.md -> <skill>/reference/   the guide to video types
 // and, for each skill whose templates/film.html is built on the core (it holds the CORE markers):
 //   shared/core.js          -> <skill>/templates/*.html between the CORE BEGIN and CORE END markers
 //   shared/reference/*.md   -> <skill>/reference/       the docs every engine shares (brief, core, loops, springs, render, fonts)
 //   shared/templates/*.md   -> <skill>/templates/       the brief template
-// The kinetic-type skill (motion-launch-videos) carries its own engine and docs; it only gets the scripts.
+// The kinetic-type skill (motion-launch-videos) carries its own engine and docs; it only gets the scripts and the
+// video-types guide.
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -20,6 +22,7 @@ const check = process.argv.includes('--check');
 const SHARED = path.join(ROOT, 'shared');
 const BEGIN = '/* ===== CORE BEGIN: shared/core.js, synced by tools/sync.mjs. Do not edit it here. ===== */';
 const END = '/* ===== CORE END ===== */';
+const EVERY_SKILL = ['video-types.md'];                 // shared docs every skill gets, its own engine or not
 
 export function skills() {
   const out = [];
@@ -51,6 +54,7 @@ const put = (file, content) => {
 if (process.argv[1] && fileURLToPath(import.meta.url) === path.resolve(process.argv[1])) {
   for (const skill of skills()) {
     for (const f of fs.readdirSync(path.join(SHARED, 'scripts'))) put(path.join(skill, 'scripts', f), fs.readFileSync(path.join(SHARED, 'scripts', f), 'utf8'));
+    for (const f of EVERY_SKILL) put(path.join(skill, 'reference', f), fs.readFileSync(path.join(SHARED, 'reference', f), 'utf8'));
     const tdir = path.join(skill, 'templates');
     let onCore = false;
     if (fs.existsSync(tdir)) for (const f of fs.readdirSync(tdir).filter((x) => x.endsWith('.html'))) {
