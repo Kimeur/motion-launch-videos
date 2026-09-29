@@ -647,7 +647,7 @@ async function verify({ page, meta }) {
   check('background decodes true', flat && got.every((x, i) => Math.abs(x - bg[i]) <= 2), `${bgName} -> rgb(${got.map((x) => x.toFixed(1)).join(', ')}) over ${k} px`, !flat);
   if (full) {
     const seam = compare(d0, dN);
-    if (meta.loop !== 'cycle') check('encoded seam (frame 0 vs last)', seam.psnr >= 40, `PSNR ${seam.psnr.toFixed(1)} dB, mean ${seam.mean.toFixed(2)}, max ${seam.max} (the canvas pixels are identical; this is encoder noise)`, true);
+    if ((meta.loop || 'hold') === 'hold') check('encoded seam (frame 0 vs last)', seam.psnr >= 40, `PSNR ${seam.psnr.toFixed(1)} dB, mean ${seam.mean.toFixed(2)}, max ${seam.max} (the canvas pixels are identical; this is encoder noise)`, true);
   }
   const size = Number(info.format.size);
   check('mp4 size', true, `${(size / 1e6).toFixed(2)} MB, ${(Number(info.format.bit_rate) / 1e6).toFixed(2)} Mb/s`);
