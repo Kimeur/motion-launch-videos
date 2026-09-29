@@ -1,6 +1,6 @@
 ---
 name: motion-cartoon
-description: Make a looping cartoon of an original mascot or character, 6 to 20 seconds, from a short brief. A bean-shaped rig with a face, rubber-hose arms, legs and an antenna walks, hops, blinks, waves, reacts, talks in a speech bubble and pulls out a sign with the product's name, drawn in outlined flat colour with cel shading, on twos with a boiling hand-drawn line, squash and stretch, anticipation, follow-through, dust puffs and a sunburst stage. Claude writes the film as one self-contained HTML canvas file driven by a pure seek(t), checks it with an automated critique, and renders it to MP4, GIF and poster with a verified seamless loop. Use it for a mascot intro, a brand character saying hi, a cartoon reaction loop or sticker, a playful launch teaser or a social loop with a character. Not for existing or trademarked characters, real people, lip-sync to audio, flat shape animation (motion-shapes), kinetic type (motion-launch-videos), 3D (motion-3d) or pixel art (motion-pixel).
+description: Make a looping cartoon of an original mascot or character, 6 to 20 seconds, from a short brief. A bean-shaped rig with a face, rubber-hose arms, legs and an antenna walks, hops, blinks, waves, reacts, talks in a speech bubble and pulls out a sign with the product's name, drawn in outlined flat colour with cel shading, on twos with a boiling hand-drawn line, squash and stretch, anticipation, follow-through, dust puffs and a sunburst stage. Claude writes the film as one self-contained HTML canvas file driven by a pure seek(t), checks it with an automated critique, and renders it to MP4, GIF and poster at 1:1, 9:16 or 16:9 with a verified seamless loop. Use it for a mascot intro, a brand character saying hi, a cartoon reaction loop or sticker, a playful launch teaser or a social loop with a character. Not for existing or trademarked characters, real people, lip-sync to audio, flat shape animation (motion-shapes), kinetic type (motion-launch-videos), 3D (motion-3d) or pixel art (motion-pixel).
 ---
 
 # Motion cartoon
@@ -25,9 +25,9 @@ A film lives in the user's project at `videos/<film>/` (`BRIEF.md`, `DESIGN.md`,
 ## Workflow
 
 0. **Once per machine.** `node "${CLAUDE_SKILL_DIR}/scripts/render.mjs" doctor` checks Node 20+, playwright-core, a Chromium, ffmpeg with libx264, ffprobe, npm and tar, and prints the exact command for anything missing. Re-run it until it says `DOCTOR OK`.
-1. **Brief intake.** Read the product's live site, then ask at most one round of questions: who the character is (the user's mascot, or a new one: what it is like in three words), the one thing it does, format, duration, palette. Defaults: 1080 x 1080, 10 s, 60 fps, 12 drawings a second, 120 BPM, cycle loop, the template's palette or the brand's colours. Fill [templates/BRIEF.md](templates/BRIEF.md) into `videos/<film>/BRIEF.md`. See [reference/brief.md](reference/brief.md).
+1. **Brief intake.** Read the product's live site, then ask at most one round of questions: who the character is (the user's mascot, or a new one: what it is like in three words), the one thing it does, which formats (1:1, 9:16, 16:9: one film renders to each), duration, palette. Defaults: 1080 x 1080 (1:1) only, 10 s, 60 fps, 12 drawings a second, 120 BPM, cycle loop, the template's palette or the brand's colours. Fill [templates/BRIEF.md](templates/BRIEF.md) into `videos/<film>/BRIEF.md`. See [reference/brief.md](reference/brief.md).
 2. **The performance.** Write the beats as acting, not as moves: notices you, reacts, shows the thing, celebrates, settles. At most 4 words in any bubble or sign. Show the user the beats and proceed unless they object; when nobody can answer, write them into BRIEF.md and proceed.
-3. **Character sheet and timing.** Fill [templates/DESIGN.md](templates/DESIGN.md) into `videos/<film>/DESIGN.md`: the character's proportions and colours (fill, shade, light, outline), the stage, then every act on the tempo grid with its anticipation and settle, and the loop seam. Read [reference/animation.md](reference/animation.md), [reference/engine.md](reference/engine.md) and [reference/springs.md](reference/springs.md).
+3. **Character sheet and timing.** Fill [templates/DESIGN.md](templates/DESIGN.md) into `videos/<film>/DESIGN.md`: the character's proportions and colours (fill, shade, light, outline), the stage, then every act on the tempo grid with its anticipation and settle, the loop seam, and how each other delivered format is re-staged (its patch in `FILM.formats`: engine.md, Formats). Read [reference/animation.md](reference/animation.md), [reference/engine.md](reference/engine.md) and [reference/springs.md](reference/springs.md).
 4. **Build.** Copy [templates/film.html](templates/film.html) to `videos/<film>/src/film.html` and transcribe DESIGN.md into its `FILM` block (edit nothing below it). Fetch the fonts and build:
    ```bash
    node "${CLAUDE_SKILL_DIR}/scripts/fonts.mjs" videos/<film>
@@ -35,7 +35,7 @@ A film lives in the user's project at `videos/<film>/` (`BRIEF.md`, `DESIGN.md`,
    node "${CLAUDE_SKILL_DIR}/scripts/render.mjs" layout videos/<film>    # the character's box, hops, sign size
    ```
    See [reference/fonts.md](reference/fonts.md) and [reference/core.md](reference/core.md).
-5. **Stills and critique.** `node "${CLAUDE_SKILL_DIR}/scripts/render.mjs" stills videos/<film>` runs the automated critique (glyph coverage, words, contrast of the sign, bubble and titles, the character inside the live area, the loop and its cycles, the face at the seam) and the palette gate, and writes a still for every key pose (each anticipation, stretch and impact, each bubble, sign and emote) plus `stills/contact.png`. Read them as an animator would: silhouette, squash, arcs, the face at thumbnail size. Fix and repeat. See [reference/review.md](reference/review.md).
+5. **Stills and critique.** `node "${CLAUDE_SKILL_DIR}/scripts/render.mjs" stills videos/<film>` runs the automated critique (glyph coverage, words, contrast of the sign, bubble and titles, the character inside the live area, the loop and its cycles, the face at the seam) and the palette gate, and writes a still for every key pose (each anticipation, stretch and impact, each bubble, sign and emote) plus `stills/contact.png`. Read them as an animator would: silhouette, squash, arcs, the face at thumbnail size. Fix and repeat. Run it once per delivered format: `--format 9:16` checks the 9:16 cut, composition included, and writes `stills/9x16/`. See [reference/review.md](reference/review.md).
 6. **Render and verify.**
    ```bash
    node "${CLAUDE_SKILL_DIR}/scripts/render.mjs" loopcheck videos/<film>   # purity 0, the seam continuous
@@ -43,10 +43,11 @@ A film lives in the user's project at `videos/<film>/` (`BRIEF.md`, `DESIGN.md`,
    node "${CLAUDE_SKILL_DIR}/scripts/render.mjs" verify videos/<film>      # ffprobe facts, tags, decoded pixels
    node "${CLAUDE_SKILL_DIR}/scripts/render.mjs" mp4frames videos/<film>   # decoded review frames + PSNR
    ```
-   Look at `stills/mp4/contact.png` and a strip of the whole film. Report the files, their sizes and the verify, loopcheck and mp4frames lines. See [reference/render.md](reference/render.md) and [reference/loops.md](reference/loops.md).
+   Run the four once per delivered format, with the same `--format 9:16` (outputs `renders/<film>-9x16.mp4`, `preview-9x16.gif`, `poster-9x16.png`). Look at `stills/mp4/contact.png` and a strip of the whole film. Report the files, their sizes and the verify, loopcheck and mp4frames lines. See [reference/render.md](reference/render.md) and [reference/loops.md](reference/loops.md).
 
 ## Pass criteria
 
+- The composition row passes at every delivered format: the performance fills each frame, not the top of a tall one or the left of a wide one.
 - The silhouette reads at thumbnail size: in every key pose you can tell what the character is doing from its outline alone.
 - Every big move has an anticipation before it and a settle after it; every hop lands with a squash; the antenna and hands arrive after the body.
 - One action at a time; one expression per beat; the eyes lead (they look before the body moves).
@@ -61,6 +62,7 @@ A film lives in the user's project at `videos/<film>/` (`BRIEF.md`, `DESIGN.md`,
 - The face at the end must be the face at the start (`start` and the last `face` act), or it snaps at the loop point.
 - A hop taller than about 220 px lifts the antenna out of a 1080 frame; the critique warns when the head leaves it.
 - BOUNCY settles 3.1 s after it starts: fine in a cycle loop, where it carries over the seam, but it keeps the character wobbling if you meant it to hold still.
-- The sign is held by its lower corners: while it is up, the hands ignore their own targets. A sign wider than about 700 px leaves the live area.
+- The sign is held by its lower corners: while it is up, the hands ignore their own targets. A sign wider than about 700 px leaves the live area. Held out to one side (`sign.x`), give it one hand (`hold: 'L'` or `'R'`), or the far arm crosses the face.
+- In another format, move the stage with `stage.raise`, not by patching `ground`: the sunburst and titles pinned `'g'` are measured from the ground as authored.
 - Drawings are held, so a move shorter than two drawings (1/6 s at 12 a second) can vanish between them. Make quick moves at least three drawings long, or give them an anticipation.
 - Stroke-heavy details (lashes, fingers, hair) boil into noise at 1080. Keep features to simple closed shapes.

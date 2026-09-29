@@ -27,8 +27,8 @@ Curious, bouncy, friendly. Original: a bean with big low eyes, a small mouth, ru
 
 ## The stage
 
-- Ground line at y = 848. Sunburst centred at (540, 500), 16 rays in `rays`, turning 1 ray width per loop.
-- Title: DEMO COPY, FICTIONAL PRODUCT, Fredoka 600 30 px, baseline 960.
+- Ground line at y = 848, pinned to the bottom. Sunburst centred at (540, 500), 16 rays in `rays`, turning 1 ray width per loop.
+- Title: DEMO COPY, FICTIONAL PRODUCT, Fredoka 600 30 px, baseline 960, pinned `'g'` (112 px under the ground).
 - Camera: punch to 1.06 at 4.125 s, back to 1 at 7.5 s.
 
 ## The performance
@@ -57,6 +57,18 @@ Curious, bouncy, friendly. Original: a bean with big low eyes, a small mouth, ru
 - Frame 0: Pip standing, smiling, looking left and slightly down. Every act brings its value back by 9.4 s.
 - The last landing's BOUNCY settle (3.1 s) is still going at 10 s and carries over the seam into the start.
 - Cycles: boil 3 drawings (40 per loop), 120 drawings, rays 1, breath 10, antenna sway 5.
+
+## Formats
+
+The same `src/film.html` renders at 9:16 and 16:9 with `--format`; `FILM.formats` re-stages each. Posters: `poster-9x16.png`, `poster-16x9.png` (6.0 s).
+
+| Format | Patch | Staging | Composition |
+|---|---|---|---|
+| 1:1 | none | as above | 15 % top to bottom, 0 % left to right |
+| 9:16 (1080 x 1920) | `stage.raise` 280; Pip `scale` 1.4, the bubble at (-170, 540) from his feet, the JOY hop 280 px (392 on screen) | the ground at 1408 and the small print at 1520, clear of the platform's buttons; the sign 728 px wide; the hops rise into the tall frame | 11 % top to bottom, 0 % left to right |
+| 16:9 (1920 x 1080) | Pip and the sunburst at x 330 (750 in the frame); the bubble at +290; the sign at +330, 500 up, held in the right hand | Pip left of centre under the rays; the bubble and the sign on the open side | 14 % top to bottom, 17 % left to right |
+
+Critique at each: 21 checks, all pass. Loopcheck passes at each.
 
 ## Checks
 

@@ -11,10 +11,11 @@ Step 4. The film is one HTML file with one canvas. [../templates/film.html](../t
 | `drawings` | drawings per second, each held for `FPS / drawings` frames. 12 is "on twos" (at 60 fps a drawing holds for 5 frames). Use a divisor of the frame rate |
 | `boil` | how far the line wobbles, px. Each drawing traces the line again; three tracings repeat. 1 to 2 px |
 | `line` | outline width, px at 1080 |
-| `stage` | `{ ground, sunburst: { x, y, rays, color, spin }, shadow }`: the floor line the feet stand on, a ray background that turns `spin` ray widths per loop (whole numbers), the floor shadow's role |
+| `stage` | `{ ground, pin, raise, sunburst: { x, y, pin, rays, color, spin }, shadow }`: the floor line the feet stand on, a ray background that turns `spin` ray widths per loop (whole numbers), the floor shadow's role. `pin` and `raise` place the ground in other formats (Formats, below) |
 | `cast` | the characters, below |
-| `titles` | still text over the stage: `{ id, text, font, size or cap, track, anchor, x, y, color, on }` (small print, a credit) |
-| `camera` | `[{ at, punch: 1.06, spring }]`: zooms about the centre; the last must return to 1 |
+| `titles` | still text over the stage: `{ id, text, font, size or cap, track, anchor, x, y, pin, color, on }` (small print, a credit) |
+| `camera` | `[{ at, punch: 1.06, spring }]`: zooms about the frame's centre; the last must return to 1 |
+| `formats` | `{ '9:16': { ... }, '16:9': { ... } }`: a patch per format (Formats, below) |
 
 The stage moves on ones (every frame); the characters and their effects move on the held drawings.
 
@@ -25,6 +26,8 @@ Every height is px above the character's feet; x is px from its centre line.
 | Field | Meaning |
 |---|---|
 | `id`, `x` | name, and the canvas x of its feet at rest |
+| `pin` | how `x` maps into another format: none keeps its offset from the centre, `'l'` or `'r'` its distance from that edge |
+| `scale` | grows the whole rig about its feet (1 by default): body, limbs, face, sign, bubble, emotes, dust and hop heights. The line weight stays |
 | `body` | `{ w, h, shape, taper, fill, shade, light }`: a bean. `shape` is the superellipse exponent (2 an ellipse, 3 a rounded box), `taper` narrows the top (0 to 0.3). `fill` the lit colour, `shade` the cel-shadow crescent, `light` the highlight |
 | `legs` | `{ len, gap, width, foot: [w, h] }`: short ink legs and feet under the body |
 | `eyes` | `{ y, gap, rx, ry, pupil }`: white eyes with ink pupils that follow the `look` |
@@ -33,15 +36,15 @@ Every height is px above the character's feet; x is px from its centre line.
 | `cheeks` | `{ y, gap, rx, ry, fill }`: blush |
 | `arms` | `{ y, len, width, hand, rest: [x, y] }`: rubber-hose arms from the shoulders (at height `y`), `len` px long (shorter reaches bend them), mitten hands; `rest` is the hand's offset from the shoulder at rest |
 | `antenna` | `{ len, ball, fill }`: it trails the body's moves and rings after each jolt |
-| `sign` | `{ w, h, y, text, cap, font, fill, pad }`: the board the character pulls out; `y` is its centre's height when held. The lettering keeps `cap` or shrinks to fit inside `pad` |
-| `bubble` | `{ x, y, w, h, cap, font, fill }`: where a speech bubble sits on the canvas; it grows from a tail at the mouth |
+| `sign` | `{ w, h, x, y, hold, text, cap, font, fill, pad }`: the board the character pulls out; `y` is its centre's height when held, `x` its centre's offset from the centre line (0). Both hands hold its lower corners, or `hold: 'L'` or `'R'` holds it with that hand alone, from below and a little toward the body (for a sign held out to one side, so the other arm does not cross the face). The lettering keeps `cap` or shrinks to fit inside `pad` |
+| `bubble` | `{ x, y, w, h, cap, font, fill }`: where a speech bubble's centre sits, px from the character's feet at rest (x across, y up); it grows from a tail at the side of the mouth it is on |
 | `idle` | `{ breathe: [n, amount], sway: [n, degrees] }`: a squash breath and an antenna sway, `n` whole cycles per loop |
 | `start` | `{ look: [x, y], mouth, eyes }`: the face at frame 0 (and so at the end) |
 | `acts` | the performance, below |
 
 ## Acts
 
-Each act is `{ at, act, ... }`. They may be listed in any order; the engine sorts them and gives every value its springs in time order. A value an act moves must be moved back by a later act (a cycle loop), except the one-shot acts that return by themselves (blink, hop without `dx`, wave, emote, say, sign). A walk or a hop with `dx` moves the character: walk it back.
+Each act is `{ at, act, ... }`, with an optional `id` a format patch can reach it by (`acts: [{ id: 'JOY', h: 280 }]`). They may be listed in any order; the engine sorts them and gives every value its springs in time order. A value an act moves must be moved back by a later act (a cycle loop), except the one-shot acts that return by themselves (blink, hop without `dx`, wave, emote, say, sign). A walk or a hop with `dx` moves the character: walk it back.
 
 | Act | Fields | What happens |
 |---|---|---|
@@ -76,11 +79,40 @@ The core's springs (springs.md) plus these, which every act uses:
 
 ## Formats
 
-Positions are canvas pixels; the template is 1:1 (1080 x 1080). For another format move the stage and the cast together:
+The film is authored at 1080 x 1080 and renders at 9:16 (1080 x 1920) or 16:9 (1920 x 1080) with `--format` (core.md, Formats). Every number in FILM stays in 1080 x 1080 px; the engine maps each into the frame by its pin:
 
-- **9:16 (1080 x 1920).** `stage.ground` about 1400 (the character stands in the lower-middle, clear of the platform buttons below), the sunburst centred near y 900, titles between y 360 and 1560, the bubble above the head. The extra height is room for bigger hops.
-- **16:9 (1920 x 1080).** The character left or right of centre (`x` about 640 or 1280), the sign or bubble on the open side, titles on that side too.
-- Hop heights are pixels, so a hop that fits 1080 tall may be small in 1920: scale `h` with the frame.
+| What | Maps by | With no pin |
+|---|---|---|
+| `stage.ground` | `stage.pin` | `'b'`: it keeps its distance from the bottom edge, less `stage.raise` px |
+| the sunburst's centre | `sunburst.pin` | x keeps its offset from the centre, y its height above the ground |
+| a character's `x`, a `pose` act's `x` | the character's `pin` | the offset from the centre |
+| the sign, the bubble, emotes, dust, the shadow | the character | px from its feet, times its `scale` |
+| a title's `x`, `y` | its `pin` | the offset from the centre; `'b'` keeps the distance from the bottom, `'g'` the height above the ground |
+| hop and walk `dx` | | the format's scale (1 between the standard formats) |
+
+The sunburst and the background fill the whole frame in any format; the camera punches about the frame's centre. The GIF keeps the pixel count of a 480 x 480 one: 360 x 640 at 9:16, 640 x 360 at 16:9. The engine declares the sunburst's and the shadow's roles as backdrop, so the core's composition row measures the character, the sign, the bubble and the titles.
+
+Mapping alone keeps a square composition intact inside a taller or wider frame; it does not use the new space. A patch in `FILM.formats` re-stages the film for each frame. The template's:
+
+```js
+formats: {
+  '9:16': {
+    stage: { raise: 280 },
+    cast: [{ id: 'PIP', scale: 1.4, bubble: { x: -170, y: 540 }, acts: [{ id: 'JOY', h: 280 }] }],
+  },
+  '16:9': {
+    stage: { sunburst: { x: 330 } },
+    cast: [{ id: 'PIP', x: 330, bubble: { x: 290 }, sign: { x: 330, y: 500, hold: 'R' } }],
+  },
+},
+```
+
+- **9:16.** Pinned to the bottom, the ground at 848 lands at 1688: Pip stands at the foot of a tall frame under 1200 px of empty rays, and the composition row fails. `raise: 280` lifts the stage to 1408, clear of the platform's buttons; the sunburst and the small print (pinned `'g'`) keep their height above it. `scale: 1.4` fills the width (the sign is 728 px wide, inside the live area), the bubble moves over the shoulder, and the first hop, patched by its `id`, goes 280 x 1.4 = 392 px up into the tall frame.
+- **16:9.** Pip moves left of centre (x 330 maps to 750), the rays follow him, and the bubble and the sign go to the open side on the right; `hold: 'R'` holds the sign out with one hand.
+- Move the stage with `raise`, not by patching `ground`: what is measured from the ground keeps its height above it only while `ground` is the number it was authored against.
+- Patch numbers are 1080 x 1080 px too, mapped by the same pins. Arrays of items with an `id` merge item by item (the cast, an act); any other array is replaced whole.
+
+Check every format you deliver: `render.mjs stills videos/<film> --format 9:16` runs the critique at that format, the composition row included, and writes `stills/9x16/`.
 
 ## Adding something the vocabulary lacks
 

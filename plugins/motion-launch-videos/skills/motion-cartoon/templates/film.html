@@ -26,7 +26,9 @@ canvas{display:block;max-width:100vw;max-height:100vh;width:auto;height:auto}
  * face, rubber-hose arms, legs, an antenna, a sign) and a list of acts in
  * time order: hop, blink, look, face, wave, pose, emote, say, sign.
  * Times are seconds; beat(n) and bar(n) put them on the tempo grid.
- * Rig heights are px above the character's feet; positions are canvas px.
+ * Rig heights are px above the character's feet; positions are canvas px
+ * of the 1080 x 1080 base, mapped into other formats by their pins, and
+ * FILM.formats re-stages each format (reference/engine.md, Formats).
  * The character is drawn on twos (FILM.drawings per second, held) with a
  * three-drawing line boil; the stage behind it moves on ones.
  * A 'cycle' loop keeps moving through the seam: every act that moves a
@@ -72,7 +74,7 @@ const FILM = {
       arms: { y: 196, len: 150, width: 18, hand: 29 },
       antenna: { len: 92, ball: 21, fill: 'coral' },
       sign: { w: 520, h: 196, y: 470, text: 'ACME NOTES', cap: 76, fill: 'paper' },
-      bubble: { x: 270, y: 470, w: 250, h: 150, cap: 72, fill: 'white' },
+      bubble: { x: -270, y: 378, w: 250, h: 150, cap: 72, fill: 'white' },
       idle: { breathe: [10, 0.018], sway: [5, 4] },   // [cycles per loop, amount]: squash breath, antenna sway in degrees
       start: { look: [-0.45, 0.1], mouth: 'smile', eyes: 'round' },
       acts: [
@@ -80,7 +82,7 @@ const FILM = {
         { at: beat(1), act: 'blink' },
         { at: beat(1.5), act: 'face', mouth: 'o', brow: 14, pop: 1.08 },
         { at: beat(1.5), act: 'emote', kind: '!', until: beat(3) },
-        { at: beat(2.75), act: 'hop', h: 210, air: beat(1.5) },
+        { id: 'JOY', at: beat(2.75), act: 'hop', h: 210, air: beat(1.5) },
         { at: beat(2.75), act: 'face', mouth: 'grin', brow: 0 },
         { at: beat(5), act: 'wave', arm: 'R', swings: 4, every: 8 },
         { at: beat(5.25), act: 'say', text: 'HI!', until: beat(7.25) },
@@ -99,11 +101,23 @@ const FILM = {
     },
   ],
   titles: [
-    { id: 'DEMO', text: 'DEMO COPY, FICTIONAL PRODUCT', font: 'small', size: 30, track: 40, anchor: 'C', x: 540, y: 960, color: 'ink' },
+    { id: 'DEMO', text: 'DEMO COPY, FICTIONAL PRODUCT', font: 'small', size: 30, track: 40, anchor: 'C', x: 540, y: 960, pin: 'g', color: 'ink' },
   ],
   camera: [
     { at: beat(8.25), punch: 1.06 }, { at: beat(15), punch: 1 },
   ],
+  // Other formats (render.mjs --format 9:16): the numbers above stay 1080 x 1080 px and are mapped (the ground
+  // keeps its distance from the bottom, Pip's x its offset from the centre); these patches re-stage each frame.
+  formats: {
+    '9:16': {                                  // a bigger Pip on a raised stage, the bubble over its shoulder
+      stage: { raise: 280 },
+      cast: [{ id: 'PIP', scale: 1.4, bubble: { x: -170, y: 540 }, acts: [{ id: 'JOY', h: 280 }] }],
+    },
+    '16:9': {                                  // Pip left of centre under the rays; the bubble and the sign on the open side
+      stage: { sunburst: { x: 330 } },
+      cast: [{ id: 'PIP', x: 330, bubble: { x: 290 }, sign: { x: 330, y: 500, hold: 'R' } }],
+    },
+  },
 };
 
 /* ===== CORE BEGIN: shared/core.js, synced by tools/sync.mjs. Do not edit it here. ===== */
@@ -791,9 +805,16 @@ const DRAW_FPS = FILM.drawings || 12;
 const BOIL = FILM.boil != null ? FILM.boil : 1.5;
 const LINE = (FILM.line || 9) * U;
 const STAGE = FILM.stage || {};
-const GROUND = STAGE.ground != null ? STAGE.ground : Math.round(H * 0.8);
+// Formats: positions are authored in the base format and mapped here. The ground keeps its distance from the
+// edge its pin names (the bottom by default), less `raise` px; the sunburst and titles pinned 'g' keep their
+// height above the ground; a character's x keeps its offset from the centre (or its pin), and its `scale`
+// grows the whole rig, its hops and its bubble about its feet.
+const GPIN = STAGE.pin != null ? STAGE.pin : 'b';
+const GROUND0 = STAGE.ground != null ? STAGE.ground : Math.round(FMT.BH * 0.8);   // as authored
+const GROUND = (STAGE.ground != null ? fmtY(STAGE.ground, GPIN) : Math.round(H * 0.8)) - fmtSz(STAGE.raise || 0);
+const onGround = (y) => GROUND + (y - GROUND0) * FMT.s;   // an authored y that keeps its height above the ground
 const CAST = [], TITLES = [], EFFECTS = [];
-let camZ = null;
+let camZ = null, SUN = null;
 const SHAKES = [];
 const clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
 const lerp = (a, b, k) => a + (b - a) * k;
@@ -863,7 +884,11 @@ function halfWidthAt(Ch, hgt) {                     // the body's half width at 
 const MOUTHS = ['smile', 'grin', 'open', 'o', 'flat', 'frown'];
 function buildCharacter(spec, ci) {
   const Ch = { spec, id: spec.id, ci, legLen: (spec.legs || {}).len || 40, props: {}, hops: [], walks: [], faces: [], emotes: [], says: [], signs: [], impacts: [] };
-  const B = spec.body;
+  const B = spec.body, K = Ch.k = spec.scale || 1, X0 = Ch.x0 = fmtX(spec.x, spec.pin);
+  if (spec.bubble) {                                 // the bubble's centre, placed from the character's feet at rest
+    Ch.bx = X0 + spec.bubble.x * K * FMT.s; Ch.by = GROUND - spec.bubble.y * K * FMT.s;
+    Ch.bubSide = spec.bubble.x < 0 ? -1 : 1;
+  }
   for (const k of ['fill', 'shade', 'light']) if (B[k]) role(B[k]);
   role('ink'); role('white');
   Ch.tongue = role((spec.mouth || {}).tongue || 'coral');
@@ -873,8 +898,8 @@ function buildCharacter(spec, ci) {
   const look = st.look || [0, 0];
   Ch.arm = spec.arms || { y: 190, len: 150, width: 18, hand: 28 };
   Ch.restHand = { L: [-(Ch.arm.rest || [58, 104])[0], (Ch.arm.rest || [58, 104])[1]], R: [(Ch.arm.rest || [58, 104])[0], (Ch.arm.rest || [58, 104])[1]] };
-  const v0 = { x: spec.x, dy: 0, lean: 0, sq: 1, lookX: look[0], lookY: look[1], eye: 1, brow: 0, open: 1, sign: 0, bub: 0,
-    hLx: Ch.restHand.L[0], hLy: Ch.restHand.L[1], hRx: Ch.restHand.R[0], hRy: Ch.restHand.R[1], xLag: spec.x, dyLag: 0 };
+  const v0 = { x: X0, dy: 0, lean: 0, sq: 1, lookX: look[0], lookY: look[1], eye: 1, brow: 0, open: 1, sign: 0, bub: 0,
+    hLx: Ch.restHand.L[0], hLy: Ch.restHand.L[1], hRx: Ch.restHand.R[0], hRy: Ch.restHand.R[1], xLag: X0, dyLag: 0 };
   const EV = {};
   for (const [k, v] of Object.entries(v0)) { Ch.props[k] = new Prop(v, `${Ch.id}.${k}`); EV[k] = []; }
   const ev = (k, t, v, sp, dx) => EV[k].push([t, v, sp || 'SNAP', EV[k].length, dx || 0]);   // v null: move by dx
@@ -884,14 +909,14 @@ function buildCharacter(spec, ci) {
     const t = a.at;
     switch (a.act) {
       case 'hop': {                                 // anticipation, stretch, a ballistic arc, an impact squash, a bouncy settle
-        const air = a.air || beat(1.5), h = a.h != null ? a.h : 180, dx = a.dx || 0, antic = a.antic != null ? a.antic : 0.16;
+        const air = a.air || beat(1.5), h = a.h != null ? a.h : 180, dx = (a.dx || 0) * FMT.s, antic = a.antic != null ? a.antic : 0.16;
         const land = t + air;
         ev('sq', t - antic, 0.8, 'SNAP'); ev('sq', t, 1.16, 'SNAP'); ev('sq', t + air * 0.55, 1.02, 'GLIDE');
         ev('sq', land, 0.72, 'SNAP'); ev('sq', land + 0.09, 1, 'BOUNCY');
         if (dx) { const sp = [1, 4.744 / air]; ev('x', t, null, sp, dx); ev('xLag', t, null, [0.32, 9], dx); }
         ev('hLx', t, -96, 'SNAP'); ev('hLy', t, -118, 'SNAP'); ev('hRx', t, 96, 'SNAP'); ev('hRy', t, -118, 'SNAP');
         ev('hLx', land, Ch.restHand.L[0], 'BOUNCY'); ev('hLy', land, Ch.restHand.L[1], 'BOUNCY'); ev('hRx', land, Ch.restHand.R[0], 'BOUNCY'); ev('hRy', land, Ch.restHand.R[1], 'BOUNCY');
-        Ch.hops.push({ t, air, h, land });
+        Ch.hops.push({ t, air, h: h * K, land });
         Ch.impacts.push({ t: land, amp: Math.min(1, h / 200) });
         if (a.dust !== false) EFFECTS.push({ kind: 'dust', t: land, ch: Ch, amp: Math.min(1.2, h / 180) });
         if (h >= 160 && a.shake !== false) SHAKES.push({ t: land, amp: 10 * Math.min(1, h / 220) * U });
@@ -899,7 +924,7 @@ function buildCharacter(spec, ci) {
         break;
       }
       case 'walk': {                                // steps on the grid: a surge forward, a dip and a squash on each contact
-        const n = a.steps || 4, every = noteSec(a.every || 8), dx = a.dx || 0, per = dx / n, sg = Math.sign(dx) || 1, bob = a.bob != null ? a.bob : 7;
+        const n = a.steps || 4, every = noteSec(a.every || 8), dx = (a.dx || 0) * FMT.s, per = dx / n, sg = Math.sign(dx) || 1, bob = a.bob != null ? a.bob : 7;
         for (let k = 0; k < n; k++) {
           const ts = t + k * every;
           if (per) { ev('x', ts, null, [1, 4.744 / (every * 0.9)], per); ev('xLag', ts, null, [0.32, 9], per); }
@@ -934,7 +959,7 @@ function buildCharacter(spec, ci) {
         if (a.dy != null) { ev('dy', t, a.dy, a.spring); ev('dyLag', t, a.dy, [0.32, 9]); }
         if (a.lean != null) ev('lean', t, a.lean, a.spring || 'SWING');
         if (a.sq != null) ev('sq', t, a.sq, a.spring);
-        if (a.x != null) { ev('x', t, a.x, a.spring || 'LAND'); ev('xLag', t, a.x, [0.32, 9]); }
+        if (a.x != null) { const x = fmtX(a.x, spec.pin); ev('x', t, x, a.spring || 'LAND'); ev('xLag', t, x, [0.32, 9]); }
         if (a.armL) { ev('hLx', t, a.armL[0], a.spring); ev('hLy', t, a.armL[1], a.spring); }
         if (a.armR) { ev('hRx', t, a.armR[0], a.spring); ev('hRy', t, a.armR[1], a.spring); }
         break;
@@ -991,8 +1016,8 @@ function rigAt(Ch, td) {
   let sq = P.sq.at(td);
   if (idle.breathe) sq *= 1 + idle.breathe[1] * Math.sin(cyc(td, idle.breathe[0]));
   const up = lift(Ch, td);
-  const sy = sq, sx = 1 / Math.sqrt(sq);
-  const x = P.x.at(td), baseY = GROUND - up + P.dy.at(td), lean = P.lean.at(td) * DEG;
+  const K = Ch.k, sy = sq * K, sx = K / Math.sqrt(sq);   // the rig's own px to canvas px: squash and the character's scale
+  const x = P.x.at(td), baseY = GROUND - up + P.dy.at(td) * K, lean = P.lean.at(td) * DEG;
   const cl = Math.cos(lean), sl = Math.sin(lean);
   const T = (lx, ly) => { const a = lx * sx, b = ly * sy; return [x + a * cl - b * sl, baseY + a * sl + b * cl]; };   // own space (y up is negative) to canvas
   // antenna follow-through: it trails the body's moves (lagged springs) and rings after each jolt
@@ -1005,12 +1030,12 @@ function rigAt(Ch, td) {
 
 /* ---------------- drawing the character ---------------- */
 function drawShadow(c, Ch, R) {
-  const B = Ch.spec.body, k = 1 / (1 + R.up / 260);
+  const B = Ch.spec.body, k = 1 / (1 + R.up / (260 * Ch.k));
   c.fillStyle = col(STAGE.shadow || 'shadow');
-  c.beginPath(); c.ellipse(R.x, GROUND + 4 * U, B.w * 0.46 * k * R.sx, 22 * U * k, 0, 0, TAU); c.fill();
+  c.beginPath(); c.ellipse(R.x, GROUND + 4 * U, B.w * 0.46 * k * R.sx, 22 * U * k * Ch.k, 0, 0, TAU); c.fill();
 }
 function drawCharacter(c, Ch, td, dn) {
-  const S0 = Ch.spec, B = S0.body, R = rigAt(Ch, td), T = R.T, seed = 0x1000 * (Ch.ci + 1);
+  const S0 = Ch.spec, B = S0.body, R = rigAt(Ch, td), T = R.T, seed = 0x1000 * (Ch.ci + 1), K = Ch.k;
   const shoulderY = -(Ch.arm.y), hw = halfWidthAt(Ch, Ch.arm.y);
   // hands: their own targets, or the sign's lower corners while it is up
   const sg = S0.sign, sk = clamp(R.sign, 0, 1.4);
@@ -1019,18 +1044,22 @@ function drawCharacter(c, Ch, td, dn) {
     let p = [sh[0] + own[0], sh[1] + own[1]];
     const st = R.stride;
     if (st) { const opp = (s === 'L' ? -1 : 1) === st.side ? -1 : 1; p = [p[0] + opp * st.swing * 0.7, p[1] - Math.abs(st.swing) * 0.15]; }   // arms swing against the legs
-    if (sg && sk > 0) { const corner = [(s === 'L' ? -1 : 1) * sg.w * 0.36 * Math.min(1, sk), -(sg.y - sg.h * 0.3)]; p = [lerp(p[0], corner[0], Math.min(1, sk)), lerp(p[1], corner[1], Math.min(1, sk))]; }
+    if (sg && sk > 0 && (!sg.hold || sg.hold === s)) {   // both hands on its lower corners, or one (hold: 'L' or 'R') under its middle
+      const corner = sg.hold ? [(sg.x || 0) - Math.sign(sg.x || 0) * sg.w * 0.12, -(sg.y - sg.h * 0.45)]
+        : [(sg.x || 0) + (s === 'L' ? -1 : 1) * sg.w * 0.36 * Math.min(1, sk), -(sg.y - sg.h * 0.3)];
+      p = [lerp(p[0], corner[0], Math.min(1, sk)), lerp(p[1], corner[1], Math.min(1, sk))];
+    }
     return { sh, p };
   };
   const arms = { L: hand('L'), R: hand('R') };
   const drawArm = (s) => {
     const { sh, p } = arms[s], a = T(sh[0], sh[1]), b = T(p[0], p[1]);
-    const d = Math.hypot(b[0] - a[0], b[1] - a[1]), L = Ch.arm.len;
+    const d = Math.hypot(b[0] - a[0], b[1] - a[1]), L = Ch.arm.len * K;
     const bulge = Math.sqrt(Math.max(0, L * L - d * d)) * 0.5 + 6;
     const nx = -(b[1] - a[1]) / (d || 1), ny = (b[0] - a[0]) / (d || 1), sgn = s === 'L' ? -1 : 1;
     const m = [(a[0] + b[0]) / 2 + nx * bulge * sgn * 0.6, (a[1] + b[1]) / 2 + ny * bulge * sgn * 0.6];
-    noodle(c, [a, m, b], col(B.fill), Ch.arm.width * U, dn, seed + (s === 'L' ? 11 : 13));
-    const hp = boilPts(ellipsePts(b[0], b[1], Ch.arm.hand * U, Ch.arm.hand * U, 20), seed + (s === 'L' ? 17 : 19), dn, BOIL * 0.5);
+    noodle(c, [a, m, b], col(B.fill), Ch.arm.width * U * K, dn, seed + (s === 'L' ? 11 : 13));
+    const hp = boilPts(ellipsePts(b[0], b[1], Ch.arm.hand * U * K, Ch.arm.hand * U * K, 20), seed + (s === 'L' ? 17 : 19), dn, BOIL * 0.5);
     inked(c, smoothPath(hp, true), col(B.fill), LINE);
   };
   // legs and feet, behind the body
@@ -1038,16 +1067,16 @@ function drawCharacter(c, Ch, td, dn) {
   for (const s of [-1, 1]) {
     const step = st ? (s === st.side ? [st.swing, -st.lift] : [-st.swing * 0.6, 0]) : [0, 0];   // the stepping foot swings forward, the planted one slides back
     const hip = T(s * lg.gap / 2 * 0.8, -Ch.legLen - 8), foot = T(s * (lg.gap / 2 + air * 10) + step[0], -air * 14 + step[1]);
-    noodle(c, [hip, [(hip[0] + foot[0]) / 2, (hip[1] + foot[1]) / 2], foot], col('ink'), lg.width * U, dn, seed + (s < 0 ? 23 : 29));
-    const f = boilPts(ellipsePts(foot[0] + s * 10 * U, foot[1] - 4 * U, lg.foot[0] / 2 * U, lg.foot[1] / 2 * U, 18), seed + (s < 0 ? 31 : 37), dn, BOIL * 0.4);
+    noodle(c, [hip, [(hip[0] + foot[0]) / 2, (hip[1] + foot[1]) / 2], foot], col('ink'), lg.width * U * K, dn, seed + (s < 0 ? 23 : 29));
+    const f = boilPts(ellipsePts(foot[0] + s * 10 * U * K, foot[1] - 4 * U * K, lg.foot[0] / 2 * U * K, lg.foot[1] / 2 * U * K, 18), seed + (s < 0 ? 31 : 37), dn, BOIL * 0.4);
     inked(c, smoothPath(f, true), col('ink'), 0);
   }
   // antenna, behind the head
   if (S0.antenna) {
     const A = S0.antenna, top = -(Ch.legLen + B.h), L = A.len, bd = R.bend;
     const pts = [[0, top + 6], [Math.sin(bd) * L * 0.45, top - Math.cos(bd) * L * 0.5], [Math.sin(bd * 1.6) * L, top - Math.cos(bd * 1.6) * L]].map(([a, b]) => T(a, b));
-    noodle(c, pts, col('ink'), 5 * U, dn, seed + 41);
-    const end = pts[2], ball = boilPts(ellipsePts(end[0], end[1], A.ball * U, A.ball * U, 20), seed + 43, dn, BOIL * 0.5);
+    noodle(c, pts, col('ink'), 5 * U * K, dn, seed + 41);
+    const end = pts[2], ball = boilPts(ellipsePts(end[0], end[1], A.ball * U * K, A.ball * U * K, 20), seed + 43, dn, BOIL * 0.5);
     inked(c, smoothPath(ball, true), col(A.fill || 'coral'), LINE);
   }
   // the sign sits behind the arms, in front of the body
@@ -1123,11 +1152,12 @@ function drawFace(c, Ch, R, dn, seed) {
 function drawSign(c, Ch, R, td, dn, seed) {           // a board pulled out of thin air, held by its lower corners
   const Sg = Ch.spec.sign, k = Math.max(0, R.sign), T = R.T;
   const wob = 4 * ring(td, (Ch.signs.find((s) => td >= s.t) || Ch.signs[0]).t, [0.3, 14]);
-  const cx = 0, cy = -Sg.y;
+  const cx = Sg.x || 0, cy = -Sg.y;
   const rect = (w, h) => { const out = [], n = 10, r = 26; for (const [x0, y0, x1, y1] of [[-w / 2 + r, -h / 2, w / 2 - r, -h / 2], [w / 2, -h / 2 + r, w / 2, h / 2 - r], [w / 2 - r, h / 2, -w / 2 + r, h / 2], [-w / 2, h / 2 - r, -w / 2, -h / 2 + r]]) for (let i = 0; i < n; i++) out.push([x0 + (x1 - x0) * i / n, y0 + (y1 - y0) * i / n]); return out; };
   const place = ([a, b]) => { const rot = wob * DEG; return T(cx + k * (a * Math.cos(rot) - b * Math.sin(rot)), cy + k * (a * Math.sin(rot) + b * Math.cos(rot))); };
   const board = smoothPath(boilPts(rect(Sg.w, Sg.h).map(place), seed + 100, dn, BOIL), true);
-  inked(c, board, col(Sg.fill || 'paper'), LINE);
+  // the outline never outweighs the board: a board a few px tall (appearing, vanishing) gets a hairline, not a 9 px ink dot
+  inked(c, board, col(Sg.fill || 'paper'), Math.min(LINE, Sg.h * k * Ch.k / 8));
   const L = Ch.signLine, base = L.capH / 2;
   const sgn = Ch.signs.find((s) => td >= s.t - 1e-9 && td < s.until + 0.6) || Ch.signs[0];
   c.save();
@@ -1149,16 +1179,16 @@ function drawSign(c, Ch, R, td, dn, seed) {           // a board pulled out of t
   c.restore();
 }
 function drawBubble(c, Ch, R, td, dn, seed) {        // a speech bubble growing from its tail
-  const Bb = Ch.spec.bubble, k = Math.max(0, R.bub), T = R.T;
-  const tail = T(-Ch.spec.body.w * 0.2, -(Ch.spec.mouth.y + 40));
-  const bx = Bb.x, by = Bb.y, ox = (bx - tail[0]), oy = (by - tail[1]);
-  const pts = ellipsePts(0, 0, Bb.w / 2, Bb.h / 2, 36);
+  const Bb = Ch.spec.bubble, k = Math.max(0, R.bub), T = R.T, K = Ch.k;
+  const tail = T(Ch.bubSide * Ch.spec.body.w * 0.2, -(Ch.spec.mouth.y + 40));   // from the side of the mouth the bubble is on
+  const bx = Ch.bx, by = Ch.by, ox = (bx - tail[0]), oy = (by - tail[1]);
+  const pts = ellipsePts(0, 0, Bb.w / 2 * K, Bb.h / 2 * K, 36);
   const ti = pts.reduce((bi, p, i) => (Math.hypot(p[0] + ox, p[1] + oy) < Math.hypot(pts[bi][0] + ox, pts[bi][1] + oy) ? i : bi), 0);
   const withTail = pts.slice(0, ti).concat([[-ox * 0.9, -oy * 0.9]], pts.slice(ti + 1));
   const place = ([a, b]) => [tail[0] + (ox + a) * k, tail[1] + (oy + b) * k];
   inked(c, smoothPath(boilPts(withTail.map(place), seed + 120, dn, BOIL), true), col(Bb.fill || 'white'), LINE);
   const s = Ch.says.find((q) => td >= q.t - 1e-9 && td < q.until + 0.6) || Ch.says[0], L = Ch.sayLines[Ch.says.indexOf(s)];
-  c.save(); c.translate(tail[0] + ox * k, tail[1] + oy * k); c.scale(k, k);
+  c.save(); c.translate(tail[0] + ox * k, tail[1] + oy * k); c.scale(k * K, k * K);
   setFont(c, L.font); c.fillStyle = col('ink');
   for (const g of L.glyphs) if (!g.space) c.fillText(g.ch, g.x + (hash(seed + 130, g.i, dn % 3) - 0.5) * BOIL, L.capH / 2 + (hash(seed + 131, g.i, dn % 3) - 0.5) * BOIL);
   c.restore();
@@ -1166,10 +1196,10 @@ function drawBubble(c, Ch, R, td, dn, seed) {        // a speech bubble growing 
 function drawEmote(c, Ch, R, e, td, dn, seed) {
   const pop = S(td - e.t, spring('POP')) - S(td - e.until, spring('EXIT'));
   if (pop <= 0.01) return;
-  const top = R.T(0, -(Ch.legLen + Ch.spec.body.h + (Ch.spec.antenna ? Ch.spec.antenna.len : 0) + 40));
+  const top = R.T(0, -(Ch.legLen + Ch.spec.body.h + (Ch.spec.antenna ? Ch.spec.antenna.len : 0) + 40)), K = Ch.k;
   if (e.kind === '!' || e.kind === '?') {
-    const L = Ch.emoteLine[e.kind], x = top[0] + 150 * U, y = top[1] + 60 * U, wob = 10 * ring(td, e.t, [0.3, 16]) * DEG;
-    c.save(); c.translate(x, y); c.rotate(0.18 + wob); c.scale(pop, pop);
+    const L = Ch.emoteLine[e.kind], x = top[0] + 150 * U * K, y = top[1] + 60 * U * K, wob = 10 * ring(td, e.t, [0.3, 16]) * DEG;
+    c.save(); c.translate(x, y); c.rotate(0.18 + wob); c.scale(pop * K, pop * K);
     setFont(c, L.font); c.lineJoin = 'round'; c.lineWidth = LINE * 1.4; c.strokeStyle = col('ink'); c.fillStyle = Ch.tongue;
     for (const g of L.glyphs) { c.strokeText(g.ch, g.x, L.capH / 2); c.fillText(g.ch, g.x, L.capH / 2); }
     c.restore();
@@ -1178,24 +1208,24 @@ function drawEmote(c, Ch, R, e, td, dn, seed) {
     spots.forEach(([dx, dy], i) => {
       const t0 = e.t + i * noteSec(8), k = (S(td - t0, spring('POP')) - S(td - e.until - i * 0.06, spring('EXIT'))) * (1 + 0.18 * Math.sin(cyc(td, 20, i * 0.25)));
       if (k <= 0.01) return;
-      const p = starPts(top[0] + dx * U, top[1] + 280 * U + dy * U, 34 * U * k, 0.34, 4, 0);
+      const p = starPts(top[0] + dx * U * K, top[1] + 280 * U * K + dy * U * K, 34 * U * k * K, 0.34, 4, 0);
       inked(c, smoothPath(boilPts(p, seed + 140 + i, dn, BOIL * 0.3), true), col('white'), LINE * 0.8);
     });
   } else if (e.kind === 'heart') {
-    const x = top[0] + 150 * U, y = top[1] + 60 * U, pts = [];
-    for (let i = 0; i < 32; i++) { const a = TAU * i / 32; pts.push([x + pop * 44 * U * 16 * Math.pow(Math.sin(a), 3) / 16, y - pop * 44 * U * (13 * Math.cos(a) - 5 * Math.cos(2 * a) - 2 * Math.cos(3 * a) - Math.cos(4 * a)) / 16]); }
+    const x = top[0] + 150 * U * K, y = top[1] + 60 * U * K, pts = [];
+    for (let i = 0; i < 32; i++) { const a = TAU * i / 32; pts.push([x + pop * 44 * U * K * 16 * Math.pow(Math.sin(a), 3) / 16, y - pop * 44 * U * K * (13 * Math.cos(a) - 5 * Math.cos(2 * a) - 2 * Math.cos(3 * a) - Math.cos(4 * a)) / 16]); }
     inked(c, smoothPath(boilPts(pts, seed + 150, dn, BOIL * 0.5), true), col('coral'), LINE);
   }
 }
 function drawDust(c, fx, td, dn) {                    // puffs rolling out from the feet, shrinking away
   const tau = td - fx.t;
   if (tau < 0 || tau > 0.7) return;
-  const R = rigAt(fx.ch, fx.t), k = tau / 0.7;
+  const R = rigAt(fx.ch, fx.t), k = tau / 0.7, K = fx.ch.k;
   for (let i = 0; i < 6; i++) {
     const s = i % 2 ? 1 : -1, j = Math.floor(i / 2);
-    const r = (26 + 10 * j) * U * fx.amp * (1 - k) * Math.min(1, tau * 14);
+    const r = (26 + 10 * j) * U * fx.amp * (1 - k) * Math.min(1, tau * 14) * K;
     if (r < 1) continue;
-    const x = R.x + s * (fx.ch.spec.body.w * 0.3 + (60 + 70 * j) * k * U), y = GROUND - (8 + 26 * j * k + 16 * k) * U;
+    const x = R.x + s * (fx.ch.spec.body.w * 0.3 * K + (60 + 70 * j) * k * U * K), y = GROUND - (8 + 26 * j * k + 16 * k) * U * K;
     inked(c, smoothPath(boilPts(ellipsePts(x, y, r, r * 0.86, 16), 0x2000 + i, dn, BOIL * 0.4), true), col('white'), LINE * 0.8);
   }
 }
@@ -1204,10 +1234,10 @@ function drawDust(c, fx, td, dn) {                    // puffs rolling out from 
 function drawSunburst(c, t) {                         // rays turning a whole number of ray widths per loop
   const sb = STAGE.sunburst;
   if (!sb) return;
-  const n = sb.rays || 16, rot = TAU / n * (sb.spin || 0) * t / DUR, R = Math.hypot(W, H);
+  const n = sb.rays || 16, rot = TAU / n * (sb.spin || 0) * t / DUR, R = Math.hypot(W, H), [ox, oy] = SUN;   // R reaches every corner: the rays fill W x H
   c.fillStyle = col(sb.color || 'rays');
   c.beginPath();
-  for (let k = 0; k < n; k++) { const a0 = rot + TAU * k / n, a1 = a0 + TAU / n / 2; c.moveTo(sb.x, sb.y); c.lineTo(sb.x + R * Math.cos(a0), sb.y + R * Math.sin(a0)); c.lineTo(sb.x + R * Math.cos(a1), sb.y + R * Math.sin(a1)); c.closePath(); }
+  for (let k = 0; k < n; k++) { const a0 = rot + TAU * k / n, a1 = a0 + TAU / n / 2; c.moveTo(ox, oy); c.lineTo(ox + R * Math.cos(a0), oy + R * Math.sin(a0)); c.lineTo(ox + R * Math.cos(a1), oy + R * Math.sin(a1)); c.closePath(); }
   c.fill();
 }
 function cameraAt(td) {
@@ -1242,6 +1272,11 @@ function charBox(Ch, td) {                            // the character's box on 
   const pts = [[-B.w / 2 - 60, 0], [B.w / 2 + 60, 0], [-B.w / 2 - 60, -top], [B.w / 2 + 60, -top]].map(([a, b]) => R.T(a, b));
   return [Math.min(...pts.map((p) => p[0])), Math.min(...pts.map((p) => p[1])), Math.max(...pts.map((p) => p[0])), Math.max(...pts.map((p) => p[1]))];
 }
+function signBox(Ch, td) {                            // the board held up, at full size
+  const Sg = Ch.spec.sign, R = rigAt(Ch, td), cx = Sg.x || 0, cy = -Sg.y;
+  const pts = [[-1, -1], [1, -1], [-1, 1], [1, 1]].map(([a, b]) => R.T(cx + a * Sg.w / 2, cy + b * Sg.h / 2));
+  return [Math.min(...pts.map((p) => p[0])), Math.min(...pts.map((p) => p[1])), Math.max(...pts.map((p) => p[0])), Math.max(...pts.map((p) => p[1]))];
+}
 function visible(t) {
   const td = drawing(frameOf(t) / FPS, DRAW_FPS) / DRAW_FPS;
   if (TITLES.length) return true;
@@ -1253,6 +1288,8 @@ function checks(add) {
   add('drawings', Math.abs(hold - Math.round(hold)) < 1e-9 ? 'PASS' : 'WARN', `${DRAW_FPS} drawings a second: each held ${+hold.toFixed(3)} frames${Math.abs(hold - Math.round(hold)) < 1e-9 ? '' : ' (uneven holds judder; use a divisor of the frame rate)'}`);
   for (const Ch of CAST) {
     checkLiveArea(add, `${Ch.id} at rest`, charBox(Ch, 0), false);
+    if (Ch.signs.length) checkLiveArea(add, `${Ch.id} sign`, signBox(Ch, Ch.signs[0].t + 1.2), false);
+    if (Ch.says.length) { const Bb = Ch.spec.bubble, K = Ch.k; checkLiveArea(add, `${Ch.id} bubble`, [Ch.bx - Bb.w / 2 * K, Ch.by - Bb.h / 2 * K, Ch.bx + Bb.w / 2 * K, Ch.by + Bb.h / 2 * K], false); }
     const f0 = Ch.face[0], fl = faceAt(Ch, DUR);
     add(`loop face: ${Ch.id}`, LOOP !== 'cycle' || (f0.mouth === fl.mouth && f0.eyes === fl.eyes) ? 'PASS' : 'FAIL', `starts ${f0.mouth}/${f0.eyes}, ends ${fl.mouth}/${fl.eyes}${LOOP === 'cycle' && (f0.mouth !== fl.mouth || f0.eyes !== fl.eyes) ? ': the face snaps at the loop point; end on the starting face' : ''}`);
     for (const h of Ch.hops) {
@@ -1294,12 +1331,18 @@ function layout() {
 function build() {
   (FILM.cast || []).forEach((spec, i) => CAST.push(buildCharacter(spec, i)));
   for (const T0 of FILM.titles || []) {
-    const line = layoutText({ id: T0.id, text: T0.text, font: T0.font || 'display', size: T0.size, cap: T0.cap, fit: T0.fit, track: T0.track, anchor: T0.anchor || 'C', x: T0.x, baseline: T0.y });
+    const pin = T0.pin || '', y = /g/.test(pin) ? onGround(T0.y) : fmtY(T0.y, pin);   // 'g': its height above the ground
+    const line = layoutText({ id: T0.id, text: T0.text, font: T0.font || 'display', size: T0.size != null ? fmtSz(T0.size) : undefined, cap: T0.cap != null ? fmtSz(T0.cap) : undefined,
+      fit: T0.fit, track: T0.track, anchor: T0.anchor || 'C', x: T0.x != null ? fmtX(T0.x, pin) : undefined, baseline: y });
     role(T0.color || 'ink');
     TITLES.push({ ...T0, line, color: T0.color || 'ink' });
     needContrast(T0.id, T0.color || 'ink', T0.on || 'bg', (T0.size || 99) < 40 ? 4.5 : 3);
   }
-  if (STAGE.sunburst) role(STAGE.sunburst.color || 'rays');
+  if (STAGE.sunburst) {                                // its centre keeps its height above the ground, unless it has a pin
+    const sb = STAGE.sunburst;
+    role(sb.color || 'rays');
+    SUN = [fmtX(sb.x, sb.pin), sb.pin != null ? fmtY(sb.y, sb.pin) : onGround(sb.y)];
+  }
   role(STAGE.shadow || 'shadow');
   camZ = new Prop(1, 'camera.z');
   for (const k of (FILM.camera || []).slice().sort((a, b) => a.at - b.at)) if (k.punch != null) camZ.to(k.at, k.punch, k.spring || 'PUNCH');
@@ -1307,9 +1350,11 @@ function build() {
 
 boot({
   name: 'cartoon',
+  backdrop: [...new Set([STAGE.sunburst && (STAGE.sunburst.color || 'rays'), STAGE.shadow || 'shadow'].filter(Boolean))],   // the stage fills the frame: not composition
   springs: { SNAP: [0.7, 38], POP: [0.42, 20], BOUNCY: [0.32, 16], SWING: [0.5, 14], GLIDE: [1, 12] },
   always: true,
-  gif: { fps: DRAW_FPS <= 25 && FPS % DRAW_FPS === 0 ? DRAW_FPS : 20 },   // one GIF frame per drawing
+  gif: { fps: DRAW_FPS <= 25 && FPS % DRAW_FPS === 0 ? DRAW_FPS : 20,   // one GIF frame per drawing,
+    width: Math.round(480 * Math.sqrt(W / H) / 2) * 2 },                 // as many pixels as 480 x 480 in any format
   build, draw: (c, t, q) => drawFrame(c, t, q), checks, cycles, stills, layout, visible,
 });
 })();
