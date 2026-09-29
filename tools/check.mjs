@@ -80,6 +80,8 @@ if (smoke) {
       const name = path.basename(dir), film = path.join(tmp, `${name}-demo`);
       fs.mkdirSync(path.join(film, 'src'), { recursive: true });
       fs.copyFileSync(path.join(dir, 'templates', 'film.html'), path.join(film, 'src', 'film.html'));
+      const assets = path.join(dir, 'templates', 'assets');     // a template whose demo embeds images or audio
+      if (fs.existsSync(assets)) fs.cpSync(assets, path.join(film, 'assets'), { recursive: true });
       const run = (...a) => spawnSync(process.execPath, a, { encoding: 'utf8', cwd: ROOT, maxBuffer: 1 << 26 });
       const f = run(path.join(dir, 'scripts', 'fonts.mjs'), film);
       if (f.status !== 0) { ok(false, `${name}: fonts`, f.stderr.trim().split('\n').pop()); continue; }

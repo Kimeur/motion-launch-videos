@@ -295,12 +295,25 @@ async function loopcheck({ page, meta }) {
     let hold = 0;                                          // frames at the tail identical to frame 0
     if (loop === 'hold') for (let n = N - 1; n > 0 && hold < N; n--) { if (diff(s0, at(n / FPS)).max) break; hold++; }
     // continuity over the seam: the film 0.1 ms before the loop point against frame 0 (both read frame 0's
-    // discrete state), next to the same 0.1 ms step inside the frames either side of the seam, for scale
+    // discrete state), next to the same 0.1 ms step at frames either side of the seam and through the film, for
+    // scale. Measured on 32 px block averages, not changed pixels: an image drawn at a new sub-pixel phase
+    // repaints every pixel it covers by a level or two, which a pixel count reads as a jump anywhere in the film
     let seam = null;
     if (loop === 'cycle') {
-      const d = 1e-4, step = (k) => px(at(k / FPS - d), at(k / FPS));
-      const ref = [1, 2, N - 1, N - 2].map(step);
-      seam = { px: px(at(DUR - d), s0), ref };
+      const B = Math.max(8, Math.round(32 * Math.min(WIDTH, HEIGHT) / 1080)), nx = Math.ceil(WIDTH / B), ny = Math.ceil(HEIGHT / B);
+      const means = (d) => {
+        const sum = new Float64Array(nx * ny * 4), cnt = new Float64Array(nx * ny);
+        for (let y = 0, i = 0; y < HEIGHT; y++) {
+          const row = Math.floor(y / B) * nx;
+          for (let x = 0; x < WIDTH; x++, i += 4) { const k = row + Math.floor(x / B), j = k * 4; sum[j] += d[i]; sum[j + 1] += d[i + 1]; sum[j + 2] += d[i + 2]; sum[j + 3] += d[i + 3]; cnt[k]++; }
+        }
+        for (let k = 0; k < nx * ny; k++) for (let c = 0; c < 4; c++) sum[k * 4 + c] /= cnt[k];
+        return sum;
+      };
+      const change = (a, b) => { const ma = means(a), mb = means(b); let n = 0; for (let i = 0; i < ma.length; i += 4) { const v = Math.abs(ma[i] - mb[i]) + Math.abs(ma[i + 1] - mb[i + 1]) + Math.abs(ma[i + 2] - mb[i + 2]) + Math.abs(ma[i + 3] - mb[i + 3]); if (v >= 0.5) n += v; } return Math.round(n); };
+      const d = 1e-4, step = (k) => change(at(k / FPS - d), at(k / FPS));
+      const ks = [1, 2, N - 1, N - 2, ...[1, 2, 3, 4, 5, 6, 7].map((i) => Math.round(N * i / 8))];
+      seam = { px: change(at(DUR - d), s0), ref: ks.map(step), B };
     }
     // the same seam frame by frame: the output step from frame N-1 to frame 0 against the steps between other
     // consecutive frames. Held drawings, sprites and the boil read the quantised frame, so the 0.1 ms step above
@@ -367,9 +380,9 @@ async function loopcheck({ page, meta }) {
   let seamOk = true;
   if (loop === 'hold') console.log(`static tail: the last ${r.hold} frames equal frame 0`);
   if (r.seam) {
-    const lim = Math.round(1.5 * Math.max(...r.seam.ref) + 100);
+    const lim = Math.round(1.5 * Math.max(...r.seam.ref) + 50);
     seamOk = meta.seamCut || r.seam.px <= lim;
-    console.log(`${'seam continuity (0.1 ms across the loop point)'.padEnd(44)} ${r.seam.px} px change; the same step elsewhere changes ${r.seam.ref.join(', ')} px (limit ${lim})${meta.seamCut ? '  (a declared cut at the loop point: information only)' : ''}`);
+    console.log(`${'seam continuity (0.1 ms across the loop point)'.padEnd(44)} ${r.seam.px} change; the same step elsewhere changes ${r.seam.ref.join(', ')} (limit ${lim}; summed change of ${r.seam.B} px block averages)${meta.seamCut ? '  (a declared cut at the loop point: information only)' : ''}`);
   }
   if (r.fstep) {
     const f = r.fstep, ok = f.v <= f.lim && !f.worst;
