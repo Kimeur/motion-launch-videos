@@ -1,0 +1,49 @@
+# Publish a GitHub release from the Actions tab: Actions > Release > Run workflow.
+# It tags the target commit (main by default) and writes the notes from .github/release-notes/v<version>.md,
+# or, without that file, from the version's section of CHANGELOG.md.
+name: Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version, without the v (for example 2.1.0)"
+        required: true
+      target:
+        description: "Branch or commit to tag"
+        required: true
+        default: main
+      title:
+        description: "Release title (optional; default: v<version>)"
+        required: false
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.target }}
+          fetch-depth: 0
+      - name: Notes
+        env:
+          VERSION: ${{ inputs.version }}
+        run: |
+          set -euo pipefail
+          f=".github/release-notes/v${VERSION}.md"
+          if [ -f "$f" ]; then cp "$f" notes.md
+          else awk -v v="## ${VERSION}" '$0 == v {on = 1; next} /^## / && on {exit} on' CHANGELOG.md > notes.md; fi
+          test -s notes.md || { echo "no notes for ${VERSION}: add $f or a '## ${VERSION}' section to CHANGELOG.md"; exit 1; }
+          cat notes.md
+      - name: Tag and publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ inputs.version }}
+          TITLE: ${{ inputs.title }}
+        run: |
+          set -euo pipefail
+          sha=$(git rev-parse HEAD)
+          gh release create "v${VERSION}" --target "$sha" --title "${TITLE:-v${VERSION}}" --notes-file notes.md
