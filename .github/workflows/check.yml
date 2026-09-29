@@ -1,0 +1,45 @@
+# Repo checks. On every push and pull request: the fast static checks (shared files in sync, manifests, every
+# SKILL.md, every template parses). Weekly and on demand: the smoke test, which builds every skill's template
+# demo and runs its critique and loopcheck at the base format, 9:16 and 16:9.
+name: check
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+  schedule:
+    - cron: '23 4 * * 1'   # Mondays, 04:23 UTC
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    if: github.event_name == 'push' || github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - run: node tools/check.mjs
+
+  smoke:
+    if: github.event_name == 'workflow_dispatch' || github.event_name == 'schedule'
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: ffmpeg
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends ffmpeg
+      - name: playwright-core and Chromium
+        run: |
+          npm install --no-save --no-package-lock playwright-core@1.63.0
+          npx --no-install playwright-core install --with-deps chromium
+      - name: doctor
+        run: node shared/scripts/render.mjs doctor
+      - run: node tools/check.mjs --smoke --formats

@@ -5,6 +5,11 @@
 //                                   and a warning for an example whose source carries an older core than shared/
 //   node tools/check.mjs --smoke    also build each skill's template demo in a scratch folder and run its
 //                                   stills critique and loopcheck (needs npm, network for the fonts, a Chromium)
+//   node tools/check.mjs --smoke --formats
+//                                   and again at --format 9:16 and --format 16:9
+//
+// .github/workflows/check.yml runs the fast checks on every push and pull request, and the smoke test with
+// --formats weekly and on demand.
 //
 // Exit code 1 when anything fails.
 import fs from 'node:fs';
@@ -16,6 +21,7 @@ import { skills } from './sync.mjs';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const smoke = process.argv.includes('--smoke');
+const FORMATS = process.argv.includes('--formats') ? [null, '9:16', '16:9'] : [null];
 let fails = 0;
 const ok = (good, what, detail = '') => { console.log(`${good ? 'PASS' : 'FAIL'}  ${what}${detail ? `  ${detail}` : ''}`); if (!good) fails++; };
 
@@ -77,10 +83,13 @@ if (smoke) {
       const run = (...a) => spawnSync(process.execPath, a, { encoding: 'utf8', cwd: ROOT, maxBuffer: 1 << 26 });
       const f = run(path.join(dir, 'scripts', 'fonts.mjs'), film);
       if (f.status !== 0) { ok(false, `${name}: fonts`, f.stderr.trim().split('\n').pop()); continue; }
-      const s = run(path.join(dir, 'scripts', 'render.mjs'), 'stills', film);
-      ok(s.status === 0, `${name}: stills`, (s.stdout.match(/CRITIQUE .*/) || [s.stderr.trim().split('\n').pop()])[0]);
-      const l = run(path.join(dir, 'scripts', 'render.mjs'), 'loopcheck', film);
-      ok(l.status === 0, `${name}: loopcheck`, (l.stdout.match(/LOOPCHECK .*/) || [l.stderr.trim().split('\n').pop()])[0]);
+      for (const fmt of FORMATS) {
+        const extra = fmt ? ['--format', fmt] : [], tag = fmt ? ` ${fmt}` : '';
+        const s = run(path.join(dir, 'scripts', 'render.mjs'), 'stills', film, ...extra);
+        ok(s.status === 0, `${name}: stills${tag}`, (s.stdout.match(/CRITIQUE .*/) || [s.stderr.trim().split('\n').pop()])[0]);
+        const l = run(path.join(dir, 'scripts', 'render.mjs'), 'loopcheck', film, ...extra);
+        ok(l.status === 0, `${name}: loopcheck${tag}`, (l.stdout.match(/LOOPCHECK .*/) || [l.stderr.trim().split('\n').pop()])[0]);
+      }
     }
   } finally { fs.rmSync(tmp, { recursive: true, force: true }); }
 }
