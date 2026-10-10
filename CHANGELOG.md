@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- **Example stamps.** `tools/stamp.mjs` verifies an example's committed renders against its source and writes `stamp.json`; `tools/check.mjs` (CI on every push) fails when a source or a render no longer matches its stamp, so a source edited without a re-render cannot reach `main` unnoticed.
+
 ## 2.2.0
 
 A twelfth style: data globe films.

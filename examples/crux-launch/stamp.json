@@ -1,0 +1,11 @@
+{
+  "note": "Written by tools/stamp.mjs after render.mjs verify passed; tools/check.mjs compares it. Do not edit.",
+  "source": "49bc68d31d0da9757c8a109b2e823d6cf28934b89fe0814c8fc18fb2ee5f5295",
+  "renders": {
+    "crux-launch.mp4": "320aa4cad7792b4f82c6acee451b584a53226287132c3496de664f024d6bb248"
+  },
+  "verify": [
+    "PASS frame 0 vs canvas PSNR 41.9 dB, mean 0.69, max 76",
+    "PASS frame 719 vs canvas PSNR 45.3 dB, mean 0.53, max 46"
+  ]
+}

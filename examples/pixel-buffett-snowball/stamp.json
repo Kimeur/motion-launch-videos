@@ -1,0 +1,11 @@
+{
+  "note": "Written by tools/stamp.mjs after render.mjs verify passed; tools/check.mjs compares it. Do not edit.",
+  "source": "6860bc85966966005e65d4639087df4378b877144d02cdf9fcdfd4db658c29b2",
+  "renders": {
+    "pixel-buffett-snowball.mp4": "c74e50d0ee5df17d5b1f4d45fb668732702d9381c4d894726d9d495b82420956"
+  },
+  "verify": [
+    "PASS frame 0 vs canvas PSNR 40.2 dB, mean 1.06, max 77",
+    "PASS frame 2159 vs canvas PSNR 38.6 dB, mean 1.11, max 84"
+  ]
+}

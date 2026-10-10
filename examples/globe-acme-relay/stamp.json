@@ -1,0 +1,11 @@
+{
+  "note": "Written by tools/stamp.mjs after render.mjs verify passed; tools/check.mjs compares it. Do not edit.",
+  "source": "85fe611857c71fcf5074505c20f7e67709f03c70ef73f71cf9c9071e7e12e09c",
+  "renders": {
+    "globe-acme-relay.mp4": "d74194107344d1d7cb4d4e2f5e7ba10ea8c98524dce612016c0a09b43f610342"
+  },
+  "verify": [
+    "PASS frame 0 vs canvas PSNR 40.8 dB, mean 1.64, max 73",
+    "WARN frame 1859 vs canvas PSNR 34.8 dB, mean 1.55, max 222 (encoded at CRF 30: under 35 dB is expected; look at the frame full size)"
+  ]
+}
