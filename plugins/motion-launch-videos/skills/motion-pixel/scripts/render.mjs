@@ -593,6 +593,13 @@ function mp4Target(meta) {
 }
 const exactRGB = async (page, n) => { await page.evaluate((n) => window.renderFrame(n), n); return Buffer.from(await page.evaluate(() => window.__rgb64()), 'base64'); };
 
+// the CRF x264 wrote into the stream's settings (its SEI), or null for another encoder
+function encodedCrf(mp4) {
+  const fd = fs.openSync(mp4, 'r'), buf = Buffer.alloc(Math.min(4 << 20, fs.fstatSync(fd).size));
+  try { fs.readSync(fd, buf, 0, buf.length, 0); } finally { fs.closeSync(fd); }
+  const m = /x264 - core[^\0]*? crf=([\d.]+)/.exec(buf.toString('latin1'));
+  return m ? Number(m[1]) : null;
+}
 async function verify({ page, meta }) {
   const ffmpeg = findBin('ffmpeg'), ffprobe = findBin('ffprobe');
   const { mp4, a, b, full } = mp4Target(meta), n = b - a;
@@ -628,8 +635,12 @@ async function verify({ page, meta }) {
   const [d0, dN] = decodeFrames(ffmpeg, mp4, [0, n - 1], meta.W, meta.H);
   const m0 = await exactRGB(page, a), mN = await exactRGB(page, b - 1);
   const c0 = compare(d0, m0), cN = compare(dN, mN);
-  check(`frame ${a} vs canvas`, c0.psnr >= 35, `PSNR ${c0.psnr.toFixed(1)} dB, mean ${c0.mean.toFixed(2)}, max ${c0.max}`);
-  check(`frame ${b - 1} vs canvas`, cN.psnr >= 35, `PSNR ${cN.psnr.toFixed(1)} dB, mean ${cN.mean.toFixed(2)}, max ${cN.max}`);
+  // a render made smaller on purpose (--crf above 20) is allowed down to 30 dB, as a warning to look at the frame
+  const crf = encodedCrf(mp4), small = crf != null && crf > 20;
+  for (const [f, c] of [[a, c0], [b - 1, cN]]) {
+    const low = c.psnr < 35 && small && c.psnr >= 30;
+    check(`frame ${f} vs canvas`, c.psnr >= 35, `PSNR ${c.psnr.toFixed(1)} dB, mean ${c.mean.toFixed(2)}, max ${c.max}${low ? ` (encoded at CRF ${crf}: under 35 dB is expected; look at the frame full size)` : ''}`, low);
+  }
   // background: every pixel that is exactly the background in the canvas, decoded. A film whose first
   // frame has no plain background (a gradient, a full-bleed scene) is checked on its most common colour.
   let bg = meta.bg.replace('#', '').match(/../g).map((h) => parseInt(h, 16)), bgName = meta.bg;

@@ -84,7 +84,7 @@ node <skill>/scripts/render.mjs render videos/<film> --format 16:9     # renders
 
 ## Sound
 
-`FILM.audio` gives a film sound (audio.md): the user's own or licensed track, plus sound effects synthesised in the page from cues. An engine places cues in `build()` with `cue(t, kind, opts)` (`pop`, `hit`, `whoosh`, `swish`, `tick`, `tap`, `click`, `riser`, `boing`, `coin`, `chime`, `thud`, `snap`, `blip`, `drop`, `sparkle`); `audio: { auto: true }` adds a pop at every accent and a whoosh at every cut, so every engine has sound without code. Synthesis runs in `renderAudio()`, never in `seek`, and is deterministic. `render` mixes, normalises to `audio.loudness` (-16 LUFS by default) and muxes AAC; a film without `FILM.audio` renders exactly as before.
+`FILM.audio` gives a film sound (audio.md): the user's own or licensed track, plus sound effects synthesised in the page from cues, and with `bed` a score of its own (a pad, drone, bass, air and glints in a key, under a reverb). An engine places cues in `build()` with `cue(t, kind, opts)` (`pop`, `hit`, `whoosh`, `swish`, `tick`, `tap`, `click`, `riser`, `boing`, `coin`, `chime`, `thud`, `snap`, `blip`, `drop`, `sparkle`, and the tonal kinds `boom`, `swell`, `arc`, `ping`, `data`, `lock`, `pad`, `drone`) and marks the film's structural beats with `sectionAt(t, what)`, where a bed changes chord; `audio: { auto: true }` adds a pop at every accent and a whoosh at every cut, so every engine has sound without code. Synthesis runs in `renderAudio()`, never in `seek`, and is deterministic. `render` mixes, normalises to `audio.loudness` (-16 LUFS by default) and muxes AAC; a film without `FILM.audio` renders exactly as before, and a film without a bed or the tonal kinds sounds exactly as it did before they existed.
 
 ## Helpers an engine (or a custom `draw` hook) may use
 
@@ -102,6 +102,7 @@ node <skill>/scripts/render.mjs render videos/<film> --format 16:9     # renders
 | `rgbOf`, `hexOf`, `mix`, `contrast`, `hueChroma`, `inksClash` | colour maths |
 | `cutAt(t)`, `activeIn(a, b)`, `accentAt(t, what)`, `needContrast(id, fg, bg, min)` | tell the core about a hard cut (motion blur stops at it), a window where something moves outside the Props, an accent frame (stills and palette gate), text that must read |
 | `cue(t, kind, opts)` | a sound effect at t, in `build()`: heard only when `FILM.audio` is set. `opts`: `gain` (dB), `pitch`, `pan`, `dur`, `seed`, `vary` (audio.md) |
+| `sectionAt(t, what)` | a structural beat (a new section of the film), in `build()`: a bed changes chord there (audio.md) |
 | `checkLiveArea(add, id, box)`, `checkSpacing(add, items)` | box checks for an engine's critique |
 
 `W H FPS DUR NFR CX CY U MARGIN UNIT MEASURE LOOP BLUR TRANSPARENT TAU PAL SP` are constants (for the format being rendered). `U` is `min(W, H) / 1080`, the scale for built-in pixel constants.

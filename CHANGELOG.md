@@ -1,5 +1,38 @@
 # Changelog
 
+## 2.2.0
+
+A twelfth style: data globe films.
+
+- **New skill: `motion-globe`.** A 20 to 40 second film of a network or a launch, worldwide.
+  - A dotted Earth from real geography forms out of the dark.
+  - A perspective camera dives, hops and flies along great circles.
+  - Routes arc between cities, and beams rise over each place with a HUD card that types a query and counts up its numbers.
+  - Region titles, live telemetry and a running total frame the story; the globe recedes into the lockup.
+  - It is drawn in Canvas 2D with its own projection: a 30 s 1080p film renders in about 12 minutes on 4 cores with no GPU.
+  - Its critique checks:
+    - every place against its country's shape;
+    - every number against the film's sourced data;
+    - every card, for its whole life, for collisions, live area, reading time and contrast over the real globe behind it;
+    - the camera's height above the world.
+  - Its example, [globe-acme-relay](examples/globe-acme-relay/), has sound and posters at 9:16 and 1:1.
+- **A world map in the template.**
+  - `shared/world/world-data.js` holds:
+    - a 0.25 degree country raster with ISO 3166 codes;
+    - outlines;
+    - lookup helpers (`countryAt`, `resolve`, `inCountry`, `near`...).
+  - It is built by `tools/world-data.mjs` from Natural Earth (public domain) through the `world-atlas` and `sane-topojson` packages.
+  - `tools/sync.mjs` embeds it, so a globe film checks its places offline.
+- **Sound.**
+  - `FILM.audio.bed` adds a music bed in a key and tempo.
+  - New cue kinds: `boom`, `swell`, `arc`, `ping`, `data`, `lock`, `pad` and `drone`.
+  - `sectionAt` gives the bed's sections, and chimes snap to the bed's key.
+  - Films that use none of these sound exactly as before.
+- **Verify** accepts a render made smaller on purpose: with `--crf` above 20, a first or last frame between 30 and 35 dB PSNR against the canvas is a warning to look at it, not a failure.
+- **Video types** gain "Network or coverage" (20 to 40 s, the globe), and the shared brief lists every style.
+- **Examples** carry the new core in their sources and built HTML; their frames and sound are the same byte for byte, so their renders stand.
+- `tools/world-data.mjs` fetches exact package versions, so `--check` keeps passing.
+
 ## 2.1.0
 
 Three new styles, every style in three formats, sound, transparency, and a guide to what each video is for.

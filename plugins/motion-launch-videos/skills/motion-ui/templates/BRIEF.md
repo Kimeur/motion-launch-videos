@@ -7,7 +7,7 @@ Filled in by Claude from the user's answers and the product's own pages. Every w
 | | |
 |---|---|
 | Product | <name>, <url> (or: no live site, demo / fictional / unreleased) |
-| Style | <the skill: kinetic type, shapes, cartoon, 3D, charts, pixel, particles, UI> |
+| Style | <the skill: kinetic type, shapes, cartoon, 3D, charts, pixel, particles, UI, photo, captions, overlays, globe> |
 | Format | 1080 x 1080 (1:1) |
 | Duration | <n> s, <hold / cycle> loop |
 | Frame rate | 60 fps |
