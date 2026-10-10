@@ -107,6 +107,6 @@ The MP4, GIF and poster are the 1:1 master. The same `src/film.html` renders at 
 
 ## Checks
 
-- Stills critique: 32 checks, all pass. Palette gate: 20 accent frames, no mixed ink.
+- Stills critique: 33 checks, all pass. Palette gate: 20 accent frames, no mixed ink.
 - Loopcheck: every maximum channel difference 0.
 - Verify: H.264 High, yuv420p, 1080 x 1080, 60/1, 600 frames, 10.000 s, BT.709 tags, faststart; the background decodes to (16, 16, 23) for #111018.

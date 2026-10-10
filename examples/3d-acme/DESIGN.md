@@ -68,7 +68,7 @@ The same FILM renders at 9:16 and 16:9 (`--format`); `poster-9x16.png` and `post
 ## Checks
 
 - The ring lies just above the floor so its near arc always passes below the word, never across it: a ring at mid-height sliced through the letters whenever its tilt turned toward the camera.
-- Stills critique: 18 checks, all pass (the palette gate does not apply to shaded 3D).
+- Stills critique: 19 checks, all pass (the palette gate does not apply to shaded 3D).
 - Loopcheck: purity 0; the seam changes about as many pixels as any other 0.1 ms step (12,969 against 6,591 to 12,657).
-- Render: 2 subframes for 525 of 600 frames (slow drifts), up to 9 on the flips; about 8 minutes on a 4-core machine without a GPU, under load.
-- Verify: H.264 High, yuv420p, 1080 x 1080, 60/1, 600 frames, 10.000 s, BT.709 tags, faststart; the background decodes to (34, 26, 60) for #221A3D; the lowest mp4frames PSNR is 39.3 dB.
+- Render: 2 subframes for 525 of 600 frames (slow drifts), up to 9 on the flips; about 17 minutes on an 8-core Mac without a GPU, under heavy load from other renders.
+- Verify: H.264 High, yuv420p, 1080 x 1080, 60/1, 600 frames, 10.000 s, BT.709 tags, faststart; the background decodes to (34, 26, 62) for #221A3D; the lowest mp4frames PSNR is 39.2 dB.
