@@ -127,6 +127,6 @@ At both formats the stills critique passes all 59 checks with no warning, and lo
 
 - Stills critique: 59 checks, all pass (text size, contrast against each text's own backdrop, overflow, collisions, words, leaders, clearance, callout overlap, the zoom's framing, taps, the crossfade, the device seam, palette roles, the loop tail, composition). Palette gate: 15 accent frames, no mixed ink.
 - Loopcheck: every maximum channel difference 0; the last 98 frames equal frame 0.
-- Verify: H.264 High, yuv420p, 1080 x 1080, 60/1, 720 frames, 12.000 s, BT.709 tags, faststart; decoded frame 0 at 44.8 dB PSNR against the canvas; the background decodes to (237.0, 241.0, 247.0) for #EEF1F6 (238, 241, 246).
-- mp4frames: 19 review frames decoded, lowest PSNR 41.7 dB (the camera settling on Save).
-- Files: `ui-acme-trips.mp4` 1.40 MB, `preview.gif` 1.48 MB (480 px, 240 frames), `poster.png` (4.25 s), `ui-acme-trips.html` 213 KB. The full render took about 2.5 minutes on a shared 4-core machine; at most 15 subframes a frame (the phone rising and dropping).
+- Verify: H.264 High, yuv420p, 1080 x 1080, 60/1, 720 frames, 12.000 s, BT.709 tags, faststart; decoded frame 0 at 44.7 dB PSNR against the canvas; the background decodes to (237.0, 241.0, 247.0) for #EEF1F6 (238, 241, 246).
+- mp4frames: 19 review frames decoded, lowest PSNR 42.5 dB (the tap on Lisbon, frame 164).
+- Files: `ui-acme-trips.mp4` 1.43 MB, `preview.gif` 1.54 MB (480 px, 240 frames), `poster.png` (4.25 s), `ui-acme-trips.html` 277 KB. The full render took about 3 minutes on an 8-core Mac, alongside two other renders; at most 15 subframes a frame (the phone rising and dropping).

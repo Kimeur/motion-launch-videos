@@ -143,8 +143,8 @@ The MP4, GIF and poster are the 1:1 master. The same `src/film.html` renders at 
 
 ## Checks
 
-- Stills critique: 79 checks, all pass: every number bound to data and sourced, every data spring critically damped, the axis from zero, the donut's parts making its whole, both charts' colours apart, the source line on screen whenever a number is, every value landed in its scene's rest still. Palette gate: 20 accent frames, no mixed ink.
+- Stills critique: 80 checks, all pass: every number bound to data and sourced, every data spring critically damped, the axis from zero, the donut's parts making its whole, both charts' colours apart, the source line on screen whenever a number is, every value landed in its scene's rest still. Palette gate: 20 accent frames, no mixed ink.
 - Loopcheck: every maximum channel difference 0; the last 58 frames equal frame 0.
-- Verify: H.264 High, yuv420p, 1080 x 1080, 60/1, 720 frames, 12.000 s, BT.709 tags in the stream, faststart; decoded frame 0 at 44.6 dB PSNR against the canvas; the background decodes to (20.1, 16.0, 12.0) for #140F0C (20, 15, 12).
-- mp4frames: 16 review frames decoded from the MP4, lowest PSNR 40.4 dB.
-- Files: `charts-acme-brew.mp4` 1.02 MB, `preview.gif` 0.88 MB (480 x 480, 20 fps), `poster.png` (frame 330, 5.500 s). The full render took 2 min 18 s on a shared 4-core cloud machine.
+- Verify: H.264 High, yuv420p, 1080 x 1080, 60/1, 720 frames, 12.000 s, BT.709 tags in the stream, faststart; decoded frame 0 at 44.1 dB PSNR against the canvas; the background decodes to (20.1, 16.0, 12.0) for #140F0C (20, 15, 12).
+- mp4frames: 16 review frames decoded from the MP4, lowest PSNR 40.8 dB.
+- Files: `charts-acme-brew.mp4` 1.04 MB, `preview.gif` 0.90 MB (480 x 480, 20 fps), `poster.png` (frame 330, 5.500 s). The full render took 3 min 15 s on an 8-core Mac, alongside two other renders.
