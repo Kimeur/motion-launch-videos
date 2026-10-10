@@ -1,6 +1,6 @@
 # Video types: what the film is for
 
-Step 1 and 2. A style (kinetic type, shapes, cartoon, 3D, charts, pixel art, particles, app UI, photo, captions, overlays) says how a film looks. A **video type** says what it is for, and that decides its length, its format, its beats and what the brief must hold. Pick the type first, then the style that serves it. Any type below can be made in more than one style; the table suggests the ones that fit best.
+Step 1 and 2. A style (kinetic type, shapes, cartoon, 3D, charts, pixel art, particles, app UI, photo, captions, overlays, globe) says how a film looks. A **video type** says what it is for, and that decides its length, its format, its beats and what the brief must hold. Pick the type first, then the style that serves it. Any type below can be made in more than one style; the table suggests the ones that fit best.
 
 ## Choosing
 
@@ -13,6 +13,7 @@ Step 1 and 2. A style (kinetic type, shapes, cartoon, 3D, charts, pixel art, par
 | Product reel | a physical or digital product, shot by shot | 10 to 20 s | 9:16, 1:1 | photo, 3D | hold |
 | Milestone | one number that matters, and what it means | 6 to 12 s | 1:1, 9:16 | charts, kinetic type | hold |
 | Data story | a trend, a ranking, a year in review | 12 to 20 s | 16:9, 1:1 | charts | hold |
+| Network or coverage | where a product works, ships or connects, worldwide | 20 to 40 s | 16:9, 9:16, 1:1 | globe | none |
 | Testimonial | a customer's words, attributed | 8 to 15 s | 1:1, 9:16 | kinetic type, photo, shapes | hold |
 | Event promo | what, when, where, who | 10 to 15 s | 9:16, 1:1 | kinetic type, shapes, photo | hold |
 | Countdown | days or hours to a date | 6 to 10 s | 9:16, 1:1 | kinetic type, particles, pixel art | cycle |
@@ -35,6 +36,7 @@ Beats are at most four words each; the call to action is one of them. Every word
 - **App store preview:** the core task from start to finish in the app's real UI, one screen per beat, then the app's name. Follow the store's current specification for size, length and content: check it before you start, as it changes.
 - **Product reel:** the hero shot, then three details (material, feature, use), the price or offer only if the product's page states it today, then call to action.
 - **Milestone:** the number (counting up to its exact figure), what it counts, the date or period, thanks or call to action. Source on screen.
+- **Network or coverage:** the world forms (one line of subtitle), two to four regions with a few places each and what is counted there, the pull back to the whole network and its total, the lockup. Places and numbers from the user's own data.
 - **Testimonial:** the quote (their words, never edited for meaning), the name and role, the product, call to action. Only with the person's written permission, recorded in the brief; no photo of them without it.
 - **Event promo:** the event's name, the date and place (or "online"), the headliners or the one reason to come, then how to register. Dates and times with the time zone, as the event page states them.
 - **Countdown:** the date, the number counting, the name. A cycle loop can count seconds forever; a dated count is rendered once per day, or it lies.
@@ -69,6 +71,7 @@ A film that will play with sound on (YouTube, an intro, an ad, a captioned clip)
 - **Event promo and countdown:** the date, time and time zone from the event's page.
 - **What's new:** the release notes' URL and date.
 - **Milestone and data story:** the data and its period (charts' brief).
+- **Network or coverage:** each place (city, country, coordinates) and each number with its period, from the user's own data (globe's brief).
 - **Product reel and photo types:** the images, each with its owner (the user's own, or licensed).
 - **Captioned clip:** the audio file and its transcript, with the speaker's permission.
 - **Ad:** the offer exactly as the product's page states it today.

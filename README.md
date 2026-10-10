@@ -1,6 +1,6 @@
 # motion-launch-videos
 
-Short launch and social videos made in code with Claude Code, in eleven styles: kinetic type, flat shapes, cartoons, 3D, data charts, pixel art, particles, app UI, photo reels, captioned clips and overlays for editors. Each film is one self-contained HTML file that can draw any frame from the time alone, rendered to MP4 with real motion blur and a seamless loop that is checked, not hoped for, at 1:1, 9:16 or 16:9, with sound when it needs it and with transparency when it goes over footage.
+Short launch and social videos made in code with Claude Code, in twelve styles: kinetic type, flat shapes, cartoons, 3D, data charts, pixel art, particles, app UI, photo reels, captioned clips, overlays for editors and data globes. Each film is one self-contained HTML file that can draw any frame from the time alone, rendered to MP4 with real motion blur and a seamless loop that is checked, not hoped for, at 1:1, 9:16 or 16:9, with sound when it needs it and with transparency when it goes over footage.
 
 | | |
 |---|---|
@@ -9,13 +9,13 @@ Short launch and social videos made in code with Claude Code, in eleven styles: 
 | ![Charts: a counter, a column chart and a donut from demo data](examples/charts-acme-brew/preview.gif) **Charts** ([motion-charts](plugins/motion-launch-videos/skills/motion-charts/SKILL.md)): counters, bars, lines and donuts from sourced data. [Example](examples/charts-acme-brew/) | ![Pixel art: a hero runs through a parallax landscape](examples/pixel-acme-quest/preview.gif) **Pixel art** ([motion-pixel](plugins/motion-launch-videos/skills/motion-pixel/SKILL.md)): sprites, parallax, a bitmap font, a strict palette. [Example](examples/pixel-acme-quest/) |
 | ![Particles: a swarm forms a word, bursts and reforms](examples/particles-acme-signal/preview.gif) **Particles** ([motion-particles](plugins/motion-launch-videos/skills/motion-particles/SKILL.md)): swarms that form words and logos. [Example](examples/particles-acme-signal/) | ![App UI: a phone taps through a travel planner](examples/ui-acme-trips/preview.gif) **App UI** ([motion-ui](plugins/motion-launch-videos/skills/motion-ui/SKILL.md)): taps, pushes and toasts in a device frame. [Example](examples/ui-acme-trips/) |
 | ![Photo: a flask pulls back, floats with tags, slides from graphite to sky, and four colourways slide past](examples/photo-acme-flask/preview.gif) **Photo** ([motion-photo](plugins/motion-launch-videos/skills/motion-photo/SKILL.md)): your own images in Ken Burns crops, parallax cutouts, carousels, a before/after slider and tags. [Example](examples/photo-acme-flask/) | ![Captions: words pop in, in time with a voice-over](examples/captions-acme-memo/preview.gif) **Captions** ([motion-captions](plugins/motion-launch-videos/skills/motion-captions/SKILL.md)): your voice-over or podcast, every word on the frame it is said. [Example, with sound](examples/captions-acme-memo/) |
-| ![Overlays: a lower third wipes in at the bottom left, holds and wipes out](examples/overlays-acme-studio/preview.gif) **Overlays** ([motion-overlays](plugins/motion-launch-videos/skills/motion-overlays/SKILL.md)): lower thirds, cards, end screens and corner bugs, delivered with alpha. [Example](examples/overlays-acme-studio/) | |
+| ![Overlays: a lower third wipes in at the bottom left, holds and wipes out](examples/overlays-acme-studio/preview.gif) **Overlays** ([motion-overlays](plugins/motion-launch-videos/skills/motion-overlays/SKILL.md)): lower thirds, cards, end screens and corner bugs, delivered with alpha. [Example](examples/overlays-acme-studio/) | ![Globe: a dotted Earth, routes arcing between cities, beams rising with HUD cards that count parcels](examples/globe-acme-relay/preview.gif) **Globe** ([motion-globe](plugins/motion-launch-videos/skills/motion-globe/SKILL.md)): a data globe from real geography, a flying camera, routes, beams and HUD cards. [Example, with sound](examples/globe-acme-relay/) |
 
 **One film, three formats.** Every style renders the same film square, vertical or wide (`--format 9:16`), laid out for each frame rather than cropped:
 
 ![The chart and the app demo at 1:1, 9:16 and 16:9](examples/formats.png)
 
-The Crux film is a real launch bumper for the author's product: every word on screen is taken from the live site, with sources in its [BRIEF.md](examples/crux-launch/BRIEF.md). The other ten are each skill's own demo, for fictional products, and say so on screen. Another film, [pixel-buffett-snowball](examples/pixel-buffett-snowball/), is a 36 second story on the pixel skill: a runner grows up while a snowball rolls after him and swells at every stop of Warren Buffett's life. Every sprite is drawn in code, every fact is in its [BRIEF.md](examples/pixel-buffett-snowball/BRIEF.md) with its source, and it says on screen that it is an unofficial fan animation.
+The Crux film is a real launch bumper for the author's product: every word on screen is taken from the live site, with sources in its [BRIEF.md](examples/crux-launch/BRIEF.md). The other eleven are each skill's own demo, for fictional products, and say so on screen. Another film, [pixel-buffett-snowball](examples/pixel-buffett-snowball/), is a 36 second story on the pixel skill: a runner grows up while a snowball rolls after him and swells at every stop of Warren Buffett's life. Every sprite is drawn in code, every fact is in its [BRIEF.md](examples/pixel-buffett-snowball/BRIEF.md) with its source, and it says on screen that it is an unofficial fan animation.
 
 You give it a product and what the film should say, or just a URL, and a style if you have one in mind. Claude reads the product's site, writes 3 to 5 beats of at most four words each, designs every beat on the tempo grid, and writes the whole film as one HTML page. Then it checks the film with the skill's automated critique, renders it frame by frame, and verifies the MP4 it delivers.
 
@@ -34,10 +34,11 @@ You give it a product and what the film should say, or just a URL, and a style i
 | `motion-photo` | product and photo reels from your own images: Ken Burns crops, parallax cutouts, carousels, before/after sliders, mosaics, price and feature tags | "A 9:16 product reel from these shots of our new colours" |
 | `motion-captions` | captioned clips from your own voice-over, podcast or interview: pop captions, a karaoke line, subtitles or an audiogram, every word on the frame it is said | "Caption this podcast clip for Reels" |
 | `motion-overlays` | transparent overlays for editors and streamers: lower thirds, title and chapter cards, social handles, end screens, a corner bug, callouts, a LIVE badge | "A lower third for our host as a transparent .mov" |
+| `motion-globe` | a data globe film of a network worldwide: a dotted Earth from real geography, a camera that dives and flies between regions, routes, beams over each place with HUD cards that count, a running total and the lockup | "Show our delivery network across these cities", "A globe film of our offices worldwide" |
 
 Pick a style, or just say what the video is for: [video-types.md](shared/reference/video-types.md) matches 18 kinds of video (a feature highlight, a changelog, a testimonial, an event promo, a countdown, an intro, an ad...) to their length, formats, beats and the styles that fit.
 
-All eleven share the same rules: true claims only, with every word traced to the product's own pages in `BRIEF.md`; nothing that is not the user's to use (no other company's logo or character); four words a beat; one file with nothing loaded over the network; and a look at the frames before anything ships.
+All twelve share the same rules: true claims only, with every word traced to the product's own pages in `BRIEF.md`; nothing that is not the user's to use (no other company's logo or character); four words a beat; one file with nothing loaded over the network; and a look at the frames before anything ships.
 
 ## Install
 
@@ -48,7 +49,7 @@ As a plugin, from this repo's marketplace (run these inside Claude Code):
 /plugin install motion-launch-videos@motion-launch-videos
 ```
 
-That installs all eleven skills; Claude picks the one that fits your request, or you can ask for one by name.
+That installs all twelve skills; Claude picks the one that fits your request, or you can ask for one by name.
 
 Without the plugin system, clone the repo and put the skills you want where Claude Code looks for personal skills (each skill folder is self-contained):
 
@@ -109,7 +110,7 @@ Open `videos/demo/demo.html` in Chrome to preview it: Space pauses, the arrow ke
 - **One film, any format.** A film is authored once; `--format 9:16`, `16:9`, `4:5` or `1:1` re-sizes it, positions follow their pins (the centre, or an edge), and `FILM.formats` patches what a frame needs laid out differently. The critique's composition row fails content left in one corner of a frame it was not designed for.
 - **Sound, when it needs it.** `FILM.audio` mixes your own music or voice-over with sound effects synthesised from the film's own accents and cuts, deterministic and wrapping round the loop, normalised to a loudness target and checked.
 - **Transparency, for editors.** An overlay renders to ProRes 4444 and VP9 with alpha, next to an MP4 preview.
-- **A shared core, eleven engines.** Every skill's template is the same core (springs, loops, motion blur, type layout, the critique's plumbing, the page's API) plus an engine for its style: per-glyph kinetic type; shapes with trims, morphs and repeaters; a cartoon rig with squash and stretch; a WebGL2 renderer with extruded type and soft shadows; charts; pixel sprites; particle formations; UI components; photo layers and reveals; captions timed to speech; overlays.
+- **A shared core, twelve engines.** Every skill's template is the same core (springs, loops, motion blur, type layout, the critique's plumbing, the page's API) plus an engine for its style: per-glyph kinetic type; shapes with trims, morphs and repeaters; a cartoon rig with squash and stretch; a WebGL2 renderer with extruded type and soft shadows; charts; pixel sprites; particle formations; UI components; photo layers and reveals; captions timed to speech; overlays; a dotted globe from real geography under a flying camera.
 - **Checked output.** H.264 with BT.709 colour tags in the stream, faststart, exact frame count, and decoded frames (with an exact, not a fast, YUV-to-RGB conversion) compared with the canvas pixels.
 
 ## What's inside
@@ -126,14 +127,16 @@ plugins/motion-launch-videos/skills/
 ├── motion-ui/              app UI demos
 ├── motion-photo/           product and photo reels
 ├── motion-captions/        captioned clips from a voice-over
-└── motion-overlays/        transparent overlays for editors
+├── motion-overlays/        transparent overlays for editors
+└── motion-globe/           data globe films from real geography
     each: SKILL.md, package.json (playwright-core),
           reference/ (the style's engine, craft and review docs, plus the shared brief, core, loops, springs, render, fonts, audio and video types),
           templates/ (film.html: FILM config + core + engine, runnable as a demo; BRIEF.md; DESIGN.md),
           scripts/   (fonts.mjs, build.mjs, render.mjs: doctor | stills | loopcheck | render | verify | mp4frames | at | frame | layout, cmap.mjs)
 examples/                   one rendered film per skill: brief, spec, source, built HTML, MP4, GIF, posters per format, font licences
 shared/                     the single source of the core, the scripts and the shared docs
-tools/                      sync.mjs (copies shared/ into every skill) and check.mjs (repo checks, --smoke renders every demo's checks)
+tools/                      sync.mjs (copies shared/ into every skill), check.mjs (repo checks, --smoke renders every demo's checks)
+                            and world-data.mjs (builds the globe's embedded map from Natural Earth)
 .github/workflows/          check.yml (CI)
 ```
 
@@ -143,8 +146,9 @@ The core runtime (`shared/core.js`), the scripts (`shared/scripts/`) and the sha
 
 ## Credits
 
-- Fonts, all under the SIL Open Font License 1.1, via [Fontsource](https://fontsource.org): [Archivo Black](https://github.com/Omnibus-Type/ArchivoBlack), [Syne](https://gitlab.com/bonjour-monde/fonderie/syne-typeface), [IBM Plex Mono](https://github.com/IBM/plex), [Unbounded](https://github.com/googlefonts/unbounded), [Lilita One](https://fonts.google.com/specimen/Lilita+One), [Fredoka](https://github.com/hafontia/Fredoka-One), [Inter](https://github.com/rsms/inter), [Inter Tight](https://github.com/rsms/inter-tight), [Sora](https://github.com/sora-xor/sora-font), [Bricolage Grotesque](https://github.com/ateliertriay/bricolage), [Montserrat](https://github.com/JulietaUla/Montserrat) and [Barlow](https://github.com/jpt/barlow). The pixel-art example draws its lettering in the engine's own bitmap font. The captions example's synthetic voice was made with [eSpeak NG](https://github.com/espeak-ng/espeak-ng), and the photo example's product shots with this repo's own 3D skill. The skills ship no font files: `fonts.mjs` fetches them for each film. Each example's built HTML embeds its fonts, and their licence texts are in that example's `OFL/` folder.
+- Fonts, all under the SIL Open Font License 1.1, via [Fontsource](https://fontsource.org): [Archivo Black](https://github.com/Omnibus-Type/ArchivoBlack), [Syne](https://gitlab.com/bonjour-monde/fonderie/syne-typeface), [IBM Plex Mono](https://github.com/IBM/plex), [Unbounded](https://github.com/googlefonts/unbounded), [Lilita One](https://fonts.google.com/specimen/Lilita+One), [Fredoka](https://github.com/hafontia/Fredoka-One), [Inter](https://github.com/rsms/inter), [Inter Tight](https://github.com/rsms/inter-tight), [Sora](https://github.com/sora-xor/sora-font), [Bricolage Grotesque](https://github.com/ateliertriay/bricolage), [Montserrat](https://github.com/JulietaUla/Montserrat), [Barlow](https://github.com/jpt/barlow), [Lora](https://github.com/cyrealtype/Lora-Cyrillic), [JetBrains Mono](https://github.com/JetBrains/JetBrainsMono) and [Outfit](https://github.com/Outfitio/Outfit-Fonts). The pixel-art example draws its lettering in the engine's own bitmap font. The captions example's synthetic voice was made with [eSpeak NG](https://github.com/espeak-ng/espeak-ng), and the photo example's product shots with this repo's own 3D skill. The skills ship no font files: `fonts.mjs` fetches them for each film. Each example's built HTML embeds its fonts, and their licence texts are in that example's `OFL/` folder.
+- Map data: the globe skill's embedded world map is made with [Natural Earth](https://www.naturalearthdata.com) (public domain), through the [world-atlas](https://github.com/topojson/world-atlas) package (ISC licence) and, for lakes, [sane-topojson](https://github.com/etpinard/sane-topojson) (MIT licence). `tools/world-data.mjs` rebuilds it.
 
 ## License
 
-The skills' code and documentation are under the MIT licence ([LICENSE](LICENSE)). The fonts are not covered by it: they stay under the SIL OFL 1.1.
+The skills' code and documentation are under the MIT licence ([LICENSE](LICENSE)). The fonts are not covered by it: they stay under the SIL OFL 1.1. The Natural Earth map data is in the public domain.

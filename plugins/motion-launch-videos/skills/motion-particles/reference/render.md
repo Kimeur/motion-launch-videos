@@ -76,7 +76,7 @@ On an Apple-silicon Mac or a 4-core cloud machine, a 10 s 1080 x 1080 film rende
 | frame count and duration | exactly DUR x FPS frames, DUR within one frame |
 | colour tags | bt709 matrix, transfer and primaries, tv range |
 | faststart | `moov` before `mdat` |
-| first and last frame vs the canvas | decoded with the BT.709 matrix, PSNR at least 35 dB |
+| first and last frame vs the canvas | decoded with the BT.709 matrix, PSNR at least 35 dB; a render made smaller with `--crf` above 20 warns instead of failing down to 30 dB (look at the frame full size) |
 | background | every pixel that is the background in the canvas decodes within 2 levels of it (a range mistake lifts #0A0A0A to about #171717). A first frame without a plain background is checked on its most common colour |
 | encoded seam | frame 0 vs the last frame, decoded (information only, hold loops) |
 | GIF and poster | present; GIF under 4 MB |

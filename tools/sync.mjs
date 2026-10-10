@@ -11,6 +11,9 @@
 //   shared/core.js          -> <skill>/templates/*.html between the CORE BEGIN and CORE END markers
 //   shared/reference/*.md   -> <skill>/reference/       the docs every engine shares (brief, core, loops, springs, render, fonts)
 //   shared/templates/*.md   -> <skill>/templates/       the brief template
+// and, for each template that holds the WORLD markers (the globe engine), whatever else it is built on:
+//   shared/world/world-data.js -> <skill>/templates/*.html between the WORLD BEGIN and WORLD END markers
+//                              (the geography dataset; tools/world-data.mjs regenerates it)
 // The kinetic-type skill (motion-launch-videos) carries its own engine and docs; it only gets the scripts and the
 // video-types guide.
 import fs from 'node:fs';
@@ -22,6 +25,8 @@ const check = process.argv.includes('--check');
 const SHARED = path.join(ROOT, 'shared');
 const BEGIN = '/* ===== CORE BEGIN: shared/core.js, synced by tools/sync.mjs. Do not edit it here. ===== */';
 const END = '/* ===== CORE END ===== */';
+const WORLD_BEGIN = '/* ===== WORLD BEGIN: shared/world/world-data.js, synced by tools/sync.mjs. Do not edit it here. ===== */';
+const WORLD_END = '/* ===== WORLD END ===== */';
 const EVERY_SKILL = ['video-types.md'];                 // shared docs every skill gets, its own engine or not
 
 export function skills() {
@@ -33,13 +38,16 @@ export function skills() {
   }
   return out;
 }
-export function withCore(html) {
-  const a = html.indexOf(BEGIN), b = html.indexOf(END);
+// html with the shared file spliced between the markers, or null when it holds neither marker
+function splice(html, begin, end, file, what) {
+  const a = html.indexOf(begin), b = html.indexOf(end);
   if (a < 0 && b < 0) return null;
-  if (a < 0 || b < a) throw new Error('CORE markers out of order');
-  const core = fs.readFileSync(path.join(SHARED, 'core.js'), 'utf8').trimEnd();
-  return html.slice(0, a) + BEGIN + '\n' + core + '\n' + html.slice(b);
+  if (a < 0 || b < a) throw new Error(`${what} markers out of order`);
+  const body = fs.readFileSync(path.join(SHARED, file), 'utf8').trimEnd();
+  return html.slice(0, a) + begin + '\n' + body + '\n' + html.slice(b);
 }
+export const withCore = (html) => splice(html, BEGIN, END, 'core.js', 'CORE');
+export const withWorld = (html) => splice(html, WORLD_BEGIN, WORLD_END, path.join('world', 'world-data.js'), 'WORLD');
 
 let drift = 0;
 const put = (file, content) => {
@@ -58,8 +66,9 @@ if (process.argv[1] && fileURLToPath(import.meta.url) === path.resolve(process.a
     const tdir = path.join(skill, 'templates');
     let onCore = false;
     if (fs.existsSync(tdir)) for (const f of fs.readdirSync(tdir).filter((x) => x.endsWith('.html'))) {
-      const html = fs.readFileSync(path.join(tdir, f), 'utf8'), next = withCore(html);
-      if (next !== null) { onCore = true; put(path.join(tdir, f), next); }
+      const html = fs.readFileSync(path.join(tdir, f), 'utf8'), cored = withCore(html), next = withWorld(cored ?? html) ?? cored;
+      if (cored !== null) onCore = true;
+      if (next !== null) put(path.join(tdir, f), next);
     }
     if (!onCore) continue;
     for (const f of fs.readdirSync(path.join(SHARED, 'reference'))) put(path.join(skill, 'reference', f), fs.readFileSync(path.join(SHARED, 'reference', f), 'utf8'));

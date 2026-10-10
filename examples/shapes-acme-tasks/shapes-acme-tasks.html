@@ -226,7 +226,8 @@ const FILM = {
  *   - Motion blur averages 1 to 64 subframes on a trailing 270-degree
  *     shutter, one per 5 px of movement, never across a hard cut.
  *   - Sound (FILM.audio) is synthesised from cues in an OfflineAudioContext,
- *     outside seek(), from seeded noise; FILM.transparent clears to alpha.
+ *     outside seek(), from seeded noise; a bed (FILM.audio.bed) adds music in
+ *     a key, a reverb runs in plain JS; FILM.transparent clears to alpha.
  * The engine below describes its vertical through hooks (build, draw, disp,
  * checks, stills, layout, visible, lastChange) and calls boot(ENGINE) last.
  * The core keeps its internals to itself and exports the helpers listed at
@@ -601,18 +602,91 @@ const needContrast = (id, fg, bg, min) => { CONTRAST.push({ id, fg, bg: bg || 'b
 // OfflineAudioContext, never inside seek(): oscillators, filters and noise from a seeded buffer, so the same
 // film gives the same samples. In a loop, sound that starts before 0 (a whoosh leading into a cut) or rings
 // past DUR wraps round, so the audio loops with the picture. render.mjs mixes it with FILM.audio.track.
+// FILM.audio.bed adds music without a track: a pad, a drone, a bass, air and glints in a key, changing chord on
+// the film's sections (sectionAt), with a reverb (FILM.audio.space) for the voices that send to it. A film
+// without a bed and without the tonal kinds (boom, swell, arc, ping, data, lock, pad, drone) sounds exactly as
+// it did before they existed, bit for bit.
 const AUDIO = FILM.audio || null;
 const CUES = [];
+const SECTIONS = [];                               // structural beats: a bed changes chord on them (sectionAt)
 const RATE = 48000;
 const dBg = (v) => Math.pow(10, (v || 0) / 20);
+
+/* music: notes, keys and chords, for the bed and the tonal kinds */
+const PCL = { C: 0, D: 2, E: 4, F: 5, G: 7, A: 9, B: 11 };
+const midiHz = (m) => 440 * Math.pow(2, (m - 69) / 12);
+const hzMidi = (f) => 69 + 12 * Math.log2(f / 440);
+function noteMidi(s) {                             // 'A5', 'F#4', 'Bb2', or a frequency in Hz
+  if (typeof s === 'number') return hzMidi(s);
+  const m = /^([A-Ga-g])([#b]?)(-?\d)$/.exec(String(s).trim());
+  if (!m) throw new Error(`bad note "${s}": a name such as A5, F#4 or Bb2, or a frequency in Hz`);
+  return 12 * (Number(m[3]) + 1) + PCL[m[1].toUpperCase()] + (m[2] === '#' ? 1 : m[2] === 'b' ? -1 : 0);
+}
+const MODES = { major: [0, 2, 4, 5, 7, 9, 11], minor: [0, 2, 3, 5, 7, 8, 10], dorian: [0, 2, 3, 5, 7, 9, 10], lydian: [0, 2, 4, 6, 7, 9, 11], mixolydian: [0, 2, 4, 5, 7, 9, 10], sus: [0, 2, 4, 5, 7, 9, 11] };
+const PENTA = { major: [0, 2, 4, 7, 9], minor: [0, 3, 5, 7, 10], dorian: [0, 3, 5, 7, 10], lydian: [0, 2, 4, 7, 9], mixolydian: [0, 2, 4, 7, 9], sus: [0, 2, 5, 7, 9] };
+function parseKey(s) {
+  const m = /^\s*([A-Ga-g])([#b]?)\s*(major|minor|dorian|lydian|mixolydian|sus|ionian|aeolian)?\s*$/i.exec(String(s));
+  if (!m) throw new Error(`FILM.audio.bed.key "${s}": a tonic and a mode, such as 'D minor', 'A major', 'E dorian'`);
+  const md = (m[3] || 'major').toLowerCase(), mode = { ionian: 'major', aeolian: 'minor' }[md] || md;
+  const tonic = (PCL[m[1].toUpperCase()] + (m[2] === '#' ? 1 : m[2] === 'b' ? -1 : 0) + 12) % 12;
+  return { name: String(s).trim(), tonic, mode, scale: MODES[mode], penta: PENTA[mode], minor: mode === 'minor' || mode === 'dorian' };
+}
+// chord qualities: semitones above the root, [major, minor]
+const QUAL = { '': [[0, 4, 7], [0, 3, 7]], add9: [[0, 4, 7, 14], [0, 3, 7, 14]], maj7: [[0, 4, 7, 11], [0, 3, 7, 11]], 7: [[0, 4, 7, 10], [0, 3, 7, 10]],
+  maj9: [[0, 4, 7, 11, 14], [0, 3, 7, 11, 14]], 9: [[0, 4, 7, 10, 14], [0, 3, 7, 10, 14]], 11: [[0, 7, 10, 14, 17], [0, 3, 7, 10, 17]],
+  6: [[0, 4, 7, 9], [0, 3, 7, 9]], sus2: [[0, 2, 7], [0, 2, 7]], sus4: [[0, 5, 7], [0, 5, 7]], 5: [[0, 7], [0, 7]], dim: [[0, 3, 6], [0, 3, 6]] };
+const ROMAN = ['I', 'II', 'III', 'IV', 'V', 'VI', 'VII'];
+const degreePc = (key, num, acc) => (key.tonic + key.scale[ROMAN.indexOf(num.toUpperCase())] + (acc === '#' ? 1 : acc === 'b' ? -1 : 0) + 24) % 12;
+// 'i add9', 'VI maj7', 'IV maj7/V', 'bVII', 'v7', or explicit notes ['D3', 'A3', 'E4', 'F4']
+function parseChord(spec, key) {
+  if (Array.isArray(spec)) {
+    const ms = spec.map(noteMidi).sort((a, b) => a - b);
+    return { name: spec.join(' '), pcs: [...new Set(ms.map((m) => ((Math.round(m) % 12) + 12) % 12))], bass: ((Math.round(ms[0]) % 12) + 12) % 12, notes: ms };
+  }
+  const m = /^\s*([b#]?)(VII|VI|V|IV|III|II|I|vii|vi|v|iv|iii|ii|i)\s*([^/]*?)\s*(?:\/\s*([b#]?)(VII|VI|V|IV|III|II|I|vii|vi|v|iv|iii|ii|i))?\s*$/.exec(String(spec));
+  if (!m) throw new Error(`chord "${spec}": a roman numeral in the key with a quality (i add9, VI maj7, IV maj7/V) or a list of notes`);
+  let minor = m[2] === m[2].toLowerCase(), q = m[3].replace(/\s+/g, ' ').trim();
+  if (/^m(?!aj)/.test(q)) { minor = true; q = q.slice(1).trim(); }
+  if (q === 'add 9') q = 'add9';
+  const iv = QUAL[q];
+  if (!iv) throw new Error(`chord "${spec}": unknown quality "${q}" (${Object.keys(QUAL).filter(Boolean).join(', ')}, or none)`);
+  const root = degreePc(key, m[2], m[1]);
+  return { name: String(spec).trim(), pcs: [...new Set(iv[minor ? 1 : 0].map((x) => (root + x) % 12))], root, bass: m[5] ? degreePc(key, m[5], m[4]) : root };
+}
+// a voicing in G3..G5 that moves as little as it can from the one before (voice leading)
+function voiceChord(pcs, prev) {
+  const opts = pcs.map((pc) => { const o = []; for (let n = 55; n <= 79; n++) if (n % 12 === pc) o.push(n); return o; });
+  let best = null, bestCost = Infinity;
+  const cur = [];
+  const pick = (k) => {
+    if (k === opts.length) {
+      const s = cur.slice().sort((a, b) => a - b);
+      let cost = 0;
+      if (prev) { for (const n of s) cost += Math.min(...prev.map((p) => Math.abs(p - n))); for (const p of prev) cost += Math.min(...s.map((n) => Math.abs(p - n))); }
+      else for (const n of s) cost += Math.abs(n - 63);
+      for (let i = 2; i < s.length; i++) if (s[i] - s[i - 2] < 3) cost += 6;      // no three notes inside a minor third
+      if (cost < bestCost - 1e-9) { bestCost = cost; best = s; }
+      return;
+    }
+    for (const n of opts[k]) { cur.push(n); pick(k + 1); cur.pop(); }
+  };
+  pick(0);
+  return best;
+}
+const inOctave = (pc, lo) => { let n = lo; while (n % 12 !== pc) n++; return n; };   // the note of pc in [lo, lo + 11]
+
 // kind -> { dur (whoosh, swish, riser), make(k, t, o) }, o: { p (pitch factor), dur }.
 // make() lists voices with k.v(src, t0, a, peak, d, filter, pan):
 //   src     { wave: 'sine' | 'square' | 'triangle' | 'noise', f, auto: [[dt, f, 'exp' | 'set']], curve: [Float32Array, s] }
 //   t0      when it starts; the envelope rises linearly over a to peak, then falls exponentially over d
 //   filter  { type, f, Q, auto: [[dt, f]] } (exponential moves), pan a number or [from, to] across the voice
 // A sweep swells into t and dies away after it; a riser ends on t.
+// The tonal kinds (tonal: true: the bed's key decides their pitch, and `vary` changes only their level) list
+// voices with k.voice(spec), o also holding the cue itself (o.c): see voice() below.
 const SFX = (() => {
   const sw = (f0, f1, glide) => ({ f: f0, auto: [[glide, f1, 'exp']] });
+  // the reverse-exponential swell of `swell` and `riser` (shape: 'exp'): silent to full over dur, ending on t
+  const swellEnv = (dur, peak) => { const e = [[0, 0]]; for (let i = 1; i <= 24; i++) { const u = i / 24; e.push([dur * u, peak * (Math.exp(4.5 * u) - 1) / (Math.exp(4.5) - 1)]); } e.push([dur + 0.006, 0]); return e; };
   return {
     pop: { make: (k, t, o) => { k.v({ wave: 'sine', ...sw(720 * o.p, 260 * o.p, 0.07) }, t, 0.002, 0.9, 0.11); k.v({ wave: 'noise' }, t, 0.001, 0.25, 0.012, { type: 'highpass', f: 2500 }); } },
     hit: { make: (k, t, o) => { k.v({ wave: 'sine', ...sw(160 * o.p, 50 * o.p, 0.15) }, t, 0.002, 0.9, 0.3); k.v({ wave: 'noise' }, t, 0.002, 0.7, 0.09, { type: 'lowpass', f: 2000 * o.p }); } },
@@ -630,7 +704,8 @@ const SFX = (() => {
     } },
     coin: { make: (k, t, o) => k.v({ wave: 'square', f: 988 * o.p, auto: [[0.075, 1319 * o.p, 'set']] }, t, 0.002, 0.35, 0.38, { type: 'lowpass', f: 5000 }) },
     chime: { make: (k, t, o) => {
-      for (const [m, a, d] of [[1, 0.5, 1.3], [2.01, 0.22, 0.8], [3.03, 0.12, 0.5], [4.18, 0.06, 0.35]]) k.v({ wave: 'sine', f: 1047 * o.p * m }, t, 0.003, a, d);
+      const f0 = k.bed && !o.c.pitch ? k.tone(o, 1047) : 1047 * o.p;            // with a bed, in its key
+      for (const [m, a, d] of [[1, 0.5, 1.3], [2.01, 0.22, 0.8], [3.03, 0.12, 0.5], [4.18, 0.06, 0.35]]) k.v({ wave: 'sine', f: f0 * m }, t, 0.003, a, d);
     } },
     sparkle: { make: (k, t, o) => {
       for (let i = 0; i < 5; i++) k.v({ wave: 'sine', f: (2000 + 3000 * k.r(i)) * o.p }, t + 0.035 * i, 0.001, 0.15, 0.15);
@@ -638,15 +713,75 @@ const SFX = (() => {
     whoosh: { dur: 0.55, make: (k, t, o) => k.sweep(t, o.dur, 0.6, [350, 2400, 600], 0.9, 0.9, o.p) },
     swish: { dur: 0.24, make: (k, t, o) => k.sweep(t, o.dur, 0.6, [1800, 6000, 2500], 1.4, 0.7, o.p) },
     riser: { dur: 1.2, make: (k, t, o) => {
+      if (o.c.shape === 'exp') {                   // the reverse-exponential swell, cut hard on t
+        const t0 = t - o.dur, e = swellEnv(o.dur, 0.7);
+        k.voice({ src: { wave: o.dur > 1.5 ? 'noiseLong' : 'noise' }, t0, env: e, filter: { type: 'bandpass', f: 300 * o.p, Q: 1.5, auto: [[o.dur, 5000 * o.p]] } });
+        k.voice({ src: { wave: 'sine', ...sw(180 * o.p, 900 * o.p, o.dur) }, t0, env: swellEnv(o.dur, 0.25) });
+        return;
+      }
       k.v({ wave: 'noise' }, t - o.dur, o.dur, 0.7, 0.04, { type: 'bandpass', f: 300 * o.p, Q: 1.5, auto: [[o.dur, 5000 * o.p]] });
       k.v({ wave: 'sine', ...sw(180 * o.p, 900 * o.p, o.dur) }, t - o.dur, o.dur, 0.25, 0.04);
     } },
+    // a sub hit with a long pitched tail: the hits on the film's structure (the world forming, a drop, the lockup)
+    boom: { dur: 5, tonal: true, make: (k, t, o) => {
+      const f1 = o.c.note != null ? midiHz(noteMidi(o.c.note)) * o.p : k.bed ? midiHz(inOctave(k.bed.key.tonic, 24)) * o.p : 55 * o.p;
+      k.voice({ src: { wave: 'sine', ...sw(2.2 * f1, f1, 0.28) }, t0: t, env: k.ad(0.003, 1, o.dur), pan: 0 });
+      k.voice({ src: { wave: 'triangle', ...sw(4.4 * f1, 2 * f1, 0.28) }, t0: t, env: k.ad(0.003, 0.35, 0.9), filter: { type: 'lowpass', f: 220 }, filter2: { type: 'lowpass', f: 440, Q: 0.5 }, pan: 0 });
+      k.voice({ src: { wave: 'noise' }, t0: t, env: k.ad(0.002, 0.5, 0.35), filter: { type: 'lowpass', f: 900, auto: [[0.25, 150]] }, pan: 0 });
+      if (o.c.crack) k.voice({ src: { wave: 'noise' }, t0: t, env: k.ad(0.001, 0.15, 0.08), filter: { type: 'highpass', f: 4000 }, send: 0.4 });
+      k.duck(t, 'bed', 5, 0.6); k.duck(t, 'low', 5, 0.6); k.duck(t, 'air', 14, 0.6);
+    } },
+    // a reverse swell (noise and the chord's tones) that ends hard on t, with a gap in the low end before it
+    swell: { dur: 1, tonal: true, make: (k, t, o) => {
+      const t0 = t - o.dur, wave = o.dur > 1.5 ? 'noiseLong' : 'noise';
+      for (const pan of [-0.7, 0.7]) k.voice({ src: { wave }, t0, env: swellEnv(o.dur, 0.7), pan,
+        filter: { type: 'highpass', f: 2000 }, filter2: { type: 'bandpass', f: 1800, Q: 0.8, auto: [[o.dur, 9000]] } });
+      const tones = o.c.note != null ? [noteMidi(o.c.note)] : k.bed ? k.bed.chordAt(t).pcs.map((pc) => inOctave(pc, 72)) : [76];
+      for (const n of tones) k.voice({ src: { wave: 'sine', f: midiHz(n) * o.p }, t0, env: swellEnv(o.dur, 0.12 / Math.sqrt(tones.length)), pan: 0 });
+      if (o.c.gap !== false) k.duck(t, 'low', 12, 0.05, Math.min(0.6, o.dur));
+    } },
+    // an arc flight: a noise swell peaking on t and a sine rising a perfect fifth, panned along the flight
+    arc: { dur: 1.4, tonal: true, make: (k, t, o) => {
+      const d = o.dur, from = o.c.from != null ? o.c.from : -0.5, to = o.c.to != null ? o.c.to : 0.5, f0 = k.tone(o, 2100);
+      k.voice({ src: { wave: 'noise' }, t0: t - 0.6 * d, env: [[0, 0], [0.6 * d, 0.7], [d, 0.0007, 'exp'], [d + 0.004, 0]],
+        filter: { type: 'bandpass', f: 2500, Q: 1.1, auto: [[0.6 * d, 6500], [d, 4000]] }, pan: [from, to], send: 0.25 });
+      k.voice({ src: { wave: 'sine', ...sw(f0, 1.5 * f0, d) }, t0: t - 0.6 * d, env: [[0, 0], [0.8 * d, 0.08], [d, 0]],
+        filter: { type: 'highpass', f: 1000 }, pan: [from, to], send: 0.5 });
+    } },
+    // a pitched downward chirp with a wet tail: a pin, a reticle locking, a card
+    ping: { tonal: true, make: (k, t, o) => {
+      const f0 = k.tone(o, 2200);
+      for (const [m, a] of [[1, 0.35], [1.51, 0.18], [2.02, 0.09]]) k.voice({ src: { wave: 'sine', ...sw(f0 * m, 0.8 * f0 * m, 0.15) }, t0: t, env: k.ad(0.002, a, 0.45), send: 0.45 });
+    } },
+    // a seeded burst of blips: typing (regular: true, rate = characters a second), a data stream, a counter rolling
+    data: { dur: 0.6, tonal: true, make: (k, t, o) => {
+      const c = o.c, rate = c.rate || 22, n = Math.max(1, Math.round(rate * o.dur)), lo = c.lo || 2300, hi = c.hi || 6300;
+      const tones = k.scaleIn(lo, hi);
+      for (let i = 0; i < n; i++) {
+        const ti = c.regular ? t + (i + 0.3 * (k.r(6 * i) - 0.5)) / rate : t + o.dur * k.r(6 * i), pan = 1.4 * (k.r(6 * i + 1) - 0.5);
+        if (k.r(6 * i + 2) < 0.7) {
+          const f = tones.length ? tones[Math.floor(k.r(6 * i + 3) * tones.length) % tones.length] : (lo + (hi - lo) * k.r(6 * i + 3)) * o.p;
+          k.voice({ src: { wave: 'sine', f }, t0: ti, env: k.ad(0.001, 0.06 + 0.06 * k.r(6 * i + 4), 0.018 + 0.022 * k.r(6 * i + 5)), pan, send: 0.3 });
+        } else k.voice({ src: { wave: 'noise' }, t0: ti, env: k.ad(0.0005, 0.1, 0.006), filter: { type: 'highpass', f: 7000 }, pan, send: 0.3 });
+      }
+    } },
+    // a quiet two-tone confirmation in key: a status turning complete, a region locking
+    lock: { tonal: true, make: (k, t, o) => {
+      const f1 = k.tone(o, 1760), f2 = k.bed ? k.snapScale(f1 * 4 / 3) : f1 * 4 / 3;
+      k.voice({ src: { wave: 'square', f: f1 }, t0: t, env: k.ad(0.001, 0.12, 0.09), filter: { type: 'lowpass', f: 3500 }, send: 0.35 });
+      k.voice({ src: { wave: 'square', f: f2 }, t0: t + 0.07, env: k.ad(0.001, 0.12, 0.18), filter: { type: 'lowpass', f: 3500 }, send: 0.35 });
+    } },
+    // one chord of the bed's pad, by hand: cue(t, 'pad', { dur: 4, chord: 'VI maj7' })
+    pad: { dur: 4, tonal: true, make: (k, t, o) => k.pad(t, o) },
+    // a drone on a note, by hand: cue(t, 'drone', { dur: 8, note: 'D2' })
+    drone: { dur: 4, tonal: true, make: (k, t, o) => k.drone(t, o) },
   };
 })();
 const cue = (t, kind, opts = {}) => {
   if (!SFX[kind]) throw new Error(`cue at ${t}: unknown kind "${kind}" (${Object.keys(SFX).join(', ')})`);
   CUES.push({ ...opts, t, kind });
 };
+const sectionAt = (t, what) => { if (t > 1e-9 && t < DUR && !SECTIONS.some((s) => Math.abs(s.t - t) < 1e-6)) SECTIONS.push({ t, what: what || 'section' }); };
 // every cue the film sounds: the engine's, FILM.audio.cues, and with `auto` one per accent and cut. Sorted by
 // time; two cues of one kind within 40 ms of each other sound once.
 function audioCues() {
@@ -665,15 +800,46 @@ function audioCues() {
     if (!out.some((o) => o.kind === c.kind && Math.abs(o.t - c.t) < 0.04)) out.push(c);
   return out;
 }
+
+/* the bed: FILM.audio.bed planned into chords (the voices come in mixCues) */
+const BED_MINOR = ['i add9', 'VI maj7', 'III maj7', 'VII add9', 'iv9', 'VI maj9'], BED_MAJOR = ['I add9', 'vi7', 'IV maj7', 'V sus4', 'ii9', 'IV maj9'];
+function bedPlan(list) {
+  const B = AUDIO.bed, key = parseKey(B.key || 'D minor'), loop = LOOP !== 'none';
+  let chords;
+  if (B.chords) chords = B.chords.map(([t, c]) => ({ t, spec: c }));
+  else {                                           // one change per section anchor, the last one resolving the tonic
+    const at = (B.at || (SECTIONS.length ? SECTIONS.map((s) => s.t) : CUTS)).filter((t) => t > 0 && t < DUR).sort((a, b) => a - b);
+    const cyc = key.minor ? BED_MINOR : BED_MAJOR, end = B.end || 'calm';
+    const last = key.minor ? { lift: 'I', calm: 'i sus2', dark: 'i' }[end] : 'I add9';
+    if (!last) throw new Error(`FILM.audio.bed.end "${end}": lift, calm or dark`);
+    chords = [{ t: 0, spec: cyc[0] }, ...at.map((t, i) => ({ t, spec: i === at.length - 1 && !loop ? last : cyc[(i + 1) % cyc.length] }))];
+  }
+  chords.sort((a, b) => a.t - b.t);
+  if (!chords.length || chords[0].t > 1e-9) throw new Error('FILM.audio.bed.chords: the first chord starts at 0');
+  let prev = null;
+  for (const c of chords) {
+    Object.assign(c, parseChord(c.spec, key));
+    c.voicing = c.notes ? c.notes.map(Math.round).filter((n) => n >= 48) : voiceChord(c.pcs, prev);
+    if (!c.voicing.length) c.voicing = voiceChord(c.pcs, prev);
+    prev = c.voicing;
+    c.hard = list.some((q) => q.kind === 'boom' && Math.abs(q.t - c.t) < 0.06);   // a change on a boom: a short crossfade
+  }
+  const booms = list.filter((q) => q.kind === 'boom').map((q) => q.t);
+  return { key, chords, loop, firstBoom: booms.length ? booms[0] : null,
+    chordAt: (t) => { let c = chords[0]; for (const x of chords) if (x.t <= t + 1e-9) c = x; return c; } };
+}
+
 // The cue mix: Float32 stereo at 48 kHz, exactly the film's length. Cue options: gain (dB), pitch (a factor),
 // pan (-1 to 1), dur (whoosh, swish, riser), seed, vary (0 turns off the seeded +-2 % pitch and +-1 dB level
 // variation between repeats of one kind). Every voice renders in an OfflineAudioContext of its own, one chain
 // with nothing summed inside it (Chromium sums a node's inputs in no fixed order, which changes the last bit),
 // and the voices are added up here, in a fixed order: the same film gives the same samples, bit for bit.
-let NOISE = null;
+// A voice made with k.voice(spec) may carry a send (to the reverb, which runs once in plain JS over the summed
+// sends) and a bus (the bed's: 'bed', 'low', 'air'), whose sum is ducked under booms and swells in JS.
+let NOISE = null, NOISE_LONG = null;
 async function mixCues() {
-  const list = audioCues();
-  if (!list.length) return null;
+  const list = audioCues(), bedOn = !!(AUDIO && AUDIO.bed && AUDIO.sfx !== false);
+  if (!list.length && !bedOn) return null;
   const N = Math.round(NFR / FPS * RATE);
   const sfxDb = typeof AUDIO.sfx === 'number' ? AUDIO.sfx : 0;
   if (!NOISE) {                                    // two seconds of seeded white noise, shared by every voice
@@ -681,23 +847,179 @@ async function mixCues() {
     const nd = NOISE.getChannelData(0), rnd = mulberry32(0x5F3759DF);
     for (let i = 0; i < nd.length; i++) nd[i] = rnd() * 2 - 1;
   }
-  const voices = [];
+  const BP = bedOn ? bedPlan(list) : null;
+  const voices = [], DUCKS = [];
+  // helpers for the tonal kinds and the bed
+  const snapScale = (f) => {                       // the nearest tone of the key's scale
+    if (!BP) return f;
+    const m = hzMidi(f);
+    let best = m, bd = Infinity;
+    for (let n = Math.floor(m) - 2; n <= Math.ceil(m) + 2; n++) if (BP.key.scale.includes(((n - BP.key.tonic) % 12 + 12) % 12) && Math.abs(n - m) < bd) { bd = Math.abs(n - m); best = n; }
+    return midiHz(best);
+  };
+  const snapChord = (f, t) => {                    // the nearest tone of the chord sounding at t
+    const m = hzMidi(f), pcs = BP.chordAt(t).pcs;
+    let best = m, bd = Infinity;
+    for (let n = Math.floor(m) - 7; n <= Math.ceil(m) + 7; n++) if (pcs.includes(((n % 12) + 12) % 12) && Math.abs(n - m) < bd) { bd = Math.abs(n - m); best = n; }
+    return midiHz(best);
+  };
+  const ad = (a, peak, d) => [[0, 0], [a, peak], [a + d, peak * 1e-3, 'exp'], [a + d + 0.004, 0]];
+  const spanOf = (sp) => sp.env[sp.env.length - 1][0];
+  const addVoice = (sp, g, seed, n) => {
+    if (sp.env[0][0] !== 0 || sp.env[0][1] !== 0) throw new Error('voice env: the first point must be [0, 0]');
+    voices.push({ spec: sp, t0: sp.t0, end: sp.t0 + spanOf(sp), g: g * (sp.gain != null ? sp.gain : 1), send: sp.send || 0, bus: sp.bus || 'sfx',
+      off: (sp.src.wave === 'noiseLong' ? 11 : 1.9) * hash(seed, 74, n) });
+  };
+  // a sustained voice's envelope from t0 to t1: in and out by a dB-linear fade, an equal-power crossfade or a ramp
+  const sus = (t0, t1, A, inK, inD, outK, outD) => {
+    const e = [[0, 0]], T = t1 - t0;
+    if (inK === 'fade') { e.push([0.002, A * 1e-3]); e.push([Math.max(0.004, inD), A, 'exp']); }
+    else if (inK === 'xf') for (let i = 1; i <= 8; i++) e.push([inD * i / 8, A * Math.sin(Math.PI / 2 * i / 8)]);
+    else e.push([Math.max(0.002, inD), A]);
+    const hold = T - outD;
+    if (hold > e[e.length - 1][0] + 1e-4) e.push([hold, A]);
+    if (outK === 'xf') for (let i = 1; i <= 8; i++) e.push([hold + outD * i / 8, A * Math.cos(Math.PI / 2 * i / 8)]);
+    else e.push([T, 0]);                         // a linear fade: accelerating in dB, as a mix's fade-out does
+    for (let i = 1; i < e.length; i++) if (e[i][0] <= e[i - 1][0]) e[i][0] = e[i - 1][0] + 1e-4;
+    return e;
+  };
+  const rateQ = (r) => (LOOP === 'none' ? r : Math.max(1, Math.round(r * DUR)) / DUR);   // whole cycles per loop
+  // a slow modulation as a value curve, 200 points a second, from film time t0 for dur seconds
+  const curve = (t0, dur, fn) => { const n = Math.max(2, Math.ceil(dur * 200)), c = new Float32Array(n); for (let i = 0; i < n; i++) c[i] = fn(t0 + dur * i / (n - 1)); return [c, dur]; };
+  const B = bedOn ? AUDIO.bed : {}, mv = B.movement != null ? B.movement : 0.5, bright = B.brightness != null ? B.brightness : 0.5;
+  const padVoices = (t0, t1, notes, A, inK, inD, outK, outD, g, seed, glass) => {
+    const fc = 500 * Math.pow(2, 3.2 * bright);
+    notes.forEach((n, j) => {
+      const r1 = rateQ(0.07 + 0.06 * hash(seed, 81, n)), ph = TAU * hash(seed, 82, n), r2 = rateQ(0.15 + 0.15 * hash(seed, 83, n)), ph2 = TAU * hash(seed, 84, n), ph3 = TAU * hash(seed, 85, n);
+      const env = sus(t0, t1, A, inK, inD, outK, outD), dur = t1 - t0;
+      const lfo = curve(t0, dur, (t) => fc * Math.pow(2, 0.6 * mv * Math.sin(TAU * r1 * t + ph)));
+      const amp = curve(t0, dur, (t) => 1 - 0.18 * mv * (0.5 + 0.5 * Math.sin(TAU * r2 * t + ph2)));
+      [[-18, -0.6], [0, 0], [18, 0.6]].forEach(([det, p0], u) => addVoice({ src: { wave: 'sawtooth', f: midiHz(n), detune: det }, t0, env,
+        filter: { type: 'lowpass', Q: 0.7, lfo }, filter2: { type: 'lowpass', f: 1.6 * fc, Q: 0.5 }, amp,
+        pan: { curve: curve(t0, dur, (t) => Math.max(-1, Math.min(1, p0 + 0.15 * mv * Math.sin(TAU * rateQ(0.05) * t + ph3 + u)))) }, send: 0.35, bus: 'bed' }, g, seed, n * 3 + u));
+    });
+    if (glass) glass.forEach((n, j) => addVoice({ src: { wave: 'triangle', f: midiHz(n) }, t0, env: sus(t0, t1, 0.05, inK, inD, outK, outD), filter: { type: 'lowpass', f: 3000 },
+      pan: j % 2 ? 0.4 : -0.4, send: 0.5, bus: 'bed' }, g, seed, 900 + n));
+  };
+  const k = {
+    bed: BP,
+    // the frequency of a tonal cue: its note, else the default snapped into the bed's key (the chord at t), else the default
+    tone: (o, def) => (o.c.note != null ? midiHz(noteMidi(o.c.note)) * o.p : BP ? snapChord(def * o.p, o.c.t) : def * o.p),
+    snapScale,
+    scaleIn: (lo, hi) => { if (!BP) return []; const out = []; for (let n = Math.ceil(hzMidi(lo)); n <= Math.floor(hzMidi(hi)); n++) if (BP.key.penta.includes(((n - BP.key.tonic) % 12 + 12) % 12)) out.push(midiHz(n)); return out; },
+    ad,
+    duck: (t, bus, dB, rec, pre) => DUCKS.push({ t, bus, dB, rec, pre: pre || 0 }),
+  };
   list.forEach((c, i) => {
     const K = SFX[c.kind], dur = c.dur || K.dur || 0, vary = c.vary === 0 ? 0 : 1, seed = c.seed != null ? c.seed : i;
-    const o = { p: (c.pitch || 1) * (1 + vary * 0.04 * (hash(i, 71) - 0.5)), dur };
+    const o = { p: K.tonal ? (c.pitch || 1) : (c.pitch || 1) * (1 + vary * 0.04 * (hash(i, 71) - 0.5)), dur, c };
     const g = 0.5 * dBg((c.gain || 0) + vary * 2 * (hash(i, 72) - 0.5) + sfxDb), pan = Math.max(-1, Math.min(1, c.pan || 0));
-    const k = {
-      r: (j) => hash(seed, 73, j),
-      v: (src, t0, a, peak, d, filter, vpan) => voices.push({ src, t0, a, peak, d, filter, pan: vpan != null ? vpan : pan, g, off: 1.9 * hash(seed, 74, voices.length) }),
-      // noise through a band-pass that sweeps f[0] -> f[1] (at t) -> f[2], swelling into t and panning across
-      sweep: (t, dur, lead, f, Q, peak, p) => k.v({ wave: 'noise' }, t - lead * dur, lead * dur, peak, (1 - lead) * dur,
-        { type: 'bandpass', f: f[0] * p, Q, auto: [[lead * dur, f[1] * p], [dur, f[2] * p]] }, [pan - 0.5, pan + 0.5]),
+    k.r = (j) => hash(seed, 73, j);
+    k.v = (src, t0, a, peak, d, filter, vpan) => voices.push({ src, t0, a, peak, d, filter, pan: vpan != null ? vpan : pan, g, off: 1.9 * hash(seed, 74, voices.length) });
+    // noise through a band-pass that sweeps f[0] -> f[1] (at t) -> f[2], swelling into t and panning across
+    k.sweep = (t, dur, lead, f, Q, peak, p) => k.v({ wave: 'noise' }, t - lead * dur, lead * dur, peak, (1 - lead) * dur,
+      { type: 'bandpass', f: f[0] * p, Q, auto: [[lead * dur, f[1] * p], [dur, f[2] * p]] }, [pan - 0.5, pan + 0.5]);
+    k.voice = (sp) => addVoice({ pan, ...sp }, g, seed, voices.length);
+    k.pad = (t, o2) => {
+      const key = BP ? BP.key : parseKey(o2.c.key || 'C major');
+      const ch = parseChord(o2.c.chord || (key.minor ? 'i' : 'I'), key), notes = ch.notes ? ch.notes.map(Math.round) : voiceChord(ch.pcs, null);
+      padVoices(t, t + o2.dur, notes, 0.11, 'xf', Math.min(0.8, o2.dur / 3), 'xf', Math.min(0.8, o2.dur / 3), g, seed, null);
+    };
+    k.drone = (t, o2) => {
+      const n = o2.c.note != null ? Math.round(noteMidi(o2.c.note)) : BP ? inOctave(BP.key.tonic, 36) : 38, d = o2.dur, inD = Math.min(1, d / 3);
+      addVoice({ src: { wave: 'sine', f: midiHz(n) }, t0: t, env: sus(t, t + d, 0.25, 'xf', inD, 'xf', inD), filter: { type: 'lowpass', f: 400 }, pan: 0, bus: BP ? 'low' : 'sfx' }, g, seed, 1);
+      addVoice({ src: { wave: 'triangle', f: midiHz(n + 7), detune: 4 }, t0: t, env: sus(t, t + d, 0.1, 'xf', inD, 'xf', inD), filter: { type: 'lowpass', f: 300 }, pan: -0.2, bus: BP ? 'low' : 'sfx' }, g, seed, 2);
+      addVoice({ src: { wave: 'triangle', f: midiHz(n), detune: -4 }, t0: t, env: sus(t, t + d, 0.1, 'xf', inD, 'xf', inD), filter: { type: 'lowpass', f: 300 }, pan: 0.2, bus: BP ? 'low' : 'sfx' }, g, seed, 3);
     };
     K.make(k, c.t, o);
   });
+  if (BP) {                                        // the bed's voices: pad and glass, drone and sub, bass, air, glints, pulse
+    const LY = { pad: 1, drone: 1, bass: 1, air: 0.2, glints: 0.3, ...(B.layers || {}) }, seed = B.seed != null ? B.seed : 1;
+    const loop = BP.loop, fi = loop ? 0 : (B.fadeIn != null ? B.fadeIn : 2.3), fo = loop ? 0 : (B.fadeOut != null ? B.fadeOut : 0.9);
+    const g0 = 0.5 * dBg((B.gain || 0) + sfxDb), C = BP.chords, end = loop ? DUR : DUR - 0.05;
+    const xfAt = (c) => (c.hard ? 0.25 : 0.8);
+    const xf0 = loop ? xfAt(C[0]) : 0;           // a loop crossfades the last chord into the first across the seam
+    const spanStart = loop ? -xf0 / 2 : 0, spanEnd = loop ? DUR + xf0 / 2 : end;
+    const inK = loop ? 'xf' : 'fade', inD = loop ? xf0 : Math.max(0.05, fi), outK = loop ? 'xf' : 'lin', outD = loop ? xf0 : Math.max(0.05, fo);
+    if (LY.pad > 0) C.forEach((c, i) => {
+      const nx = C[i + 1], a = i === 0 ? spanStart : c.t - xfAt(c) / 2, b = nx ? nx.t + xfAt(nx) / 2 : spanEnd;
+      const glass = [inOctave(c.root != null ? c.root : c.bass, 84), inOctave(((c.root != null ? c.root : c.bass) + 7) % 12, 84)];
+      padVoices(a, b, c.voicing, 0.16, i === 0 ? inK : 'xf', i === 0 ? inD : xfAt(c), nx ? 'xf' : outK, nx ? xfAt(nx) : outD, g0 * LY.pad, seed + i, glass);
+    });
+    if (LY.drone > 0) {                             // follows the chords' bass notes, gliding 0.3 s at each change
+      const bassAt = (lo) => C.map((c) => midiHz(inOctave(c.bass, lo)));
+      const follow = (fs) => { const auto = []; C.forEach((c, i) => { if (i) { auto.push([c.t - spanStart, fs[i - 1], 'set']); auto.push([c.t + 0.3 - spanStart, fs[i], 'exp']); } }); return { f: fs[0], auto }; };
+      const breath = curve(spanStart, spanEnd - spanStart, (t) => 1 - 0.3 * mv * (0.5 + 0.5 * Math.sin(TAU * rateQ(0.08) * t + TAU * hash(seed, 91))));
+      const d2 = bassAt(36), d5 = C.map((c) => midiHz(inOctave((c.bass + 7) % 12, 43))), d1 = bassAt(24);
+      const env = (A) => sus(spanStart, spanEnd, A, inK, inD, outK, outD);
+      addVoice({ src: { wave: 'sine', ...follow(d2) }, t0: spanStart, env: env(0.12), filter: { type: 'lowpass', f: 400 }, amp: breath, pan: 0, bus: 'low' }, g0 * LY.drone, seed, 1);
+      addVoice({ src: { wave: 'triangle', detune: 4, ...follow(d5) }, t0: spanStart, env: env(0.06), filter: { type: 'lowpass', f: 300 }, filter2: { type: 'lowpass', f: 600, Q: 0.5 }, pan: -0.2, bus: 'low' }, g0 * LY.drone, seed, 2);
+      addVoice({ src: { wave: 'triangle', detune: -4, ...follow(d2) }, t0: spanStart, env: env(0.06), filter: { type: 'lowpass', f: 300 }, filter2: { type: 'lowpass', f: 600, Q: 0.5 }, pan: 0.2, bus: 'low' }, g0 * LY.drone, seed, 3);
+      const s0 = BP.firstBoom != null && !loop ? BP.firstBoom : spanStart;   // the sub arrives with the first boom
+      const sub = follow(d1);
+      sub.auto = sub.auto.map(([dt, f, kd]) => [dt + spanStart - s0, f, kd]).filter((x) => x[0] > 0);
+      sub.f = midiHz(inOctave(BP.chordAt(s0).bass, 24));
+      addVoice({ src: { wave: 'sine', ...sub }, t0: s0, env: sus(s0, spanEnd, 0.14, s0 === spanStart ? inK : 'ramp', s0 === spanStart ? inD : 0.4, outK, outD), pan: 0, bus: 'low' }, g0 * LY.drone, seed, 4);
+    }
+    const pulse = B.pulse ? { from: 0, to: DUR, bpm: FILM.BPM || 100, kick: 0, hats: 0, ...B.pulse } : null;
+    if (pulse && LOOP !== 'none') pulse.bpm = Math.max(1, Math.round(pulse.bpm * DUR / 60)) * 60 / DUR;
+    const beats = [];
+    if (pulse) for (let t = pulse.from; t < Math.min(pulse.to, end) - 1e-6; t += 60 / pulse.bpm) beats.push(t);
+    if (LY.bass > 0) C.forEach((c, i) => {           // articulated per chord; with a pulse it re-attacks on every beat
+      const nx = C[i + 1], a = i === 0 ? spanStart : c.t, b = nx ? nx.t + 0.3 : spanEnd, A = 0.12, f = midiHz(inOctave(c.bass, 35));
+      let env = sus(a, b, A, i === 0 ? inK : 'ramp', i === 0 ? inD : 0.02, nx ? 'lin' : outK, nx ? 0.3 : outD);
+      const bt = beats.filter((t) => t > a + 0.05 && t < b - 0.35);
+      if (bt.length) {
+        const pts = env.filter(([dt]) => dt <= bt[0] - a - 0.001);
+        for (const t of bt) { pts.push([t - a - 0.0005, 0.6 * A]); pts.push([t - a + 0.005, A]); pts.push([t - a + 0.25, 0.6 * A]); }
+        for (const p of env) if (p[0] > bt[bt.length - 1] - a + 0.25) pts.push([p[0], Math.min(p[1], 0.6 * A)]);
+        env = pts;
+      }
+      addVoice({ src: { wave: 'sine', f }, t0: a, env, filter: { type: 'lowpass', f: 250 }, pan: 0, bus: 'low' }, g0 * LY.bass, seed, 10 + i);
+      addVoice({ src: { wave: 'triangle', f }, t0: a, env, filter: { type: 'lowpass', f: 250 }, filter2: { type: 'lowpass', f: 500, Q: 0.5 }, pan: 0, bus: 'low' }, g0 * LY.bass * dBg(-12), seed, 40 + i);
+    });
+    if (LY.air > 0) {
+      const dur = spanEnd - spanStart, ph = TAU * hash(seed, 95), ph2 = TAU * hash(seed, 96);
+      addVoice({ src: { wave: 'noiseLong' }, t0: spanStart, env: sus(spanStart, spanEnd, 0.25, inK, inD, outK, outD), filter: { type: 'highpass', f: 3000 },
+        filter2: { type: 'bandpass', Q: 0.5, lfo: curve(spanStart, dur, (t) => 7000 * Math.pow(2, 0.5 * Math.sin(TAU * rateQ(0.05) * t + ph))) },
+        pan: { curve: curve(spanStart, dur, (t) => 0.3 * Math.sin(TAU * rateQ(0.03) * t + ph2)) }, send: 0.3, bus: 'air' }, g0 * LY.air, seed, 70);
+    }
+    if (LY.glints > 0) {                            // the stardust: sparse high sine dots in the key, denser before the first boom
+      const tones = k.scaleIn(2300, 6300), fadeG = (t) => (loop ? 1 : t < fi ? Math.pow(10, -3 * (1 - t / fi)) : t > end - fo ? Math.max(0, (end - t) / fo) : 1);
+      let t = loop ? 0 : 0.08, j = 0;
+      while (t < end - 0.05) {
+        const rate = BP.firstBoom != null && t < BP.firstBoom ? 20 : 6, g1 = g0 * LY.glints * fadeG(t);
+        if (hash(seed, 101, j) < 0.7) addVoice({ src: { wave: 'sine', f: tones[Math.floor(hash(seed, 102, j) * tones.length) % tones.length] }, t0: t,
+          env: ad(0.001, 0.3 * (0.6 + 0.4 * hash(seed, 103, j)), 0.02 + 0.03 * hash(seed, 104, j)), pan: 1.4 * (hash(seed, 105, j) - 0.5), send: 0.6, bus: 'air' }, g1, seed, 2000 + j);
+        else addVoice({ src: { wave: 'noise' }, t0: t, env: ad(0.0005, 0.1, 0.006), filter: { type: 'highpass', f: 7000 }, pan: 1.4 * (hash(seed, 105, j) - 0.5), send: 0.6, bus: 'air' }, g1 * 0.5, seed, 2000 + j);
+        t += (0.4 + 1.2 * hash(seed, 106, j)) / rate; j++;
+      }
+    }
+    if (pulse) {                                   // kick on the beat, hats on 16ths, the bed pumping under the kick
+      const bar = 4 * 60 / pulse.bpm, booms = list.filter((q) => q.kind === 'boom').map((q) => q.t);
+      beats.forEach((t, i) => {
+        if (pulse.kick > -60) {
+          addVoice({ src: { wave: 'sine', f: 120, auto: [[0.12, 46, 'exp']] }, t0: t, env: ad(0.002, 0.6, 0.35), pan: 0 }, g0 * dBg(pulse.kick), seed, 3000 + i);
+          addVoice({ src: { wave: 'noise' }, t0: t, env: ad(0.0005, 0.15, 0.008), filter: { type: 'lowpass', f: 3000 }, pan: 0 }, g0 * dBg(pulse.kick), seed, 3500 + i);
+          DUCKS.push({ t, bus: 'bed', dB: 3, rec: 0.25, pre: 0 }, { t, bus: 'low', dB: 3, rec: 0.25, pre: 0 });
+        }
+        if (pulse.hats > -60) for (let s = 0; s < 4; s++) {
+          const th = t + s * 60 / pulse.bpm / 4, barI = Math.floor((th - pulse.from) / bar + 1e-6);
+          if (barI % 8 === 7 || booms.some((b) => b > th && b - th < bar)) continue;     // a bar of rest every 8, and before a boom
+          addVoice({ src: { wave: 'noise' }, t0: th, env: ad(0.001, 0.05, 0.03), filter: { type: 'highpass', f: 9000 }, filter2: { type: 'bandpass', f: 11000, Q: 0.8 },
+            pan: s % 2 ? 0.2 : -0.2, send: 0.15, bus: 'air' }, g0 * dBg(pulse.hats + (s === 2 ? 4 : 0)), seed, 4000 + 4 * i + s);
+        }
+      });
+    }
+  }
+  const sp = AUDIO.space === false ? null : { rt60: 2.6, damp: 5500, level: -6, ...(AUDIO.space || {}) };
+  const sends = !!sp && voices.some((v) => v.spec && v.send > 0);
   const pre = Math.ceil(Math.max(0, ...voices.map((v) => -v.t0)) * RATE);
-  const post = Math.ceil(Math.max(0, ...voices.map((v) => v.t0 + v.a + v.d + 0.01 - DUR)) * RATE);
+  let post = Math.ceil(Math.max(0, ...voices.map((v) => (v.spec ? v.end : v.t0 + v.a + v.d) + 0.01 - DUR)) * RATE);
+  if (sends) post = Math.max(post, Math.ceil((Math.max(...voices.filter((v) => v.spec && v.send > 0).map((v) => v.end)) + 1.2 * sp.rt60 - DUR) * RATE));
   const len = pre + N + post, L = new Float32Array(len), R = new Float32Array(len);
+  const BUS = {};                                  // the bed's buses and the reverb send, only when a voice uses them
+  const busOf = (name) => BUS[name] || (BUS[name] = [new Float32Array(len), new Float32Array(len)]);
   const renderVoice = (v) => {
     const at = pre + v.t0 * RATE, start = Math.floor(at), s = (at - start) / RATE, end = s + v.a + v.d;
     const ac = new OfflineAudioContext({ numberOfChannels: 2, length: Math.ceil((end + 0.01) * RATE), sampleRate: RATE });
@@ -729,23 +1051,119 @@ async function mixCues() {
     env.connect(pn); pn.connect(ac.destination);
     return ac.startRendering().then((b) => ({ b, start }));
   };
+  // a k.voice(spec) voice, still one chain: source -> filter -> filter2 -> envelope -> amp curve -> panner
+  const renderSpec = (v) => {
+    const sv = v.spec, at = pre + v.t0 * RATE, start = Math.floor(at), s = (at - start) / RATE, end = s + (v.end - v.t0);
+    const ac = new OfflineAudioContext({ numberOfChannels: 2, length: Math.ceil((end + 0.01) * RATE), sampleRate: RATE });
+    let src;
+    const wave = sv.src.wave;
+    if (wave === 'noise' || wave === 'noiseLong') {
+      if (wave === 'noiseLong' && !NOISE_LONG) {   // twelve seconds of seeded noise for long voices: no audible repeat
+        NOISE_LONG = new AudioBuffer({ numberOfChannels: 1, length: RATE * 12, sampleRate: RATE });
+        const nd = NOISE_LONG.getChannelData(0), rnd = mulberry32(0x9E3779B9);
+        for (let i = 0; i < nd.length; i++) nd[i] = rnd() * 2 - 1;
+      }
+      src = new AudioBufferSourceNode(ac, { buffer: wave === 'noise' ? NOISE : NOISE_LONG, loop: true }); src.start(s, v.off);
+    } else {
+      src = new OscillatorNode(ac, { type: wave, detune: sv.src.detune || 0 });
+      if (sv.src.curve) src.frequency.setValueCurveAtTime(sv.src.curve[0], s, sv.src.curve[1]);
+      else {
+        src.frequency.setValueAtTime(sv.src.f, s);
+        for (const [dt, f, kind] of sv.src.auto || []) { if (kind === 'set') src.frequency.setValueAtTime(f, s + dt); else src.frequency.exponentialRampToValueAtTime(f, s + dt); }
+      }
+      src.start(s);
+    }
+    src.stop(end + 0.005);
+    let node = src;
+    for (const F of [sv.filter, sv.filter2]) {
+      if (!F) continue;
+      const b = new BiquadFilterNode(ac, { type: F.type, Q: F.Q != null ? F.Q : 0.7 });
+      if (F.lfo) b.frequency.setValueCurveAtTime(F.lfo[0], s, F.lfo[1]);
+      else { b.frequency.setValueAtTime(F.f, s); for (const [dt, f] of F.auto || []) b.frequency.exponentialRampToValueAtTime(f, s + dt); }
+      node.connect(b); node = b;
+    }
+    const env = new GainNode(ac, { gain: 0 });
+    env.gain.setValueAtTime(0, s);
+    for (let i = 1; i < sv.env.length; i++) {
+      const [dt, lv, kd] = sv.env[i], p = sv.env[i - 1][1];
+      if (kd === 'exp' && p > 0 && lv > 0) env.gain.exponentialRampToValueAtTime(lv, s + dt); else env.gain.linearRampToValueAtTime(lv, s + dt);
+    }
+    node.connect(env); node = env;
+    if (sv.amp) { const a = new GainNode(ac, { gain: 1 }); a.gain.setValueCurveAtTime(sv.amp[0], s, sv.amp[1]); node.connect(a); node = a; }
+    const pn = new StereoPannerNode(ac), pv = sv.pan;
+    if (Array.isArray(pv)) { pn.pan.setValueAtTime(Math.max(-1, Math.min(1, pv[0])), s); pn.pan.linearRampToValueAtTime(Math.max(-1, Math.min(1, pv[1])), end); }
+    else if (pv && pv.curve) pn.pan.setValueCurveAtTime(pv.curve[0], s, pv.curve[1]);
+    else pn.pan.value = Math.max(-1, Math.min(1, pv || 0));
+    node.connect(pn); pn.connect(ac.destination);
+    return ac.startRendering().then((b) => ({ b, start }));
+  };
   for (let i0 = 0; i0 < voices.length; i0 += 16) {  // 16 at a time, added in order
-    const bufs = await Promise.all(voices.slice(i0, i0 + 16).map(renderVoice));
+    const bufs = await Promise.all(voices.slice(i0, i0 + 16).map((v) => (v.spec ? renderSpec(v) : renderVoice(v))));
     bufs.forEach(({ b, start }, i) => {
-      const g = voices[i0 + i].g, l = b.getChannelData(0), r = b.getChannelData(1);
-      for (let j = 0; j < l.length && start + j < len; j++) { L[start + j] += g * l[j]; R[start + j] += g * r[j]; }
+      const v = voices[i0 + i], g = v.g, l = b.getChannelData(0), r = b.getChannelData(1);
+      if (!v.spec) { for (let j = 0; j < l.length && start + j < len; j++) { L[start + j] += g * l[j]; R[start + j] += g * r[j]; } return; }
+      const [TL, TR] = v.bus === 'sfx' ? [L, R] : busOf(v.bus);
+      for (let j = 0; j < l.length && start + j < len; j++) { TL[start + j] += g * l[j]; TR[start + j] += g * r[j]; }
+      if (sends && v.send > 0) { const [SL, SR] = busOf('send'), gs = g * v.send; for (let j = 0; j < l.length && start + j < len; j++) { SL[start + j] += gs * l[j]; SR[start + j] += gs * r[j]; } }
     });
   }
+  // the bed's buses, ducked in JS: a boom dips them at once and they recover; a swell's gap dips the low end before it
+  for (const name of ['bed', 'low', 'air']) {
+    if (!BUS[name]) continue;
+    const [TL, TR] = BUS[name], ds = DUCKS.filter((d) => d.bus === name), step = 32, nc = Math.ceil(len / step) + 1, dbc = new Float32Array(nc);
+    for (const d of ds) {
+      const c0 = Math.floor((pre + (d.t - d.pre) * RATE) / step), c1 = Math.ceil((pre + (d.t + d.rec) * RATE) / step);
+      for (let c = Math.max(0, c0); c <= Math.min(nc - 1, c1); c++) {
+        const t = (c * step - pre) / RATE - d.t;
+        let x = 0;
+        if (t < 0) x = d.pre > 0 ? Math.max(0, 1 + t / d.pre) : 0;
+        else if (t < d.rec) x = 0.5 + 0.5 * Math.cos(Math.PI * t / d.rec);
+        dbc[c] -= d.dB * x;
+      }
+    }
+    for (let c = 0; c < nc - 1; c++) {
+      const g0 = Math.pow(10, dbc[c] / 20), g1 = Math.pow(10, dbc[c + 1] / 20);
+      for (let j = c * step, je = Math.min(len, j + step), u = 0; j < je; j++, u++) { const gg = g0 + (g1 - g0) * u / step; L[j] += gg * TL[j]; R[j] += gg * TR[j]; }
+    }
+  }
+  if (sends && BUS.send) { const [WL, WR] = reverb(BUS.send[0], BUS.send[1], sp); for (let j = 0; j < len; j++) { L[j] += WL[j]; R[j] += WR[j]; } }
   const cycle = LOOP !== 'none';                   // a loop wraps what sounds before 0 or after DUR; 'none' drops it
+  const fadeOut = bedOn && !cycle ? (B.fadeOut != null ? B.fadeOut : 0.9) : 0, fEnd = DUR - 0.05;   // a bed's film ends on its fade, to silence
   const pcm = new Float32Array(N * 2);
   let peak = 0;
   for (let i = 0; i < N; i++) {
     let l = 0, r = 0;
     for (let j = cycle ? (i + pre) % N : i + pre; j < len; j += cycle ? N : len) { l += L[j]; r += R[j]; }
+    if (fadeOut > 0) { const t = i / RATE, fg = t >= fEnd ? 0 : t > fEnd - fadeOut ? (fEnd - t) / fadeOut : 1; l *= fg; r *= fg; }
     pcm[2 * i] = l; pcm[2 * i + 1] = r;
     peak = Math.max(peak, Math.abs(l), Math.abs(r));
   }
-  return { pcm, frames: N, peak, list };
+  return { pcm, frames: N, peak, list, bed: BP };
+}
+// The space: one feedback delay network in plain JS over the summed sends (never a WebAudio feedback loop, whose
+// summing junction is not bit-stable, nor a ConvolverNode). A fixed order of float operations: the same samples
+// every run. High-passed input (the lows stay dry), a 22 ms pre-delay, four allpasses, eight damped lines.
+function reverb(SL, SR, sp) {
+  const n = SL.length, OL = new Float32Array(n), OR = new Float32Array(n), lvl = dBg(sp.level) / Math.sqrt(8);
+  const hpA = Math.exp(-TAU * 180 / RATE), c = Math.exp(-TAU * sp.damp / RATE);
+  const pd = new Float32Array(Math.round(0.022 * RATE)); let pi = 0;
+  const AP = [142, 107, 379, 277].map((l) => ({ b: new Float32Array(l), i: 0 })), apg = 0.7;
+  const DL = [1427, 1663, 1949, 2207, 2459, 2789, 3109, 3457], lines = DL.map((l) => new Float32Array(l)), idx = new Int32Array(8);
+  const gain = DL.map((l) => Math.pow(10, -3 * l / (sp.rt60 * RATE))), lp = new Float64Array(8), y = new Float64Array(8), d = new Float64Array(8);
+  let hx = 0, hy = 0;
+  for (let t = 0; t < n; t++) {
+    const x0 = (SL[t] + SR[t]) * 0.5, h = hpA * (hy + x0 - hx);
+    hx = x0; hy = h;
+    let a = pd[pi]; pd[pi] = h; pi = pi + 1 === pd.length ? 0 : pi + 1;
+    for (const A of AP) { const bv = A.b[A.i], o = -apg * a + bv; A.b[A.i] = a + apg * o; A.i = A.i + 1 === A.b.length ? 0 : A.i + 1; a = o; }
+    let sum = 0;
+    for (let q = 0; q < 8; q++) { y[q] = lines[q][idx[q]]; lp[q] = y[q] + c * (lp[q] - y[q]); d[q] = lp[q] * gain[q]; sum += d[q]; }
+    const hh = sum / 4;
+    for (let q = 0; q < 8; q++) { lines[q][idx[q]] = d[q] - hh + a; idx[q] = idx[q] + 1 === DL[q] ? 0 : idx[q] + 1; }
+    OL[t] = (y[0] - y[1] + y[2] - y[3] + y[4] - y[5] + y[6] - y[7]) * lvl;
+    OR[t] = (y[0] + y[1] - y[2] - y[3] + y[4] + y[5] - y[6] - y[7]) * lvl;
+  }
+  return [OL, OR];
 }
 // for the scripts: the mix as base64 of interleaved little-endian Float32 samples, or null without sound effects
 async function renderAudio() {
@@ -754,7 +1172,8 @@ async function renderAudio() {
   const { pcm, frames, peak, list } = m, bytes = new Uint8Array(pcm.buffer);
   let str = '';
   for (let i = 0; i < bytes.length; i += 0x8000) str += String.fromCharCode.apply(null, bytes.subarray(i, i + 0x8000));
-  return { rate: RATE, channels: 2, frames, peak, b64: btoa(str), cues: list.map((c) => ({ t: +c.t.toFixed(4), kind: c.kind, auto: c.auto || null })) };
+  return { rate: RATE, channels: 2, frames, peak, b64: btoa(str), cues: list.map((c) => ({ t: +c.t.toFixed(4), kind: c.kind, auto: c.auto || null })),
+    ...(m.bed ? { bed: { key: m.bed.key.name, chords: m.bed.chords.map((c) => [+c.t.toFixed(3), c.name]) } } : {}) };
 }
 
 /* ---------------- frame ---------------- */
@@ -971,8 +1390,19 @@ function audioCheck(add) {
   for (const c of list) by[c.kind] = (by[c.kind] || 0) + 1;
   const kinds = Object.entries(by).map(([k, n]) => `${n} ${k}`).join(', ');
   const lufs = AUDIO.loudness != null ? AUDIO.loudness : -16;
-  if (!list.length && !AUDIO.track) add('audio', 'FAIL', `FILM.audio has no track and no cues${AUDIO.sfx === false ? ' (sfx: false)' : ': place cues with cue(t, kind), FILM.audio.cues or auto: true'}`);
+  const bed = !!AUDIO.bed && AUDIO.sfx !== false;
+  if (!list.length && !AUDIO.track && !bed) add('audio', 'FAIL', `FILM.audio has no track and no cues${AUDIO.sfx === false ? ' (sfx: false)' : ': place cues with cue(t, kind), FILM.audio.cues or auto: true'}`);
   else add('audio', 'PASS', `${list.length ? `${list.length} cues (${kinds})` : 'no cues'}${AUDIO.track ? `, track ${AUDIO.track}` : ''}, normalised to ${lufs} LUFS`);
+  if (bed) {                                         // the bed: its key and chords, and what would sound wrong
+    let P;
+    try { P = bedPlan(list); } catch (e) { add('audio bed', 'FAIL', e.message); return; }
+    const B = AUDIO.bed, ly = { pad: 1, drone: 1, bass: 1, air: 0.2, glints: 0.3, ...(B.layers || {}) };
+    add('audio bed', 'PASS', `${P.key.name}, ${P.chords.length} chord${P.chords.length > 1 ? 's' : ''} (${P.chords.map((c) => `${c.t.toFixed(2)} ${c.name}`).join(', ')}); layers ${Object.entries(ly).filter(([, v]) => v > 0).map(([k, v]) => `${k} ${v}`).join(', ')}; pulse ${B.pulse ? 'on' : 'off'}; space ${AUDIO.space === false ? 'off' : 'on'}`);
+    const C = P.chords, last = C[C.length - 1];
+    if (LOOP !== 'none' && (last.pcs.length !== C[0].pcs.length || last.pcs.some((x) => !C[0].pcs.includes(x)))) add('audio bed', 'WARN', `the chord at the loop point (${last.name}) is not the first (${C[0].name}): the progression wraps through a crossfade at the seam; end on the first chord`);
+    const late = list.filter((c) => c.kind === 'boom' && LOOP === 'none' && c.t > DUR - 2);
+    if (late.length) add('audio bed', 'WARN', `a boom at ${late.map((c) => c.t.toFixed(2)).join(', ')} s lands within 2 s of the end: the fade cuts its tail; land it earlier or lengthen the film`);
+  }
 }
 // Composition: where the ink sits in the review stills. Ink is any pixel away from the background and from
 // the colours of the roles an engine lists as backdrop (a stage, a sky). The lean on an axis is the difference
@@ -1114,7 +1544,7 @@ function boot(E) {
     wrapT, frameOf, typed, noteSec, drawing,
     rgbOf, hexOf, mix, hueChroma, hueDist, lum, contrast, inksClash,
     face, fontStr, setFont, capRatio, useText, measureRun, layoutText, blurQ, glyphSprite, fillGlyph, drawText,
-    svgPath, CUTS, ACTIVE, ACCENTS, WARN, CONTRAST, cutAt, activeIn, accentAt, needContrast, cue,
+    svgPath, CUTS, ACTIVE, ACCENTS, WARN, CONTRAST, cutAt, activeIn, accentAt, needContrast, cue, sectionAt,
     checkLiveArea, checkSpacing, seek, boot,
     FMT, fmtX, fmtY, fmtPos, fmtSz };
 })();
@@ -1125,7 +1555,7 @@ const { W, H, FPS, DUR, NFR, CX, CY, U, PAL, col, role, GRID, MARGIN, UNIT, MEAS
   wrapT, frameOf, typed, noteSec, drawing,
   rgbOf, hexOf, mix, hueChroma, hueDist, lum, contrast, inksClash,
   face, fontStr, setFont, capRatio, useText, measureRun, layoutText, blurQ, glyphSprite, fillGlyph, drawText,
-  svgPath, CUTS, ACTIVE, ACCENTS, WARN, CONTRAST, cutAt, activeIn, accentAt, needContrast, cue,
+  svgPath, CUTS, ACTIVE, ACCENTS, WARN, CONTRAST, cutAt, activeIn, accentAt, needContrast, cue, sectionAt,
   checkLiveArea, checkSpacing, seek, boot,
   FMT, fmtX, fmtY, fmtPos, fmtSz } = CORE;
 /* ===== CORE END ===== */
