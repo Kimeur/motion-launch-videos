@@ -1,0 +1,13 @@
+{
+  "note": "Written by tools/stamp.mjs after render.mjs verify passed; tools/check.mjs compares it. Do not edit.",
+  "source": "52d2203a7571466ec97191b4a270166e9ab9aef72e8c091675804a41a0d90383",
+  "renders": {
+    "overlays-acme-studio.mp4": "ce8578eefab46a50eec5d08009ddc6b29d4e23a40c5df5804f2d4584d47abc3c",
+    "overlays-acme-studio.webm": "0c42aa7bd4b9e5f170a17e1c49843fd63b55ca0edc5641b9500dba915664cf0b"
+  },
+  "verify": [
+    "PASS frame 0 vs canvas PSNR 52.9 dB, mean 0.33, max 1",
+    "PASS frame 314 vs canvas PSNR 52.9 dB, mean 0.33, max 2",
+    "PASS webm alpha vs canvas alpha plane PSNR 40.7 dB (at least 35), max 255 levels; over bg PSNR 29.7 dB; frames 7, 24, 45, 120, 167, 297"
+  ]
+}

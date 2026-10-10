@@ -1,0 +1,11 @@
+{
+  "note": "Written by tools/stamp.mjs after render.mjs verify passed; tools/check.mjs compares it. Do not edit.",
+  "source": "7410055c40dc8399ba804a4f0e9ac6178fd4f90c004e134f0e9884263c47ad47",
+  "renders": {
+    "cartoon-pip.mp4": "9d8e755b2ab153efb9ce2907623bedeec41b454876d44f16c6fc722dc5c6ce8d"
+  },
+  "verify": [
+    "PASS frame 0 vs canvas PSNR 38.9 dB, mean 0.92, max 141",
+    "PASS frame 599 vs canvas PSNR 38.2 dB, mean 0.97, max 141"
+  ]
+}

@@ -1,0 +1,11 @@
+{
+  "note": "Written by tools/stamp.mjs after render.mjs verify passed; tools/check.mjs compares it. Do not edit.",
+  "source": "665920529548aaf56dc26cacae8a7ba7ad0521abd69ca709ef598944af2169c5",
+  "renders": {
+    "ui-acme-trips.mp4": "fcea425d5372a328ed23546cc92143a8d48f0001437a8eb21e4876c245c401a6"
+  },
+  "verify": [
+    "PASS frame 0 vs canvas PSNR 44.7 dB, mean 0.77, max 86",
+    "PASS frame 719 vs canvas PSNR 45.7 dB, mean 0.74, max 81"
+  ]
+}

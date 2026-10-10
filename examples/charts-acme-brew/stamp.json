@@ -1,0 +1,11 @@
+{
+  "note": "Written by tools/stamp.mjs after render.mjs verify passed; tools/check.mjs compares it. Do not edit.",
+  "source": "ad0a8f8e8c8d085f3a178078ba58905efa303d6a4cc56e96129a664f15cfca08",
+  "renders": {
+    "charts-acme-brew.mp4": "0e79f09a72b7c793695bce9e2aae8653223fefa46b2388a29b05ba4f7f5dba2e"
+  },
+  "verify": [
+    "PASS frame 0 vs canvas PSNR 44.1 dB, mean 0.53, max 71",
+    "PASS frame 719 vs canvas PSNR 45.7 dB, mean 0.47, max 69"
+  ]
+}

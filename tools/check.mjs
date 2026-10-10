@@ -2,7 +2,9 @@
 // Repo checks for maintainers. The plugin does not ship this folder.
 //
 //   node tools/check.mjs            fast: shared files in sync, manifests, every SKILL.md, every template parses,
-//                                   and a warning for an example whose source carries an older core than shared/
+//                                   a warning for an example whose source carries an older core than shared/,
+//                                   and a failure for an example whose renders are not stamped against its
+//                                   current source (tools/stamp.mjs)
 //   node tools/check.mjs --smoke    also build each skill's template demo in a scratch folder and run its
 //                                   stills critique and loopcheck (needs npm, network for the fonts, a Chromium)
 //   node tools/check.mjs --smoke --formats
@@ -18,6 +20,7 @@ import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { skills } from './sync.mjs';
+import { RENDERS, sourceHash, fileHash } from './stamps.mjs';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const smoke = process.argv.includes('--smoke');
@@ -70,6 +73,22 @@ for (const ex of fs.readdirSync(path.join(ROOT, 'examples')).sort()) {
   if (a < 0 || b < a) continue;                            // an engine of its own (the kinetic type)
   const same = html.slice(html.indexOf('\n', a) + 1, b).trimEnd() === core;
   console.log(same ? `PASS  examples/${ex}: on the current core` : `WARN  examples/${ex}: rendered on an older core; re-render it (README, For maintainers)`);
+}
+
+// 4b. examples: every committed render is stamped as verified against the current source (tools/stamp.mjs)
+for (const ex of fs.readdirSync(path.join(ROOT, 'examples')).sort()) {
+  const dir = path.join(ROOT, 'examples', ex);
+  if (!fs.existsSync(path.join(dir, 'src', 'film.html'))) continue;
+  const renders = fs.readdirSync(dir).filter((f) => RENDERS.test(f)).sort();
+  if (!renders.length) continue;
+  const fix = `re-render it, then node tools/stamp.mjs ${ex}`;
+  let stamp = null;
+  try { stamp = JSON.parse(fs.readFileSync(path.join(dir, 'stamp.json'), 'utf8')); } catch { ok(false, `examples/${ex}: stamp`, `no stamp.json: node tools/stamp.mjs ${ex}`); continue; }
+  const stale = [];
+  if (stamp.source !== sourceHash(dir)) stale.push('the source changed since its renders were verified');
+  for (const r of renders) if (!stamp.renders || !stamp.renders[r]) stale.push(`${r} is not stamped`); else if (stamp.renders[r] !== fileHash(path.join(dir, r))) stale.push(`${r} changed since it was verified`);
+  for (const r of Object.keys(stamp.renders || {})) if (!renders.includes(r)) stale.push(`${r} is stamped but missing`);
+  ok(!stale.length, `examples/${ex}: renders match the source`, stale.length ? `${stale.join('; ')}: ${fix}` : '');
 }
 
 // 5. optional smoke test: every template demo passes its own critique and loopcheck
