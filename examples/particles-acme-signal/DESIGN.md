@@ -87,7 +87,7 @@ The reform starts a quarter note after the burst, while the particles are still 
 
 ## GIF budget
 
-- 480 px, 12 fps, 16 colours, no dither (the engine's hints): 3.62 MB. The same film at the render's defaults (20 fps, 64 colours, Bayer dither) is 7.9 MB.
+- 480 px, 12 fps, 16 colours, no dither (the engine's hints): 3.62 MB. The same film at the render's defaults (20 fps, 64 colours, Bayer dither) is 8.0 MB.
 
 ## Formats
 
@@ -102,6 +102,6 @@ The same FILM renders at 9:16 and 16:9 (`--format`); `poster-9x16.png` and `post
 
 - Stills critique: 44 checks, all pass. Palette gate: 20 accent frames, no mixed ink.
 - Loopcheck: PASS, cycle loop, continuous over the seam, max diff 0.
-- Verify: H.264 High, yuv420p, 1080 x 1080, 60/1, 720 frames, 12.000 s, BT.709 tags, faststart; frame 0 at 47.5 dB against the canvas; the background decodes to (0.1, 0.1, 0.1) for #000000. MP4 17.6 MB (particles are all detail: 11.7 Mb/s at CRF 16). A smaller file costs detail: at `--crf 20` it is 11.8 MB and the lowest review frame falls to 34.8 dB, at `--crf 23` 8.6 MB and 32.5 dB, so the example keeps CRF 16.
+- Verify: H.264 High, yuv420p, 1080 x 1080, 60/1, 720 frames, 12.000 s, BT.709 tags, faststart; frame 0 at 47.5 dB against the canvas; the background decodes to (0.1, 0.1, 0.1) for #000000. MP4 17.6 MB (particles are all detail: 11.7 Mb/s at CRF 16). A smaller file costs detail: at `--crf 20` it is 12.0 MB and the lowest review frame falls to 34.6 dB, at `--crf 23` 8.7 MB and 32.3 dB, so the example keeps CRF 16.
 - mp4frames: 15 frames, lowest PSNR 37.7 dB (the reform, frame 310: fine streaks).
 - Render: 1 min 53 s for 720 frames on a shared 4-core machine.
