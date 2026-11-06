@@ -1,5 +1,19 @@
 # Changelog
 
+## 2.3.0
+
+A thirteenth style: second-person story shorts.
+
+- **New skill: `motion-story`.** A 45 to 120 second vertical story told to the viewer ("You just robbed a bank..."), ending on a choice they answer in the comments.
+  - A voice-over made on the machine: `scripts/voice.mjs` reads the lines from the `FILM` block, speaks each one with Kokoro (`npx hyperframes tts`), times every word with whisper (`npx hyperframes transcribe`), aligns the heard words to the written ones, mixes `assets/voice.wav`, writes `assets/timing.json` and sets `DUR`. Unchanged lines are reused.
+  - Captions pop in word by word as they are said; `*red*`, `+green+` and `!amber!` marks colour the words that carry the story.
+  - Nine drawn sets, each with its own living details: a car at night (wipers, rain on the glass, passing street lamps, your eyes in the mirror), a back seat of cash bags, a city map with a route drawing itself, a motel at night, a motel room and its window, a phone (a call, a text thread with typing dots), a counting table, a TV news bulletin, and the question card.
+  - The motion-cartoon rig as the hero, in a knitted beanie, front or back view, walking and reacting.
+  - HUD cards: a cash counter, a money meter, a wall clock, a police countdown, a tag.
+  - A slow camera per scene, shakes, rain, neon flicker, and a score from the bed that changes chord on every cut, with cues placed by the engine.
+  - Its critique checks the voice against `DUR` and the scenes, each scene's length, the hook inside 3 s, the question card at the end, how many words the transcriber heard per line, and the captions' live area and contrast.
+  - Its example, [story-ten-minutes](examples/story-ten-minutes/), is a 67 s heist dilemma with sound: STAY or RUN?
+
 ## 2.2.0
 
 A twelfth style: data globe films.

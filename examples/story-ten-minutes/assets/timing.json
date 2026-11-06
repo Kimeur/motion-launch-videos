@@ -1,0 +1,1155 @@
+{
+ "voice": "am_michael",
+ "speed": 1,
+ "dur": 66.95,
+ "scenes": [
+  {
+   "id": "DRIVE",
+   "start": 0,
+   "end": 5.693
+  },
+  {
+   "id": "CASH",
+   "start": 5.693,
+   "end": 10.291
+  },
+  {
+   "id": "PLAN",
+   "start": 10.291,
+   "end": 18.431
+  },
+  {
+   "id": "ARRIVE",
+   "start": 18.431,
+   "end": 23.369
+  },
+  {
+   "id": "WAIT",
+   "start": 23.369,
+   "end": 27.817
+  },
+  {
+   "id": "CALL",
+   "start": 27.817,
+   "end": 31.156
+  },
+  {
+   "id": "COUNT",
+   "start": 31.156,
+   "end": 36.265
+  },
+  {
+   "id": "NEWS",
+   "start": 36.265,
+   "end": 42.079
+  },
+  {
+   "id": "TEXT1",
+   "start": 42.079,
+   "end": 48.404
+  },
+  {
+   "id": "TEXT2",
+   "start": 48.404,
+   "end": 55.263
+  },
+  {
+   "id": "WINDOW",
+   "start": 55.263,
+   "end": 61.076
+  },
+  {
+   "id": "ASK",
+   "start": 61.076,
+   "end": 66.95
+  }
+ ],
+ "lines": [
+  {
+   "scene": "DRIVE",
+   "text": "You just robbed a *bank*.",
+   "start": 0.4,
+   "end": 1.893,
+   "known": 5,
+   "of": 5,
+   "words": [
+    {
+     "text": "You",
+     "mark": null,
+     "start": 0.47,
+     "end": 0.62
+    },
+    {
+     "text": "just",
+     "mark": null,
+     "start": 0.62,
+     "end": 0.91
+    },
+    {
+     "text": "robbed",
+     "mark": null,
+     "start": 0.91,
+     "end": 1.37
+    },
+    {
+     "text": "a",
+     "mark": null,
+     "start": 1.37,
+     "end": 1.44
+    },
+    {
+     "text": "bank.",
+     "mark": "*",
+     "start": 1.44,
+     "end": 1.8
+    }
+   ]
+  },
+  {
+   "scene": "DRIVE",
+   "text": "Rain on the glass. Sirens somewhere behind you.",
+   "start": 2.193,
+   "end": 5.393,
+   "known": 8,
+   "of": 8,
+   "words": [
+    {
+     "text": "Rain",
+     "mark": null,
+     "start": 2.253,
+     "end": 2.573
+    },
+    {
+     "text": "on",
+     "mark": null,
+     "start": 2.573,
+     "end": 2.763
+    },
+    {
+     "text": "the",
+     "mark": null,
+     "start": 2.763,
+     "end": 3.053
+    },
+    {
+     "text": "glass.",
+     "mark": null,
+     "start": 3.053,
+     "end": 3.693
+    },
+    {
+     "text": "Sirens",
+     "mark": null,
+     "start": 3.693,
+     "end": 4.103
+    },
+    {
+     "text": "somewhere",
+     "mark": null,
+     "start": 4.103,
+     "end": 4.703
+    },
+    {
+     "text": "behind",
+     "mark": null,
+     "start": 4.743,
+     "end": 5.153
+    },
+    {
+     "text": "you.",
+     "mark": null,
+     "start": 5.153,
+     "end": 5.383
+    }
+   ]
+  },
+  {
+   "scene": "CASH",
+   "text": "On the back seat, three bags.",
+   "start": 5.893,
+   "end": 7.771,
+   "known": 4,
+   "of": 6,
+   "words": [
+    {
+     "text": "On",
+     "mark": null,
+     "start": 6.023,
+     "end": 6.023
+    },
+    {
+     "text": "the",
+     "mark": null,
+     "start": 6.023,
+     "end": 6.213
+    },
+    {
+     "text": "back",
+     "mark": null,
+     "start": 6.213,
+     "end": 6.484
+    },
+    {
+     "text": "seat,",
+     "mark": null,
+     "start": 6.484,
+     "end": 6.823
+    },
+    {
+     "text": "three",
+     "mark": null,
+     "start": 6.823,
+     "end": 7.063
+    },
+    {
+     "text": "bags.",
+     "mark": null,
+     "start": 7.063,
+     "end": 7.543
+    }
+   ]
+  },
+  {
+   "scene": "CASH",
+   "text": "+4.2 million dollars+.",
+   "start": 8.071,
+   "end": 9.991,
+   "known": 2,
+   "of": 3,
+   "words": [
+    {
+     "text": "4.2",
+     "mark": "+",
+     "start": 8.141,
+     "end": 8.791
+    },
+    {
+     "text": "million",
+     "mark": "+",
+     "start": 8.821,
+     "end": 9.831
+    },
+    {
+     "text": "dollars.",
+     "mark": "+",
+     "start": 9.831,
+     "end": 9.831
+    }
+   ]
+  },
+  {
+   "scene": "PLAN",
+   "text": "The plan was simple.",
+   "start": 10.491,
+   "end": 11.963,
+   "known": 4,
+   "of": 4,
+   "words": [
+    {
+     "text": "The",
+     "mark": null,
+     "start": 10.561,
+     "end": 10.721
+    },
+    {
+     "text": "plan",
+     "mark": null,
+     "start": 10.771,
+     "end": 11.031
+    },
+    {
+     "text": "was",
+     "mark": null,
+     "start": 11.031,
+     "end": 11.261
+    },
+    {
+     "text": "simple.",
+     "mark": null,
+     "start": 11.261,
+     "end": 11.731
+    }
+   ]
+  },
+  {
+   "scene": "PLAN",
+   "text": "You drive. *Marco* kills the cameras.",
+   "start": 12.263,
+   "end": 14.737,
+   "known": 6,
+   "of": 6,
+   "words": [
+    {
+     "text": "You",
+     "mark": null,
+     "start": 12.313,
+     "end": 12.503
+    },
+    {
+     "text": "drive.",
+     "mark": null,
+     "start": 12.503,
+     "end": 12.933
+    },
+    {
+     "text": "Marco",
+     "mark": "*",
+     "start": 13.153,
+     "end": 13.443
+    },
+    {
+     "text": "kills",
+     "mark": null,
+     "start": 13.453,
+     "end": 13.853
+    },
+    {
+     "text": "the",
+     "mark": null,
+     "start": 13.853,
+     "end": 14.073
+    },
+    {
+     "text": "cameras.",
+     "mark": null,
+     "start": 14.093,
+     "end": 14.733
+    }
+   ]
+  },
+  {
+   "scene": "PLAN",
+   "text": "Midnight, you meet at the motel, split it, and vanish.",
+   "start": 15.037,
+   "end": 18.131,
+   "known": 10,
+   "of": 10,
+   "words": [
+    {
+     "text": "Midnight,",
+     "mark": null,
+     "start": 15.087,
+     "end": 15.527
+    },
+    {
+     "text": "you",
+     "mark": null,
+     "start": 15.607,
+     "end": 15.747
+    },
+    {
+     "text": "meet",
+     "mark": null,
+     "start": 15.747,
+     "end": 15.947
+    },
+    {
+     "text": "at",
+     "mark": null,
+     "start": 16.017,
+     "end": 16.137
+    },
+    {
+     "text": "the",
+     "mark": null,
+     "start": 16.137,
+     "end": 16.277
+    },
+    {
+     "text": "motel,",
+     "mark": null,
+     "start": 16.327,
+     "end": 16.797
+    },
+    {
+     "text": "split",
+     "mark": null,
+     "start": 16.857,
+     "end": 17.187
+    },
+    {
+     "text": "it,",
+     "mark": null,
+     "start": 17.187,
+     "end": 17.297
+    },
+    {
+     "text": "and",
+     "mark": null,
+     "start": 17.377,
+     "end": 17.587
+    },
+    {
+     "text": "vanish.",
+     "mark": null,
+     "start": 17.587,
+     "end": 18.127
+    }
+   ]
+  },
+  {
+   "scene": "ARRIVE",
+   "text": "You pull in at !11:52!.",
+   "start": 18.631,
+   "end": 20.764,
+   "known": 5,
+   "of": 5,
+   "words": [
+    {
+     "text": "You",
+     "mark": null,
+     "start": 18.681,
+     "end": 18.891
+    },
+    {
+     "text": "pull",
+     "mark": null,
+     "start": 18.891,
+     "end": 19.231
+    },
+    {
+     "text": "in",
+     "mark": null,
+     "start": 19.231,
+     "end": 19.401
+    },
+    {
+     "text": "at",
+     "mark": null,
+     "start": 19.401,
+     "end": 19.571
+    },
+    {
+     "text": "11:52.",
+     "mark": "!",
+     "start": 19.571,
+     "end": 20.681
+    }
+   ]
+  },
+  {
+   "scene": "ARRIVE",
+   "text": "Room fourteen. Lights off.",
+   "start": 21.064,
+   "end": 23.069,
+   "known": 3,
+   "of": 4,
+   "words": [
+    {
+     "text": "Room",
+     "mark": null,
+     "start": 21.114,
+     "end": 21.354
+    },
+    {
+     "text": "fourteen.",
+     "mark": null,
+     "start": 21.354,
+     "end": 22.174
+    },
+    {
+     "text": "Lights",
+     "mark": null,
+     "start": 22.174,
+     "end": 22.404
+    },
+    {
+     "text": "off.",
+     "mark": null,
+     "start": 22.454,
+     "end": 22.724
+    }
+   ]
+  },
+  {
+   "scene": "WAIT",
+   "text": "Midnight comes. Then twelve thirty.",
+   "start": 23.569,
+   "end": 26.044,
+   "known": 3,
+   "of": 5,
+   "words": [
+    {
+     "text": "Midnight",
+     "mark": null,
+     "start": 23.639,
+     "end": 24.169
+    },
+    {
+     "text": "comes.",
+     "mark": null,
+     "start": 24.169,
+     "end": 24.549
+    },
+    {
+     "text": "Then",
+     "mark": null,
+     "start": 24.789,
+     "end": 24.999
+    },
+    {
+     "text": "twelve",
+     "mark": null,
+     "start": 24.999,
+     "end": 25.475
+    },
+    {
+     "text": "thirty.",
+     "mark": null,
+     "start": 25.475,
+     "end": 26.029
+    }
+   ]
+  },
+  {
+   "scene": "WAIT",
+   "text": "*No Marco*.",
+   "start": 26.344,
+   "end": 27.517,
+   "known": 2,
+   "of": 2,
+   "words": [
+    {
+     "text": "No",
+     "mark": "*",
+     "start": 26.404,
+     "end": 26.544
+    },
+    {
+     "text": "Marco.",
+     "mark": "*",
+     "start": 26.544,
+     "end": 27.264
+    }
+   ]
+  },
+  {
+   "scene": "CALL",
+   "text": "You call him.",
+   "start": 28.017,
+   "end": 29.105,
+   "known": 3,
+   "of": 3,
+   "words": [
+    {
+     "text": "You",
+     "mark": null,
+     "start": 28.087,
+     "end": 28.317
+    },
+    {
+     "text": "call",
+     "mark": null,
+     "start": 28.317,
+     "end": 28.707
+    },
+    {
+     "text": "him.",
+     "mark": null,
+     "start": 28.707,
+     "end": 29.097
+    }
+   ]
+  },
+  {
+   "scene": "CALL",
+   "text": "*Straight to voicemail*.",
+   "start": 29.405,
+   "end": 30.856,
+   "known": 3,
+   "of": 3,
+   "words": [
+    {
+     "text": "Straight",
+     "mark": "*",
+     "start": 29.465,
+     "end": 29.925
+    },
+    {
+     "text": "to",
+     "mark": "*",
+     "start": 29.925,
+     "end": 30.055
+    },
+    {
+     "text": "voicemail.",
+     "mark": "*",
+     "start": 30.055,
+     "end": 30.645
+    }
+   ]
+  },
+  {
+   "scene": "COUNT",
+   "text": "So you count the money.",
+   "start": 31.356,
+   "end": 32.935,
+   "known": 5,
+   "of": 5,
+   "words": [
+    {
+     "text": "So",
+     "mark": null,
+     "start": 31.436,
+     "end": 31.496
+    },
+    {
+     "text": "you",
+     "mark": null,
+     "start": 31.496,
+     "end": 31.696
+    },
+    {
+     "text": "count",
+     "mark": null,
+     "start": 31.766,
+     "end": 32.056
+    },
+    {
+     "text": "the",
+     "mark": null,
+     "start": 32.146,
+     "end": 32.266
+    },
+    {
+     "text": "money.",
+     "mark": null,
+     "start": 32.266,
+     "end": 32.636
+    }
+   ]
+  },
+  {
+   "scene": "COUNT",
+   "text": "Every bill. Just to keep your hands busy.",
+   "start": 33.235,
+   "end": 35.965,
+   "known": 8,
+   "of": 8,
+   "words": [
+    {
+     "text": "Every",
+     "mark": null,
+     "start": 33.365,
+     "end": 33.785
+    },
+    {
+     "text": "bill.",
+     "mark": null,
+     "start": 33.785,
+     "end": 34.365
+    },
+    {
+     "text": "Just",
+     "mark": null,
+     "start": 34.385,
+     "end": 34.635
+    },
+    {
+     "text": "to",
+     "mark": null,
+     "start": 34.635,
+     "end": 34.765
+    },
+    {
+     "text": "keep",
+     "mark": null,
+     "start": 34.765,
+     "end": 35.035
+    },
+    {
+     "text": "your",
+     "mark": null,
+     "start": 35.035,
+     "end": 35.305
+    },
+    {
+     "text": "hands",
+     "mark": null,
+     "start": 35.305,
+     "end": 35.645
+    },
+    {
+     "text": "busy.",
+     "mark": null,
+     "start": 35.645,
+     "end": 35.965
+    }
+   ]
+  },
+  {
+   "scene": "NEWS",
+   "text": "Then, the news.",
+   "start": 36.465,
+   "end": 37.553,
+   "known": 2,
+   "of": 3,
+   "words": [
+    {
+     "text": "Then,",
+     "mark": null,
+     "start": 36.555,
+     "end": 36.825
+    },
+    {
+     "text": "the",
+     "mark": null,
+     "start": 36.825,
+     "end": 37.095
+    },
+    {
+     "text": "news.",
+     "mark": null,
+     "start": 37.095,
+     "end": 37.485
+    }
+   ]
+  },
+  {
+   "scene": "NEWS",
+   "text": "Bank robbery downtown. Police have *a suspect in custody*.",
+   "start": 37.853,
+   "end": 41.779,
+   "known": 9,
+   "of": 9,
+   "words": [
+    {
+     "text": "Bank",
+     "mark": null,
+     "start": 37.943,
+     "end": 38.233
+    },
+    {
+     "text": "robbery",
+     "mark": null,
+     "start": 38.233,
+     "end": 38.903
+    },
+    {
+     "text": "downtown.",
+     "mark": null,
+     "start": 38.903,
+     "end": 39.693
+    },
+    {
+     "text": "Police",
+     "mark": null,
+     "start": 39.783,
+     "end": 40.123
+    },
+    {
+     "text": "have",
+     "mark": null,
+     "start": 40.123,
+     "end": 40.413
+    },
+    {
+     "text": "a",
+     "mark": "*",
+     "start": 40.413,
+     "end": 40.483
+    },
+    {
+     "text": "suspect",
+     "mark": "*",
+     "start": 40.483,
+     "end": 40.983
+    },
+    {
+     "text": "in",
+     "mark": "*",
+     "start": 40.983,
+     "end": 41.093
+    },
+    {
+     "text": "custody.",
+     "mark": "*",
+     "start": 41.133,
+     "end": 41.873
+    }
+   ]
+  },
+  {
+   "scene": "TEXT1",
+   "text": "Your phone buzzes. Unknown number.",
+   "start": 42.279,
+   "end": 44.732,
+   "known": 4,
+   "of": 5,
+   "words": [
+    {
+     "text": "Your",
+     "mark": null,
+     "start": 42.349,
+     "end": 42.619
+    },
+    {
+     "text": "phone",
+     "mark": null,
+     "start": 42.619,
+     "end": 43.049
+    },
+    {
+     "text": "buzzes.",
+     "mark": null,
+     "start": 43.049,
+     "end": 43.729
+    },
+    {
+     "text": "Unknown",
+     "mark": null,
+     "start": 43.729,
+     "end": 44.169
+    },
+    {
+     "text": "number.",
+     "mark": null,
+     "start": 44.169,
+     "end": 44.729
+    }
+   ]
+  },
+  {
+   "scene": "TEXT1",
+   "text": "*Marco talked. Cops are coming. You have ten minutes.*",
+   "start": 45.032,
+   "end": 48.104,
+   "known": 9,
+   "of": 9,
+   "words": [
+    {
+     "text": "Marco",
+     "mark": "*",
+     "start": 45.082,
+     "end": 45.392
+    },
+    {
+     "text": "talked.",
+     "mark": "*",
+     "start": 45.392,
+     "end": 45.962
+    },
+    {
+     "text": "Cops",
+     "mark": "*",
+     "start": 46.062,
+     "end": 46.232
+    },
+    {
+     "text": "are",
+     "mark": "*",
+     "start": 46.272,
+     "end": 46.422
+    },
+    {
+     "text": "coming.",
+     "mark": "*",
+     "start": 46.472,
+     "end": 47.022
+    },
+    {
+     "text": "You",
+     "mark": "*",
+     "start": 47.022,
+     "end": 47.192
+    },
+    {
+     "text": "have",
+     "mark": "*",
+     "start": 47.192,
+     "end": 47.422
+    },
+    {
+     "text": "ten",
+     "mark": "*",
+     "start": 47.422,
+     "end": 47.592
+    },
+    {
+     "text": "minutes.",
+     "mark": "*",
+     "start": 47.592,
+     "end": 48.072
+    }
+   ]
+  },
+  {
+   "scene": "TEXT2",
+   "text": "Ten seconds later. Marco.",
+   "start": 48.604,
+   "end": 50.737,
+   "known": 3,
+   "of": 4,
+   "words": [
+    {
+     "text": "Ten",
+     "mark": null,
+     "start": 48.654,
+     "end": 49.024
+    },
+    {
+     "text": "seconds",
+     "mark": null,
+     "start": 49.024,
+     "end": 49.514
+    },
+    {
+     "text": "later.",
+     "mark": null,
+     "start": 49.514,
+     "end": 49.994
+    },
+    {
+     "text": "Marco.",
+     "mark": null,
+     "start": 49.994,
+     "end": 50.494
+    }
+   ]
+  },
+  {
+   "scene": "TEXT2",
+   "text": "+Don't trust that text. I'm five minutes away. Wait for me.+",
+   "start": 51.037,
+   "end": 54.963,
+   "known": 11,
+   "of": 11,
+   "words": [
+    {
+     "text": "Don't",
+     "mark": "+",
+     "start": 51.097,
+     "end": 51.337
+    },
+    {
+     "text": "trust",
+     "mark": "+",
+     "start": 51.347,
+     "end": 51.657
+    },
+    {
+     "text": "that",
+     "mark": "+",
+     "start": 51.657,
+     "end": 51.907
+    },
+    {
+     "text": "text.",
+     "mark": "+",
+     "start": 51.907,
+     "end": 52.247
+    },
+    {
+     "text": "I'm",
+     "mark": "+",
+     "start": 52.437,
+     "end": 52.577
+    },
+    {
+     "text": "five",
+     "mark": "+",
+     "start": 52.587,
+     "end": 52.867
+    },
+    {
+     "text": "minutes",
+     "mark": "+",
+     "start": 52.937,
+     "end": 53.377
+    },
+    {
+     "text": "away.",
+     "mark": "+",
+     "start": 53.387,
+     "end": 53.917
+    },
+    {
+     "text": "Wait",
+     "mark": "+",
+     "start": 53.977,
+     "end": 54.227
+    },
+    {
+     "text": "for",
+     "mark": "+",
+     "start": 54.247,
+     "end": 54.407
+    },
+    {
+     "text": "me.",
+     "mark": "+",
+     "start": 54.477,
+     "end": 54.877
+    }
+   ]
+  },
+  {
+   "scene": "WINDOW",
+   "text": "Ten minutes to run. Five minutes for Marco.",
+   "start": 55.463,
+   "end": 58.449,
+   "known": 6,
+   "of": 8,
+   "words": [
+    {
+     "text": "Ten",
+     "mark": null,
+     "start": 55.503,
+     "end": 55.853
+    },
+    {
+     "text": "minutes",
+     "mark": null,
+     "start": 55.853,
+     "end": 56.313
+    },
+    {
+     "text": "to",
+     "mark": null,
+     "start": 56.313,
+     "end": 56.413
+    },
+    {
+     "text": "run.",
+     "mark": null,
+     "start": 56.413,
+     "end": 56.783
+    },
+    {
+     "text": "Five",
+     "mark": null,
+     "start": 56.783,
+     "end": 57.003
+    },
+    {
+     "text": "minutes",
+     "mark": null,
+     "start": 57.003,
+     "end": 57.473
+    },
+    {
+     "text": "for",
+     "mark": null,
+     "start": 57.563,
+     "end": 57.743
+    },
+    {
+     "text": "Marco.",
+     "mark": null,
+     "start": 57.743,
+     "end": 58.213
+    }
+   ]
+  },
+  {
+   "scene": "WINDOW",
+   "text": "One of those texts is a *lie*.",
+   "start": 58.749,
+   "end": 60.776,
+   "known": 7,
+   "of": 7,
+   "words": [
+    {
+     "text": "One",
+     "mark": null,
+     "start": 58.829,
+     "end": 58.969
+    },
+    {
+     "text": "of",
+     "mark": null,
+     "start": 58.969,
+     "end": 59.119
+    },
+    {
+     "text": "those",
+     "mark": null,
+     "start": 59.119,
+     "end": 59.489
+    },
+    {
+     "text": "texts",
+     "mark": null,
+     "start": 59.489,
+     "end": 59.859
+    },
+    {
+     "text": "is",
+     "mark": null,
+     "start": 59.859,
+     "end": 60.009
+    },
+    {
+     "text": "a",
+     "mark": null,
+     "start": 60.009,
+     "end": 60.079
+    },
+    {
+     "text": "lie.",
+     "mark": "*",
+     "start": 60.079,
+     "end": 60.419
+    }
+   ]
+  },
+  {
+   "scene": "ASK",
+   "text": "So. Do you *stay*... or do you *run*?",
+   "start": 61.276,
+   "end": 63.452,
+   "known": 8,
+   "of": 8,
+   "words": [
+    {
+     "text": "So.",
+     "mark": null,
+     "start": 61.356,
+     "end": 61.556
+    },
+    {
+     "text": "Do",
+     "mark": null,
+     "start": 61.556,
+     "end": 61.696
+    },
+    {
+     "text": "you",
+     "mark": null,
+     "start": 61.696,
+     "end": 61.906
+    },
+    {
+     "text": "stay...",
+     "mark": "*",
+     "start": 61.966,
+     "end": 62.196
+    },
+    {
+     "text": "or",
+     "mark": null,
+     "start": 62.196,
+     "end": 62.236
+    },
+    {
+     "text": "do",
+     "mark": null,
+     "start": 62.476,
+     "end": 62.486
+    },
+    {
+     "text": "you",
+     "mark": null,
+     "start": 62.486,
+     "end": 62.706
+    },
+    {
+     "text": "run?",
+     "mark": "*",
+     "start": 62.706,
+     "end": 63.116
+    }
+   ]
+  }
+ ]
+}

@@ -1,0 +1,16 @@
+{
+  "name": "motion-cartoon-scripts",
+  "private": true,
+  "description": "Scripts for the motion-cartoon skill: fetch fonts, build one self-contained HTML film, render it to MP4 with motion blur, verify the loop.",
+  "type": "module",
+  "license": "MIT",
+  "engines": { "node": ">=20" },
+  "scripts": {
+    "fonts": "node scripts/fonts.mjs",
+    "build": "node scripts/build.mjs",
+    "render": "node scripts/render.mjs"
+  },
+  "dependencies": {
+    "playwright-core": "1.63.0"
+  }
+}
