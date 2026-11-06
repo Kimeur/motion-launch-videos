@@ -1,6 +1,6 @@
 # motion-launch-videos
 
-Short launch and social videos made in code with Claude Code, in twelve styles: kinetic type, flat shapes, cartoons, 3D, data charts, pixel art, particles, app UI, photo reels, captioned clips, overlays for editors and data globes. Each film is one self-contained HTML file that can draw any frame from the time alone, rendered to MP4 with real motion blur and a seamless loop that is checked, not hoped for, at 1:1, 9:16 or 16:9, with sound when it needs it and with transparency when it goes over footage.
+Short launch and social videos made in code with Claude Code, in thirteen styles: kinetic type, flat shapes, cartoons, 3D, data charts, pixel art, particles, app UI, photo reels, captioned clips, overlays for editors, data globes and second-person story shorts. Each film is one self-contained HTML file that can draw any frame from the time alone, rendered to MP4 with real motion blur and a seamless loop that is checked, not hoped for, at 1:1, 9:16 or 16:9, with sound when it needs it and with transparency when it goes over footage.
 
 | | |
 |---|---|
@@ -10,12 +10,13 @@ Short launch and social videos made in code with Claude Code, in twelve styles: 
 | ![Particles: a swarm forms a word, bursts and reforms](examples/particles-acme-signal/preview.gif) **Particles** ([motion-particles](plugins/motion-launch-videos/skills/motion-particles/SKILL.md)): swarms that form words and logos. [Example](examples/particles-acme-signal/) | ![App UI: a phone taps through a travel planner](examples/ui-acme-trips/preview.gif) **App UI** ([motion-ui](plugins/motion-launch-videos/skills/motion-ui/SKILL.md)): taps, pushes and toasts in a device frame. [Example](examples/ui-acme-trips/) |
 | ![Photo: a flask pulls back, floats with tags, slides from graphite to sky, and four colourways slide past](examples/photo-acme-flask/preview.gif) **Photo** ([motion-photo](plugins/motion-launch-videos/skills/motion-photo/SKILL.md)): your own images in Ken Burns crops, parallax cutouts, carousels, a before/after slider and tags. [Example](examples/photo-acme-flask/) | ![Captions: words pop in, in time with a voice-over](examples/captions-acme-memo/preview.gif) **Captions** ([motion-captions](plugins/motion-launch-videos/skills/motion-captions/SKILL.md)): your voice-over or podcast, every word on the frame it is said. [Example, with sound](examples/captions-acme-memo/) |
 | ![Overlays: a lower third wipes in at the bottom left, holds and wipes out](examples/overlays-acme-studio/preview.gif) **Overlays** ([motion-overlays](plugins/motion-launch-videos/skills/motion-overlays/SKILL.md)): lower thirds, cards, end screens and corner bugs, delivered with alpha. [Example](examples/overlays-acme-studio/) | ![Globe: a dotted Earth, routes arcing between cities, beams rising with HUD cards that count parcels](examples/globe-acme-relay/preview.gif) **Globe** ([motion-globe](plugins/motion-launch-videos/skills/motion-globe/SKILL.md)): a data globe from real geography, a flying camera, routes, beams and HUD cards. [Example, with sound](examples/globe-acme-relay/) |
+| ![Story: a second-person heist story, a car at night, cash bags, a motel, two texts, and the question STAY or RUN](examples/story-ten-minutes/preview.gif) **Story** ([motion-story](plugins/motion-launch-videos/skills/motion-story/SKILL.md)): a 9:16 "you just robbed a bank" dilemma with drawn sets, a synthetic voice, word captions and HUD cards, ending on a question for the comments. [Example, with sound](examples/story-ten-minutes/) | |
 
 **One film, three formats.** Every style renders the same film square, vertical or wide (`--format 9:16`), laid out for each frame rather than cropped:
 
 ![The chart and the app demo at 1:1, 9:16 and 16:9](examples/formats.png)
 
-The Crux film is a real launch bumper for the author's product: every word on screen is taken from the live site, with sources in its [BRIEF.md](examples/crux-launch/BRIEF.md). The other eleven are each skill's own demo, for fictional products, and say so on screen. Another film, [pixel-buffett-snowball](examples/pixel-buffett-snowball/), is a 36 second story on the pixel skill: a runner grows up while a snowball rolls after him and swells at every stop of Warren Buffett's life. Every sprite is drawn in code, every fact is in its [BRIEF.md](examples/pixel-buffett-snowball/BRIEF.md) with its source, and it says on screen that it is an unofficial fan animation.
+The Crux film is a real launch bumper for the author's product: every word on screen is taken from the live site, with sources in its [BRIEF.md](examples/crux-launch/BRIEF.md). The other twelve are each skill's own demo, for fictional products (and, for the story skill, a fictional story), and say so on screen or in their brief. Another film, [pixel-buffett-snowball](examples/pixel-buffett-snowball/), is a 36 second story on the pixel skill: a runner grows up while a snowball rolls after him and swells at every stop of Warren Buffett's life. Every sprite is drawn in code, every fact is in its [BRIEF.md](examples/pixel-buffett-snowball/BRIEF.md) with its source, and it says on screen that it is an unofficial fan animation.
 
 You give it a product and what the film should say, or just a URL, and a style if you have one in mind. Claude reads the product's site, writes 3 to 5 beats of at most four words each, designs every beat on the tempo grid, and writes the whole film as one HTML page. Then it checks the film with the skill's automated critique, renders it frame by frame, and verifies the MP4 it delivers.
 
@@ -35,10 +36,11 @@ You give it a product and what the film should say, or just a URL, and a style i
 | `motion-captions` | captioned clips from your own voice-over, podcast or interview: pop captions, a karaoke line, subtitles or an audiogram, every word on the frame it is said | "Caption this podcast clip for Reels" |
 | `motion-overlays` | transparent overlays for editors and streamers: lower thirds, title and chapter cards, social handles, end screens, a corner bug, callouts, a LIVE badge | "A lower third for our host as a transparent .mov" |
 | `motion-globe` | a data globe film of a network worldwide: a dotted Earth from real geography, a camera that dives and flies between regions, routes, beams over each place with HUD cards that count, a running total and the lockup | "Show our delivery network across these cities", "A globe film of our offices worldwide" |
+| `motion-story` | a vertical story short in the second person that ends on a choice for the comments: a script, a synthetic voice made on your machine, word captions, drawn sets (a car at night, cash, a map, a motel, a phone, TV news), a hero in a beanie, HUD cards and a score | "A 'what would you do' heist story for TikTok", "A 60 second dilemma short: stay or run" |
 
 Pick a style, or just say what the video is for: [video-types.md](shared/reference/video-types.md) matches 18 kinds of video (a feature highlight, a changelog, a testimonial, an event promo, a countdown, an intro, an ad...) to their length, formats, beats and the styles that fit.
 
-All twelve share the same rules: true claims only, with every word traced to the product's own pages in `BRIEF.md`; nothing that is not the user's to use (no other company's logo or character); four words a beat; one file with nothing loaded over the network; and a look at the frames before anything ships.
+All thirteen share the same rules: true claims only, with every word traced to the product's own pages in `BRIEF.md`; nothing that is not the user's to use (no other company's logo or character); four words a beat; one file with nothing loaded over the network; and a look at the frames before anything ships.
 
 ## Install
 
@@ -49,7 +51,7 @@ As a plugin, from this repo's marketplace (run these inside Claude Code):
 /plugin install motion-launch-videos@motion-launch-videos
 ```
 
-That installs all twelve skills; Claude picks the one that fits your request, or you can ask for one by name.
+That installs all thirteen skills; Claude picks the one that fits your request, or you can ask for one by name.
 
 Without the plugin system, clone the repo and put the skills you want where Claude Code looks for personal skills (each skill folder is self-contained):
 
@@ -67,6 +69,7 @@ For a whole team, check the same folders into the project as `.claude/skills/<sk
 - **ffmpeg and ffprobe** with libx264 (`brew install ffmpeg`, `apt install ffmpeg`). Sound needs its AAC encoder, and transparent output its `prores_ks` and `libvpx-vp9` encoders; the usual builds have all three.
 - **A Chromium.** Any of: `CHROME_PATH`, a Chromium already in the Playwright cache, a system Google Chrome, or the one playwright-core installs. The 3D skill uses WebGL2: the GPU when there is one, Chromium's software renderer when there is not.
 - **Network access** once per film, to fetch its fonts from the npm registry.
+- **For the story skill only: a local voice.** Kokoro in a Python 3.10+ (`pip install kokoro-onnx soundfile`, then `HYPERFRAMES_PYTHON` pointing at that Python), run through `npx hyperframes tts`, and whisper through `npx hyperframes transcribe` for the word timings. Both download their models on first use and then run offline.
 
 `node <skill folder>/scripts/render.mjs doctor` checks all of this and prints the exact command for anything missing.
 
@@ -110,7 +113,7 @@ Open `videos/demo/demo.html` in Chrome to preview it: Space pauses, the arrow ke
 - **One film, any format.** A film is authored once; `--format 9:16`, `16:9`, `4:5` or `1:1` re-sizes it, positions follow their pins (the centre, or an edge), and `FILM.formats` patches what a frame needs laid out differently. The critique's composition row fails content left in one corner of a frame it was not designed for.
 - **Sound, when it needs it.** `FILM.audio` mixes your own music or voice-over with sound effects synthesised from the film's own accents and cuts, deterministic and wrapping round the loop, normalised to a loudness target and checked.
 - **Transparency, for editors.** An overlay renders to ProRes 4444 and VP9 with alpha, next to an MP4 preview.
-- **A shared core, twelve engines.** Every skill's template is the same core (springs, loops, motion blur, type layout, the critique's plumbing, the page's API) plus an engine for its style: per-glyph kinetic type; shapes with trims, morphs and repeaters; a cartoon rig with squash and stretch; a WebGL2 renderer with extruded type and soft shadows; charts; pixel sprites; particle formations; UI components; photo layers and reveals; captions timed to speech; overlays; a dotted globe from real geography under a flying camera.
+- **A shared core, thirteen engines.** Every skill's template is the same core (springs, loops, motion blur, type layout, the critique's plumbing, the page's API) plus an engine for its style: per-glyph kinetic type; shapes with trims, morphs and repeaters; a cartoon rig with squash and stretch; a WebGL2 renderer with extruded type and soft shadows; charts; pixel sprites; particle formations; UI components; photo layers and reveals; captions timed to speech; overlays; a dotted globe from real geography under a flying camera; drawn story sets under a slow camera with a synthetic voice-over.
 - **Checked output.** H.264 with BT.709 colour tags in the stream, faststart, exact frame count, and decoded frames (with an exact, not a fast, YUV-to-RGB conversion) compared with the canvas pixels.
 
 ## What's inside
@@ -128,7 +131,8 @@ plugins/motion-launch-videos/skills/
 ├── motion-photo/           product and photo reels
 ├── motion-captions/        captioned clips from a voice-over
 ├── motion-overlays/        transparent overlays for editors
-└── motion-globe/           data globe films from real geography
+├── motion-globe/           data globe films from real geography
+└── motion-story/           second-person story shorts with a voice-over (scripts/voice.mjs speaks and times it)
     each: SKILL.md, package.json (playwright-core),
           reference/ (the style's engine, craft and review docs, plus the shared brief, core, loops, springs, render, fonts, audio and video types),
           templates/ (film.html: FILM config + core + engine, runnable as a demo; BRIEF.md; DESIGN.md),

@@ -6,3 +6,6 @@ stills/
 fonts/
 package-lock.json
 /videos/
+
+# the per-line voice cache voice.mjs keeps (assets/voice.wav and timing.json are committed)
+**/assets/voice/
