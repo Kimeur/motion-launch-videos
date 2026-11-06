@@ -68,13 +68,13 @@ if (CHECK) {
 const out = path.join(dir, 'assets', 'voice');
 fs.mkdirSync(out, { recursive: true });
 const npx = process.platform === 'win32' ? 'npx.cmd' : 'npx';
-const run = (cmd, argv) => execFileSync(cmd, argv, { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], maxBuffer: 64 << 20 });
+const run = (cmd, argv) => execFileSync(cmd, argv, { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], maxBuffer: 64 << 20, shell: process.platform === 'win32' && cmd === npx });
 const probe = (f) => Number(run('ffprobe', ['-v', 'error', '-show_entries', 'format=duration', '-of', 'csv=p=0', f]).trim());
 const norm = (s) => s.toLowerCase().replace(/[^\p{L}\p{N}]/gu, '');
 
 for (const [i, l] of lines.entries()) {
   const key = crypto.createHash('sha1').update(JSON.stringify([l.speak, V.name, V.speed])).digest('hex').slice(0, 12);
-  const base = path.join(out, `${String(i + 1).padStart(2, '0')}-${key}`);
+  const base = path.join(out, key);                 // named by content, so adding a line re-speaks only that line
   l.wav = `${base}.wav`;
   if (!fs.existsSync(l.wav)) {
     process.stdout.write(`speak ${i + 1}/${lines.length}: ${l.speak}\n`);

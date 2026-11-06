@@ -79,7 +79,7 @@ const FILM = {
   // The hero: a bean in a beanie (an original character). view 'back' draws the beanie from behind.
   hero: {
     body: { w: 250, h: 300, shape: 2.6, taper: 0.08, fill: 'skin', shade: 'skinDk' },
-    beanie: { fill: 'beanie', shade: 'beanieDk', cut: 0.62, cuff: 34, pom: 22 },
+    beanie: { fill: 'beanie', shade: 'beanieDk', cover: 0.36, cuff: 34, pom: 22 },
     legs: { len: 34, gap: 84, width: 15, foot: [42, 20] },
     eyes: { y: 176, gap: 92, rx: 25, ry: 31, pupil: 12 },
     brows: { y: 220, w: 36 },
@@ -2320,7 +2320,7 @@ function checks(add) {
   add('captions', nW ? 'PASS' : 'FAIL', `${GROUPS.length} groups, ${nW} words, ${wps.toFixed(1)} words a second`);
   const g0 = GROUPS[0]; if (g0) checkLiveArea(add, 'captions', [MARGIN, g0.y - g0.size, W - MARGIN, g0.y + g0.size * 0.3], false);
   const hook = TIMING.lines[0];
-  add('hook', hook && hook.end < 3.5 ? 'PASS' : 'WARN', hook ? `the first line ends at ${hook.end.toFixed(2)} s${hook.end < 3.5 ? '' : ': the hook should land inside 3 s'}` : 'no lines');
+  add('hook', hook && hook.end <= 3 ? 'PASS' : 'WARN', hook ? `the first line ends at ${hook.end.toFixed(2)} s${hook.end <= 3 ? '' : ': the hook should land inside 3 s'}` : 'no lines');
   for (const l of TIMING.lines) if (l.known < l.of * 0.6) add(`timing: ${l.scene}`, 'WARN', `only ${l.known} of ${l.of} words were heard in "${l.text}"; check the captions against the voice`);
 }
 function stills(push) {

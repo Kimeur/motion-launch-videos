@@ -14,7 +14,7 @@ It prints only the checks that did not pass (set `VERBOSE=1` to see all), writes
 | voice scenes | the scenes in FILM are not the ones the voice-over was made for | run `voice.mjs` again |
 | scene (warn) | a scene lasts under 1.2 s (too short to read) or over 9 s (one picture too long) | merge or split its lines |
 | the ask (warn) | the last scene is not the question card | end on `set: 'question'` |
-| hook (warn) | the first line ends after 3.5 s | a shorter first line |
+| hook (warn) | the first line ends after 3 s | a shorter first line |
 | timing (warn) | the transcriber heard under 60 % of a line's words; the rest were spread by length | look at that line's captions in the stills; reword it or give it a `speak` form |
 | captions | no words; the caption line leaves the live area | |
 | contrast | the caption fill or a mark colour against the outline | another role |
