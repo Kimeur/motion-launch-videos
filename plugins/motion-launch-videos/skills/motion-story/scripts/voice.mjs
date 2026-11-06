@@ -5,9 +5,9 @@
 //   node voice.mjs videos/<film> --check         print the script and its word count, speak nothing
 //
 // For each scene's `say` lines it:
-//   1. speaks the line with Kokoro on this machine (`npx hyperframes tts`; set HYPERFRAMES_PYTHON to a Python
-//      that has kokoro-onnx and soundfile), one WAV per line in assets/voice/ (kept, and reused while the
-//      text, voice and speed stay the same);
+//   1. speaks the line with Kokoro on this machine (`npx hyperframes tts`, the text passed in a .txt file, never on a
+//      command line; set HYPERFRAMES_PYTHON to a Python that has kokoro-onnx and soundfile), one WAV per line in
+//      assets/voice/ (kept, and reused while the text, voice and speed stay the same);
 //   2. times every word of the line with a local transcription (`npx hyperframes transcribe`, whisper small.en)
 //      and aligns it to the written words: a word the transcriber heard keeps its time, the others share the
 //      time between their neighbours by length;
@@ -67,8 +67,12 @@ if (CHECK) {
 
 const out = path.join(dir, 'assets', 'voice');
 fs.mkdirSync(out, { recursive: true });
-const npx = process.platform === 'win32' ? 'npx.cmd' : 'npx';
-const run = (cmd, argv) => execFileSync(cmd, argv, { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], maxBuffer: 64 << 20, shell: process.platform === 'win32' && cmd === npx });
+// npx without a shell everywhere: on Windows npx is a .cmd file, so run npm's own npx-cli.js with this node
+const npxCli = path.join(path.dirname(process.execPath), 'node_modules', 'npm', 'bin', 'npx-cli.js');
+const npx = (argv) => (process.platform === 'win32' ? [process.execPath, [npxCli, ...argv]] : ['npx', argv]);
+const exec = (cmd, argv) => execFileSync(cmd, argv, { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], maxBuffer: 64 << 20 });
+const run = (cmd, argv) => exec(cmd, argv);
+const runNpx = (argv) => exec(...npx(argv));
 const probe = (f) => Number(run('ffprobe', ['-v', 'error', '-show_entries', 'format=duration', '-of', 'csv=p=0', f]).trim());
 const norm = (s) => s.toLowerCase().replace(/[^\p{L}\p{N}]/gu, '');
 
@@ -78,7 +82,8 @@ for (const [i, l] of lines.entries()) {
   l.wav = `${base}.wav`;
   if (!fs.existsSync(l.wav)) {
     process.stdout.write(`speak ${i + 1}/${lines.length}: ${l.speak}\n`);
-    const r = JSON.parse(run(npx, ['hyperframes', 'tts', l.speak, '-v', V.name, '-s', String(V.speed), '-o', l.wav, '--json']).trim().split('\n').pop());
+    fs.writeFileSync(`${base}.txt`, l.speak);          // the line goes in by file, never on a command line
+    const r = JSON.parse(runNpx(['hyperframes', 'tts', `${base}.txt`, '-v', V.name, '-s', String(V.speed), '-o', l.wav, '--json']).trim().split('\n').pop());
     if (!r.ok) throw new Error(`tts failed: ${JSON.stringify(r.error)}`);
   }
   l.dur = probe(l.wav);
@@ -86,7 +91,7 @@ for (const [i, l] of lines.entries()) {
   if (!fs.existsSync(`${base}.words.json`)) {
     process.stdout.write(`time  ${i + 1}/${lines.length}\n`);
     // the words land in the transcript file the last JSON line names (the streamed 'words' rows can be empty)
-    const log = run(npx, ['hyperframes', 'transcribe', l.wav, '--model', 'small.en', '--json']).trim().split('\n');
+    const log = runNpx(['hyperframes', 'transcribe', l.wav, '--model', 'small.en', '--json']).trim().split('\n');
     const done = JSON.parse(log[log.length - 1]);
     if (!done.ok) throw new Error(`transcribe failed: ${JSON.stringify(done.error)}`);
     const heard = JSON.parse(fs.readFileSync(done.transcriptPath, 'utf8')).map(({ text, start, end }) => ({ text, start, end }));
